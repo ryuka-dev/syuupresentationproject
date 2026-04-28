@@ -20,6 +20,9 @@ public class EnemyAI : MonoBehaviour
     [Header("攻击")]
     public float attackRange  = 1.5f;
     public float attackDamage = 10f;
+    [Tooltip("两次攻击之间的冷却时间（秒）")]
+    public float attackCooldown = 1.5f;
+
 
     [Header("动画")]
     public Animator animator;
@@ -30,6 +33,8 @@ public class EnemyAI : MonoBehaviour
     private Transform currentTarget;
     private Vector3   moveDirection = Vector3.zero;
     private HealthComponent targetHealth;
+    private float attackCooldownTimer = 0f;
+
 
     // ─── 生命周期 ────────────────────────────────────────────
     void Awake()
@@ -109,9 +114,12 @@ public class EnemyAI : MonoBehaviour
     }
 
     // ─── 物理移动 ────────────────────────────────────────────
-    void FixedUpdate()
+void FixedUpdate()
     {
         if (rb == null) return;
+
+        if (attackCooldownTimer > 0f)
+            attackCooldownTimer -= Time.fixedDeltaTime;
 
         switch (currentState) {
             case EnemyState.Idle:
@@ -124,15 +132,22 @@ public class EnemyAI : MonoBehaviour
                 break;
 
             case EnemyState.Attack:
-                // 核心修复：每帧检查 Animator 状态，动画结束就立即重新触发
                 if (animator != null) {
                     var state = animator.GetCurrentAnimatorStateInfo(0);
-                    if (!state.IsName("Attack")) {
-                        // 动画已结束，立即重新设置 IsAttacking 来开始下一轮
-                        animator.SetBool("IsAttacking", true);
+                    bool animPlaying = state.IsName("Attack");
+
+                    if (!animPlaying) {
+                        // 动画已结束，必须先重置 IsAttacking
+                        // 否则 Animator 会立刻再次进入 Attack，冷却无效
+                        animator.SetBool("IsAttacking", false);
+
+                        if (attackCooldownTimer <= 0f) {
+                            // 冷却到期，触发下一次攻击
+                            attackCooldownTimer = attackCooldown;
+                            animator.SetBool("IsAttacking", true);
+                        }
                     }
                 }
-
                 moveDirection = Vector3.zero;
                 rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
                 FaceTarget();
