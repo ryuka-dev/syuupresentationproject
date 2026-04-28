@@ -575,6 +575,8 @@ GameObject:
   - component: {fileID: 5678882331747505161}
   - component: {fileID: 218095277578864258}
   - component: {fileID: 7941615115755381772}
+  - component: {fileID: 7182466527157778218}
+  - component: {fileID: 747241281135192487}
   m_Layer: 9
   m_Name: SkeletonEnemy
   m_TagString: Untagged
@@ -715,12 +717,46 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyAI
   fovDetector: {fileID: 218095277578864258}
-  head: {fileID: 4418894714360204089}
   moveSpeed: 3.5
   stoppingDistance: 1.2
-  rb: {fileID: 0}
   rotationSpeed: 5
+  rb: {fileID: 0}
+  attackRange: 1.5
+  attackDamage: 10
+  attackCooldown: 1.5
   animator: {fileID: 3411108188465799624}
+--- !u!114 &7182466527157778218
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1593989802227870837}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4bfce9b0f60110e49ae623edb385e961, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HealthComponent
+  maxHealth: 100
+--- !u!114 &747241281135192487
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1593989802227870837}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c468ba25f0d349b4e8badaebd45932b1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::WorldHealthBar
+  health: {fileID: 7182466527157778218}
+  followTarget: {fileID: 0}
+  offset: {x: 0, y: 0.3, z: 0}
+  barWidth: 80
+  barHeight: 8
+  bgColor: {r: 0.2, g: 0.2, b: 0.2, a: 0.8}
+  fgColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!1 &1629691151487848044
 GameObject:
   m_ObjectHideFlags: 0

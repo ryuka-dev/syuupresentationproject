@@ -1,94 +1,167 @@
 using UnityEngine;
 
+public enum EnemyState { Idle, Chase, Attack }
+
 /// <summary>
-/// 敌人AI控制 - 处理寻路和目标跟踪
+/// 敌人 AI - 有限状态机
+/// 成熟方案：每帧检查 Animator 状态，动画伤害由 Animation Event 在第20帧触发
 /// </summary>
 public class EnemyAI : MonoBehaviour
 {
     [Header("检测")]
     public FOVDetector fovDetector;
-    public Transform head;                     // 头部位置（用于眼睛位置）
 
     [Header("移动")]
-    public float moveSpeed = 3f;
-    public float stoppingDistance = 1f;
+    public float moveSpeed        = 3.5f;
+    public float stoppingDistance = 1.2f;
+    public float rotationSpeed    = 6f;
     public Rigidbody rb;
 
-    [Header("转向")]
-    public float rotationSpeed = 5f;
+    [Header("攻击")]
+    public float attackRange  = 1.5f;
+    public float attackDamage = 10f;
 
     [Header("动画")]
     public Animator animator;
 
-    private Transform currentTarget;
-    private Vector3 moveDirection = Vector3.zero;
+    // 状态
+    public EnemyState currentState { get; private set; } = EnemyState.Idle;
 
-void Awake()
+    private Transform currentTarget;
+    private Vector3   moveDirection = Vector3.zero;
+    private HealthComponent targetHealth;
+
+    // ─── 生命周期 ────────────────────────────────────────────
+    void Awake()
     {
-        if (animator == null) animator = GetComponent<Animator>();
+        if (animator    == null) animator    = GetComponent<Animator>();
         if (fovDetector == null) fovDetector = GetComponent<FOVDetector>();
-        if (head == null) head = GetComponentInChildren<Transform>();
-        // rb は Start() で取得（Spawner から AddComponent 後に Rigidbody が付く場合があるため）
     }
 
-void Start()
+    void Start()
     {
         if (rb == null) rb = GetComponent<Rigidbody>();
     }
 
-
     void Update()
     {
-        // 扫描视锥内的目标
-        var players = FindObjectsOfType<FactionComponent>();
+        ScanForTarget();
+        UpdateState();
+    }
+
+    // ─── 目标扫描 ────────────────────────────────────────────
+    void ScanForTarget()
+    {
+        if (fovDetector == null) return;
+
         currentTarget = null;
-        foreach (var fc in players) {
+        targetHealth  = null;
+
+        foreach (var fc in FindObjectsOfType<FactionComponent>()) {
             if (fovDetector.CanSeeTarget(fc.transform)) {
                 currentTarget = fc.transform;
+                targetHealth  = fc.GetComponent<HealthComponent>();
                 break;
             }
         }
-
-        // 更新动画参数
-        float speed = moveDirection.magnitude;
-        if (animator != null) animator.SetFloat("Speed", speed, 0.1f, Time.deltaTime);
     }
 
-void FixedUpdate()
+    // ─── 状态机 ──────────────────────────────────────────────
+    void UpdateState()
     {
-        if (currentTarget != null)
-        {
-            float dist = Vector3.Distance(transform.position, currentTarget.position);
-            if (dist > stoppingDistance)
-            {
-                moveDirection = (currentTarget.position - transform.position).normalized;
-                rb.linearVelocity = new Vector3(moveDirection.x * moveSpeed, rb.linearVelocity.y, moveDirection.z * moveSpeed);
+        if (currentTarget == null) {
+            TransitionTo(EnemyState.Idle);
+            return;
+        }
 
-                // Y 轴をゼロにして水平方向のみ転向
-                Vector3 lookDir = currentTarget.position - transform.position;
-                lookDir.y = 0f;
-                if (lookDir.sqrMagnitude > 0.001f)
-                {
-                    Quaternion targetRot = Quaternion.LookRotation(lookDir);
-                    transform.rotation = Quaternion.Lerp(transform.rotation, targetRot, rotationSpeed * Time.deltaTime);
-                }
-            }
-            else
-            {
+        float dist = Vector3.Distance(transform.position, currentTarget.position);
+        TransitionTo(dist <= attackRange ? EnemyState.Attack : EnemyState.Chase);
+    }
+
+    void TransitionTo(EnemyState next)
+    {
+        if (currentState == next) return;
+        currentState = next;
+
+        switch (next) {
+            case EnemyState.Idle:
+            case EnemyState.Chase:
+                animator?.SetBool("IsAttacking", false);
+                break;
+
+            case EnemyState.Attack:
+                // 进入攻击状态，立即触发动画
+                animator?.SetBool("IsAttacking", true);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 由动画第20帧的 Animation Event 调用 - 伤害触发点
+    /// </summary>
+    public void OnAttackHit()
+    {
+        if (targetHealth == null || currentTarget == null) return;
+
+        float dist = Vector3.Distance(transform.position, currentTarget.position);
+        if (dist <= attackRange * 1.2f)
+            targetHealth.TakeDamage(attackDamage);
+    }
+
+    // ─── 物理移动 ────────────────────────────────────────────
+    void FixedUpdate()
+    {
+        if (rb == null) return;
+
+        switch (currentState) {
+            case EnemyState.Idle:
                 moveDirection = Vector3.zero;
                 rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
-            }
-        }
-        else
-        {
-            moveDirection = Vector3.zero;
-            rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
+                break;
+
+            case EnemyState.Chase:
+                ChaseTarget();
+                break;
+
+            case EnemyState.Attack:
+                // 核心修复：每帧检查 Animator 状态，动画结束就立即重新触发
+                if (animator != null) {
+                    var state = animator.GetCurrentAnimatorStateInfo(0);
+                    if (!state.IsName("Attack")) {
+                        // 动画已结束，立即重新设置 IsAttacking 来开始下一轮
+                        animator.SetBool("IsAttacking", true);
+                    }
+                }
+
+                moveDirection = Vector3.zero;
+                rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
+                FaceTarget();
+                break;
         }
 
-        if (animator != null)
-        {
-            float speed = moveDirection.magnitude;
-            animator.SetFloat("Speed", speed, 0.1f, Time.deltaTime);
-        }
+        animator?.SetFloat("Speed", moveDirection.magnitude, 0.1f, Time.deltaTime);
+    }
+
+    void ChaseTarget()
+    {
+        if (currentTarget == null) return;
+        moveDirection = (currentTarget.position - transform.position).normalized;
+        rb.linearVelocity = new Vector3(
+            moveDirection.x * moveSpeed,
+            rb.linearVelocity.y,
+            moveDirection.z * moveSpeed);
+        FaceTarget();
+    }
+
+    void FaceTarget()
+    {
+        if (currentTarget == null) return;
+        Vector3 dir = currentTarget.position - transform.position;
+        dir.y = 0f;
+        if (dir.sqrMagnitude > 0.001f)
+            transform.rotation = Quaternion.Lerp(
+                transform.rotation,
+                Quaternion.LookRotation(dir),
+                rotationSpeed * Time.deltaTime);
     }
 }

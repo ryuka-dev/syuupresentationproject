@@ -1,7 +1,14 @@
 fileFormatVersion: 2
 guid: 21a998651bdf326429e37004e170b7d4
+AssetOrigin:
+  serializedVersion: 1
+  productId: 306857
+  packageName: Stylized Low Poly Skeleton
+  packageVersion: 1.1
+  assetPath: Assets/SazenGames/Skeleton/Art/Animations/Skeleton_slash01.fbx
+  uploadId: 792234
 ModelImporter:
-  serializedVersion: 22200
+  serializedVersion: 24200
   internalIDToNameTable: []
   externalObjects: {}
   materials:
@@ -54,7 +61,14 @@ ModelImporter:
       mirror: 0
       bodyMask: 01000000010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000
       curves: []
-      events: []
+      events:
+      - time: 0.6666667
+        functionName: OnAttackHit
+        data: 
+        objectReferenceParameter: {instanceID: 0}
+        floatParameter: 0
+        intParameter: 0
+        messageOptions: 1
       transformMask: []
       maskType: 3
       maskSource: {instanceID: 0}
@@ -85,6 +99,9 @@ ModelImporter:
     maxBonesPerVertex: 4
     minBoneWeight: 0.001
     optimizeBones: 1
+    generateMeshLods: 0
+    meshLodGenerationFlags: 0
+    maximumMeshLod: -1
     meshOptimizationFlags: -1
     indexFormat: 0
     secondaryUVAngleDistortion: 8
@@ -608,8 +625,7 @@ ModelImporter:
     - name: leg_twist.l
       parentName: leg_stretch.l
       position: {x: 0.00000002026558, y: -0.000000009536743, z: 0.13610703}
-      rotation: {x: -0.00000006891785, y: -0.000000067055204, z: 0.0000002763699,
-        w: 1}
+      rotation: {x: -0.00000006891785, y: -0.000000067055204, z: 0.0000002763699, w: 1}
       scale: {x: 0.99999994, y: 1, z: 0.99999934}
     - name: thigh_twist.l
       parentName: thigh_stretch.l
@@ -639,14 +655,12 @@ ModelImporter:
     - name: leg_twist.r
       parentName: leg_stretch.r
       position: {x: 0.000000051259992, y: -0.000000052452087, z: 0.13610713}
-      rotation: {x: 0.000000018626448, y: 0.000000044703473, z: -0.00000017788257,
-        w: 1}
+      rotation: {x: 0.000000018626448, y: 0.000000044703473, z: -0.00000017788257, w: 1}
       scale: {x: 1.0000008, y: 1.0000004, z: 1.0000012}
     - name: thigh_twist.r
       parentName: thigh_stretch.r
       position: {x: -0.000000014305114, y: 0.0000000047683715, z: 0.00000014066696}
-      rotation: {x: 0.000000024214382, y: -0.000000022351736, z: 0.00000011920926,
-        w: 1}
+      rotation: {x: 0.000000024214382, y: -0.000000022351736, z: 0.00000011920926, w: 1}
       scale: {x: 1.0000017, y: 1.0000011, z: 1.0000012}
     - name: spine_01.x
       parentName: root.x
@@ -821,8 +835,7 @@ ModelImporter:
     - name: arm_twist.r
       parentName: arm_stretch.r
       position: {x: -0.000000047683713, y: 0.000000009536743, z: 0.0000002002716}
-      rotation: {x: 0.000000022351736, y: 0.000000016763803, z: -0.0000001955777,
-        w: 1}
+      rotation: {x: 0.000000022351736, y: 0.000000016763803, z: -0.0000001955777, w: 1}
       scale: {x: 0.99999994, y: 0.9999998, z: 0.9999996}
     - name: shoulder.l
       parentName: spine_03.x
@@ -983,10 +996,3 @@ ModelImporter:
   userData: 
   assetBundleName: 
   assetBundleVariant: 
-AssetOrigin:
-  serializedVersion: 1
-  productId: 306857
-  packageName: Stylized Low Poly Skeleton
-  packageVersion: 1.1
-  assetPath: Assets/SazenGames/Skeleton/Art/Animations/Skeleton_slash01.fbx
-  uploadId: 792234

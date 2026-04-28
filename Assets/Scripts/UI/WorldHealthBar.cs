@@ -1,46 +1,53 @@
 using UnityEngine;
-using UnityEngine.UI;
 
 /// <summary>
-/// 世界空间血条 - 敌人头顶显示
+/// 世界空间血条 - 跟随角色头顶显示
 /// </summary>
 public class WorldHealthBar : MonoBehaviour
 {
-    [Header("引用")]
-    public EntityStats stats;
-    public Transform target;          // 跟随的目标（敌人根对象）
-    public Vector3 offset = new Vector3(0, 2.4f, 0);
+    [Header("目标")]
+    public HealthComponent health;
+    public Transform followTarget;
+    public Vector3 offset = new Vector3(0, 0.3f, 0);
 
-    private Image fillImage;
-    private Camera mainCamera;
+    [Header("外观")]
+    public float barWidth  = 80f;
+    public float barHeight = 8f;
+    public Color bgColor   = new Color(0.2f, 0.2f, 0.2f, 0.8f);
+    public Color fgColor   = Color.red;
 
-    void Awake()
+    private Camera mainCam;
+    private Texture2D bgTex;
+    private Texture2D fgTex;
+
+    void Start()
     {
-        mainCamera = Camera.main;
-        fillImage = GetComponentInChildren<Image>();
-        if (stats != null)
-            stats.OnHealthChanged += UpdateBar;
+        mainCam = Camera.main;
+        if (health == null) health = GetComponent<HealthComponent>();
+        if (followTarget == null) followTarget = transform;
+        bgTex = MakeTexture(bgColor);
+        fgTex = MakeTexture(fgColor);
     }
 
-    void LateUpdate()
+    void OnGUI()
     {
-        if (target == null) return;
+        if (health == null || mainCam == null) return;
+        Vector3 screenPos = mainCam.WorldToScreenPoint(followTarget.position + offset);
+        if (screenPos.z < 0) return;
 
-        // 跟随目标
-        transform.position = target.position + offset;
-        // 始终面向摄像机
-        transform.forward = mainCamera.transform.forward;
+        float x = screenPos.x - barWidth * 0.5f;
+        float y = Screen.height - screenPos.y;
+        float ratio = health.currentHealth / health.maxHealth;
+
+        GUI.DrawTexture(new Rect(x, y, barWidth, barHeight), bgTex);
+        GUI.DrawTexture(new Rect(x, y, barWidth * ratio, barHeight), fgTex);
     }
 
-    void UpdateBar(float current, float max)
+    Texture2D MakeTexture(Color c)
     {
-        if (fillImage != null)
-            fillImage.fillAmount = current / max;
-    }
-
-    void OnDestroy()
-    {
-        if (stats != null)
-            stats.OnHealthChanged -= UpdateBar;
+        var tex = new Texture2D(1, 1);
+        tex.SetPixel(0, 0, c);
+        tex.Apply();
+        return tex;
     }
 }
