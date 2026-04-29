@@ -3,8 +3,9 @@ using UnityEngine;
 public enum EnemyState { Idle, Chase, Attack }
 
 /// <summary>
-/// 敌人 AI - 有限状态机
-/// 成熟方案：每帧检查 Animator 状态，动画伤害由 Animation Event 在第20帧触发
+/// 敌人 AI - 有限状态机（Idle / Chase / Attack）
+/// 攻击触发：attackCooldownTimer 到 0 时设 IsAttacking=true 一帧，动画开始后立刻清除，
+/// 依赖 Animator Controller 的 hasExitTime=0.9 完成动画后自动回 Idle，防止双触发。
 /// </summary>
 public class EnemyAI : MonoBehaviour
 {
@@ -21,8 +22,7 @@ public class EnemyAI : MonoBehaviour
     public float attackRange  = 1.5f;
     public float attackDamage = 10f;
     [Tooltip("两次攻击之间的冷却时间（秒）")]
-    public float attackCooldown = 1.5f;
-
+    public float attackCooldown = 2f;
 
     [Header("动画")]
     public Animator animator;
@@ -30,17 +30,17 @@ public class EnemyAI : MonoBehaviour
     // 状态
     public EnemyState currentState { get; private set; } = EnemyState.Idle;
 
-    private Transform currentTarget;
-    private Vector3   moveDirection = Vector3.zero;
-    private HealthComponent targetHealth;
-    private float attackCooldownTimer = 0f;
-
+    private Transform       currentTarget;
+    private Vector3         moveDirection = Vector3.zero;
+    private FactionComponent myFaction;
+    private float           attackCooldownTimer = 0f;
 
     // ─── 生命周期 ────────────────────────────────────────────
     void Awake()
     {
         if (animator    == null) animator    = GetComponent<Animator>();
         if (fovDetector == null) fovDetector = GetComponent<FOVDetector>();
+        myFaction = GetComponent<FactionComponent>();
     }
 
     void Start()
@@ -60,12 +60,16 @@ public class EnemyAI : MonoBehaviour
         if (fovDetector == null) return;
 
         currentTarget = null;
-        targetHealth  = null;
 
         foreach (var fc in FindObjectsOfType<FactionComponent>()) {
+            // 排除自己
+            if (fc.gameObject == gameObject) continue;
+
+            // 使用阵营系统判断敌对关系
+            if (myFaction != null && !myFaction.ShouldAttack(fc.faction)) continue;
+
             if (fovDetector.CanSeeTarget(fc.transform)) {
                 currentTarget = fc.transform;
-                targetHealth  = fc.GetComponent<HealthComponent>();
                 break;
             }
         }
@@ -95,33 +99,36 @@ public class EnemyAI : MonoBehaviour
                 break;
 
             case EnemyState.Attack:
-                // 进入攻击状态，立即触发动画
-                animator?.SetBool("IsAttacking", true);
+                // timer = 0：进入攻击范围立即允许触发第一次攻击
+                attackCooldownTimer = 0f;
+                animator?.SetBool("IsAttacking", false);
                 break;
         }
     }
 
     /// <summary>
-    /// 由动画第20帧的 Animation Event 调用 - 伤害触发点
+    /// 由攻击动画第 20 帧的 Animation Event 调用，负责伤害判定。
     /// </summary>
-public void OnAttackHit()
+    public void OnAttackHit()
     {
-        Debug.Log($"[EnemyAI] OnAttackHit called. target={currentTarget?.name} targetHealth={targetHealth}");
-        if (targetHealth == null || currentTarget == null) return;
+        if (currentTarget == null) return;
+
+        // 基于 currentTarget 实时获取，避免缓存失效
+        var health = currentTarget.GetComponent<HealthComponent>();
+        if (health == null) return;
 
         float dist = Vector3.Distance(transform.position, currentTarget.position);
-        Debug.Log($"[EnemyAI] dist={dist:F2} attackRange*1.2={attackRange * 1.2f:F2}");
-        if (dist <= attackRange * 1.2f)
-            targetHealth.TakeDamage(attackDamage);
+        if (dist <= attackRange * 1.2f) {
+            health.TakeDamage(attackDamage);
+        }
     }
 
-    // ─── 物理移动 ────────────────────────────────────────────
-void FixedUpdate()
+    // ─── 物理更新 ────────────────────────────────────────────
+    void FixedUpdate()
     {
         if (rb == null) return;
 
-        if (attackCooldownTimer > 0f)
-            attackCooldownTimer -= Time.fixedDeltaTime;
+        attackCooldownTimer -= Time.fixedDeltaTime;
 
         switch (currentState) {
             case EnemyState.Idle:
@@ -134,34 +141,43 @@ void FixedUpdate()
                 break;
 
             case EnemyState.Attack:
-                if (animator != null) {
-                    var state = animator.GetCurrentAnimatorStateInfo(0);
-                    bool animPlaying = state.IsName("Attack");
-
-                    if (!animPlaying) {
-                        // 动画已结束，必须先重置 IsAttacking
-                        // 否则 Animator 会立刻再次进入 Attack，冷却无效
-                        animator.SetBool("IsAttacking", false);
-
-                        if (attackCooldownTimer <= 0f) {
-                            // 冷却到期，触发下一次攻击
-                            attackCooldownTimer = attackCooldown;
-                            animator.SetBool("IsAttacking", true);
-                        }
-                    }
-                }
                 moveDirection = Vector3.zero;
                 rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
                 FaceTarget();
+
+                if (animator != null) {
+                    bool inAttackAnim = animator.GetCurrentAnimatorStateInfo(0).IsName("Attack");
+
+                    if (inAttackAnim) {
+                        // 动画已经开始 → 立刻清除 bool，防止动画结束后因 bool=true 再次触发
+                        animator.SetBool("IsAttacking", false);
+                    } else if (attackCooldownTimer <= 0f) {
+                        // 冷却完成且动画未在播放 → 触发一次攻击
+                        // 立刻重置冷却，防止下帧在动画尚未启动时再次满足条件
+                        attackCooldownTimer = attackCooldown;
+                        animator.SetBool("IsAttacking", true);
+                    }
+                }
                 break;
         }
 
-        animator?.SetFloat("Speed", moveDirection.magnitude, 0.1f, Time.deltaTime);
+        animator?.SetFloat("Speed", moveDirection.magnitude, 0.1f, Time.fixedDeltaTime);
     }
 
     void ChaseTarget()
     {
         if (currentTarget == null) return;
+
+        float dist = Vector3.Distance(transform.position, currentTarget.position);
+
+        if (dist <= stoppingDistance) {
+            // 已到停止距离，原地朝向目标
+            moveDirection = Vector3.zero;
+            rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
+            FaceTarget();
+            return;
+        }
+
         moveDirection = (currentTarget.position - transform.position).normalized;
         rb.linearVelocity = new Vector3(
             moveDirection.x * moveSpeed,
@@ -170,6 +186,7 @@ void FixedUpdate()
         FaceTarget();
     }
 
+    // FaceTarget 只在 FixedUpdate 中调用，使用 fixedDeltaTime
     void FaceTarget()
     {
         if (currentTarget == null) return;
@@ -179,6 +196,6 @@ void FixedUpdate()
             transform.rotation = Quaternion.Lerp(
                 transform.rotation,
                 Quaternion.LookRotation(dir),
-                rotationSpeed * Time.deltaTime);
+                rotationSpeed * Time.fixedDeltaTime);
     }
 }
