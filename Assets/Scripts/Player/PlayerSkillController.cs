@@ -103,7 +103,7 @@ public class PlayerSkillController : MonoBehaviour
 
         // 8. 全部通过 — 造成伤害
         _cooldownTimer = normalAttackCooldown;
-        health.TakeDamage(normalAttackDamage);
+        health.TakeDamage(normalAttackDamage, transform);;
         Debug.Log($"[PlayerSkillController] Normal Attack hit {target.name} for {normalAttackDamage} damage.");
     }
 }
