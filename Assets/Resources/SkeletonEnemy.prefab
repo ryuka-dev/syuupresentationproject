@@ -723,7 +723,7 @@ MonoBehaviour:
   rb: {fileID: 0}
   attackRange: 1.5
   attackDamage: 10
-  attackCooldown: 1.5
+  attackCooldown: 2
   animator: {fileID: 3411108188465799624}
 --- !u!114 &7182466527157778218
 MonoBehaviour:

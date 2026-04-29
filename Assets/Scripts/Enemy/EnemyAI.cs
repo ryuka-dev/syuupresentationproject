@@ -35,6 +35,10 @@ public class EnemyAI : MonoBehaviour
     private FactionComponent myFaction;
     private float           attackCooldownTimer = 0f;
 
+    // 扫描频率控制：不要每帧全场搜索目标
+    private float scanTimer = 0f;
+    private const float scanInterval = 0.2f;
+
     // ─── 生命周期 ────────────────────────────────────────────
     void Awake()
     {
@@ -50,7 +54,13 @@ public class EnemyAI : MonoBehaviour
 
     void Update()
     {
-        ScanForTarget();
+        scanTimer -= Time.deltaTime;
+
+        if (scanTimer <= 0f) {
+            ScanForTarget();
+            scanTimer = scanInterval;
+        }
+
         UpdateState();
     }
 
@@ -128,7 +138,9 @@ public class EnemyAI : MonoBehaviour
     {
         if (rb == null) return;
 
-        attackCooldownTimer -= Time.fixedDeltaTime;
+        if (attackCooldownTimer > 0f) {
+            attackCooldownTimer -= Time.fixedDeltaTime;
+        }
 
         switch (currentState) {
             case EnemyState.Idle:
@@ -190,8 +202,10 @@ public class EnemyAI : MonoBehaviour
     void FaceTarget()
     {
         if (currentTarget == null) return;
+
         Vector3 dir = currentTarget.position - transform.position;
         dir.y = 0f;
+
         if (dir.sqrMagnitude > 0.001f)
             transform.rotation = Quaternion.Lerp(
                 transform.rotation,
