@@ -15,15 +15,18 @@ public class HealthComponent : MonoBehaviour
 
     public bool IsDead => currentHealth <= 0f;
 
-    void Awake()
+void Awake()
     {
+        // maxHealth 在 Inspector 中设置后 Awake 才运行，此时初始化是安全的
         currentHealth = maxHealth;
     }
 
-    public void TakeDamage(float amount)
+public void TakeDamage(float amount)
     {
+        Debug.Log($"[Health] TakeDamage({amount}) called. IsDead={IsDead} current={currentHealth}");
         if (IsDead) return;
         currentHealth = Mathf.Max(0, currentHealth - amount);
+        Debug.Log($"[Health] After damage: current={currentHealth}");
         OnHealthChanged?.Invoke(currentHealth, maxHealth);
         if (currentHealth <= 0f) OnDied?.Invoke();
     }

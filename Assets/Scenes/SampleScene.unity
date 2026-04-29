@@ -670,7 +670,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::WorldHealthBar
   health: {fileID: 919417049}
-  followTarget: {fileID: 0}
+  followTarget: {fileID: 919417043}
   offset: {x: 0, y: 0.3, z: 0}
   barWidth: 80
   barHeight: 8

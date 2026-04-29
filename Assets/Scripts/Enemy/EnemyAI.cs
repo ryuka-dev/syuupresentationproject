@@ -104,11 +104,13 @@ public class EnemyAI : MonoBehaviour
     /// <summary>
     /// 由动画第20帧的 Animation Event 调用 - 伤害触发点
     /// </summary>
-    public void OnAttackHit()
+public void OnAttackHit()
     {
+        Debug.Log($"[EnemyAI] OnAttackHit called. target={currentTarget?.name} targetHealth={targetHealth}");
         if (targetHealth == null || currentTarget == null) return;
 
         float dist = Vector3.Distance(transform.position, currentTarget.position);
+        Debug.Log($"[EnemyAI] dist={dist:F2} attackRange*1.2={attackRange * 1.2f:F2}");
         if (dist <= attackRange * 1.2f)
             targetHealth.TakeDamage(attackDamage);
     }
