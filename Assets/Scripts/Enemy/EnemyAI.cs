@@ -121,7 +121,7 @@ public class EnemyAI : MonoBehaviour
     /// </summary>
     public void OnAttackHit()
     {
-        if (currentTarget == null) return;
+        if (!enabled || currentTarget == null) return;
 
         // 基于 currentTarget 实时获取，避免缓存失效
         var health = currentTarget.GetComponent<HealthComponent>();
