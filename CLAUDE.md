@@ -1,4 +1,9 @@
-Unity MCP 使用规则：
+---
+description: Unity MCP token saving rules
+alwaysApply: true
+---
+
+# Unity MCP 使用规则
 
 目标：减少不必要的 MCP 调用和 token 消耗，但不能牺牲修复准确性。
 
