@@ -25,8 +25,10 @@
 
 ### Enemy AI 系统
 - `EnemyAI.cs`：敌人有限状态机（FSM），控制 Idle/Chase/Attack 状态切换、移动、攻击触发
-  - 攻击触发逻辑：`attackCooldownTimer <= 0` 时设 `IsAttacking=true` 一帧，检测到动画已进入 Attack 状态后立刻清除 bool
-  - 目标扫描：排除自身，调用 `FactionComponent.ShouldAttack()` 筛选敌对目标
+  - 攻击触发逻辑：`attackCooldownTimer <= 0` 时设 `IsAttacking=true`，立即重置冷却；检测到动画已进入 Attack 状态后立刻清除 `IsAttacking`
+  - 攻击双触发问题：脚本侧已通过攻击后立即重置冷却、进入 Attack 动画后清除 `IsAttacking` 解决；当前 `attackCooldown` 默认值为 `2f`
+  - 攻击冷却计时：仅在 `attackCooldownTimer > 0` 时递减
+  - 目标扫描：固定间隔执行，避免每帧全场搜索；扫描时排除自身，并调用 `FactionComponent.ShouldAttack()` 筛选敌对目标
   - `stoppingDistance` 已启用：追击时距离小于该值则原地停止并朝向目标
   - `FaceTarget()` 使用 `Time.fixedDeltaTime`（仅在 FixedUpdate 中调用）
   - `OnAttackHit()` 命中时实时 GetComponent 获取 HealthComponent，不依赖缓存
@@ -56,7 +58,7 @@
 - **Player**
   - Components: Transform, Animator, CapsuleCollider, Rigidbody, PlayerController, FactionComponent, HealthComponent, WorldHealthBar
   - 说明：玩家角色，使用 New Input System，有血量和阵营
-  - ⚠️ HealthComponent と WorldHealthBar が各2インスタンス存在する可能性あり（未確認）
+  - ⚠️ HealthComponent 和 WorldHealthBar 可能各有两个实例（未确认）
 - **Skeleton_Enemy**
   - Components: Transform, Animator, Rigidbody, CapsuleCollider, FactionComponent, FOVDetector, EnemyAI, HealthComponent, WorldHealthBar
   - 说明：骷髅敌人，FSM AI + FOV 检测 + 攻击系统
@@ -71,7 +73,7 @@
   - 状态：Idle, Walk, Attack
   - Idle → Attack：`IsAttacking`（bool）为 true 时触发
   - Attack → Idle：`hasExitTime=true, exitTime=0.9`（动画播放到 90% 自动返回）
-  - ⚠️ Idle → Attack 的 Transition Duration / Has Exit Time 设置未完整确认
+  - Idle → Attack 的 Transition Duration / Has Exit Time 设置未完整确认
 
 ### Animation Events
 - `Skeleton_slash01.fbx` 攻击动画：第 20 帧触发 `OnAttackHit()` 方法
@@ -89,23 +91,18 @@
 - ✅ 血量系统（HealthComponent）
 - ✅ 世界空间血条显示（头顶）
 - ✅ 敌人攻击动画 + Animation Event 伤害触发（OnAttackHit）
-- ✅ 攻击冷却机制（attackCooldown，Inspector 可调）
+- ✅ 攻击冷却机制（attackCooldown，Inspector 可调，当前默认 2 秒）
+- ✅ EnemyAI 攻击双触发问题已修复：攻击触发后立即重置冷却，进入 Attack 动画后清除 IsAttacking
+- ✅ EnemyAI 目标扫描已优化：改为固定间隔扫描，减少不必要的每帧处理
 - ✅ 骷髅敌人生成器
 - ✅ 追击时 stoppingDistance 停止移动
 
 ## 7. In Progress / Known Issues
 
-### 未解决问题（优先级高）
-- 🐛 **骷髅攻击仍会连续触发两次**：每次攻击（包括第一次）会额外触发一次动画和伤害判定
-  - 脚本侧已多次尝试修复（wasAnimPlaying flag、attackCooldownTimer=999f、inAttackAnim 清除 bool 等），均未彻底解决
-  - 当前 EnemyAI.cs 逻辑：timer 归零 → SetBool(IsAttacking, true)；检测到动画播放中 → SetBool(IsAttacking, false)
-  - **怀疑根本原因在 Animator Controller 侧**：Idle → Attack 过渡的 Has Exit Time / Transition Duration 配置可能导致过渡被触发两次，或 Attack → Idle 过渡后因某种原因再次满足条件
-  - 建议下次优先检查 Animator Controller 的过渡条件，而不是继续修改脚本
-  - 相关文件：`EnemyAI.cs`、`Assets/Scripts/SkeletonAnimator.controller`
-
-### 其他已知问题
-- ⚠️ Player 组件重复：HealthComponent 和 WorldHealthBar 可能各有两个实例
+### 已知问题
+- ⚠️ Player 组件重复：HealthComponent 和 WorldHealthBar 可能各有两个实例（未确认）
 - ⚠️ EntityStats.cs 未充分使用
+- ⚠️ `SkeletonAnimator.controller` 的 Idle → Attack 过渡细节未完整确认；当前脚本逻辑已可用，暂不需要优先修改 Animator
 
 ## 8. Development Rules
 
@@ -118,24 +115,25 @@
 
 ### Animator 修改注意
 - Attack → Idle 的 `hasExitTime=true, exitTime=0.9` 是核心配置
-- `IsAttacking` bool 参数：EnemyAI 使用一帧脉冲方式触发（set true → 检测到动画播放后 set false）
-- Idle → Attack 过渡的完整参数尚未确认，修改前需在 Inspector 中核查
+- `IsAttacking` bool 参数：EnemyAI 使用脉冲式触发（set true → 检测到 Attack 动画播放后 set false）
+- `OnAttackHit()` 方法名不可改（Animation Event 绑定）
 
 ### 代码修改原则
 - Rigidbody 使用 `rb.linearVelocity`（Unity 6）
 - `OnAttackHit()` 方法名不可改（Animation Event 绑定）
 - `FaceTarget()` 仅在 FixedUpdate 中调用，使用 `Time.fixedDeltaTime`
+- EnemyAI 的目标扫描已改为固定间隔执行，不要轻易改回每帧 `FindObjectsOfType`
 
 ## 9. Files That Should Be Treated Carefully
 
 ### 核心脚本
-- `Assets/Scripts/Enemy/EnemyAI.cs`：攻击 bug 尚未完全解决，逻辑已多次改动
+- `Assets/Scripts/Enemy/EnemyAI.cs`：敌人 AI 核心，包含目标扫描、FSM、攻击冷却、攻击动画触发
 - `Assets/Scripts/Enemy/FOVDetector.cs`：视野检测逻辑
 - `Assets/Scripts/HealthComponent.cs`：血量系统基础
 - `Assets/Scripts/PlayerController.cs`：玩家控制
 
 ### 核心资产
-- `Assets/Scripts/SkeletonAnimator.controller`：**攻击双触发的潜在根源，下次应优先检查**
+- `Assets/Scripts/SkeletonAnimator.controller`：攻击动画状态机，依赖 `IsAttacking` 参数和 Attack 状态名
 - `Assets/SazenGames/Skeleton/Art/Animations/Skeleton_slash01.fbx`：攻击动画（第 20 帧有 Animation Event）
 - `Assets/Resources/SkeletonEnemy.prefab`：骷髅敌人 Prefab
 - `Assets/Scenes/SampleScene.unity`：主场景
@@ -147,23 +145,19 @@
 
 ## 10. Next Suggested Tasks
 
-### 优先级 1：修复攻击双触发（从 Animator Controller 入手）
-1. 在 Unity Editor 中打开 `SkeletonAnimator.controller`，检查 Idle → Attack 过渡的以下设置：
-   - Has Exit Time：应为 false（否则 Idle 动画会先播完再切换）
-   - Transition Duration：应为 0（瞬时切换）
-   - Conditions：确认只有 `IsAttacking = true` 一个条件
-2. 检查是否有多个从 Idle 或 Walk 到 Attack 的过渡（重复过渡会导致双触发）
-3. 确认 Attack → Idle 的过渡没有额外 Condition（只靠 Exit Time 返回）
+### 优先级 1：验证和清理
+1. 在 Play Mode 中确认 `attackCooldown=2` 时骷髅攻击节奏稳定，无连续双触发
+2. 修复 Player 组件重复问题（确认并移除多余的 HealthComponent / WorldHealthBar 实例）
+3. 清理 EnemyAI.cs 和相关脚本中的过期调试输出或误导性注释
 
-### 优先级 2：清理
-4. 修复 Player 组件重复（移除多余的 HealthComponent / WorldHealthBar 实例）
-5. 攻击 bug 解决后移除 EnemyAI.cs 中残留的无用注释
+### 优先级 2：战斗功能扩展
+4. 添加玩家攻击能力（当前玩家只能被攻击）
+5. 集成 EntityStats 系统，支持属性配置和可调数值
 
-### 优先级 3：功能扩展
-5. 添加玩家攻击能力（当前玩家只能被攻击）
-6. 集成 EntityStats 系统，支持属性配置
+### 优先级 3：AI 扩展
+6. 后续敌人数量增加时，评估是否需要进一步优化目标管理，避免大量敌人同时进行全局搜索
 
 ---
 
-**最后更新**：2025-04-29
-**当前状态**：攻击双触发 bug 未解决，脚本侧多次修改无效，怀疑根本原因在 Animator Controller，已暂时搁置。EnemyAI.cs 其他逻辑（目标筛选、冷却、停止距离）已整理完毕。
+**最后更新**：2026-04-29  
+**当前状态**：EnemyAI 攻击双触发已修复；目标扫描已改为固定间隔执行，攻击冷却只在大于 0 时递减。当前重点可转向 Play Mode 验证、组件清理和玩家攻击功能。
