@@ -25,7 +25,6 @@
 ## 3. Current Architecture
 
 ### Enemy AI 系统
-  - 攻击双触发问题：脚本侧已通过攻击后立即重置冷却、进入 Attack 动画后清除 `IsAttacking` 解决；当前 `attackCooldown` 默认值为 `2f`
 - `EnemyAI.cs`：敌人有限状态机（Idle/Chase/Attack）。攻击触发：冷却结束时 SetBool("IsAttacking", true)，动画进入 Attack 后立即清除。`OnAttackHit()` 由 Animation Event 调用，首行有 `!enabled` 保护。
 - `FOVDetector.cs`：视野检测（FOV），角度 + 距离判断目标可见性。
 - `FactionSystem.cs` / `FactionComponent`：阵营枚举（Player/Skeleton/Goblin/Dragon），`ShouldAttack(Faction)` 判断敌对关系。
