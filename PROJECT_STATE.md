@@ -39,10 +39,16 @@
 - `EnemyDeathHandler.cs`：监听 `HealthComponent.OnDied`，禁用 EnemyAI、停止 Rigidbody、禁用 Collider，触发死亡动画，延迟 destroyDelay 秒后 Destroy。
 
 ### Player 系统
-- `PlayerController.cs`：玩家输入处理、移动控制（New Input System）。
-- `RPGCameraController.cs`：第三人称相机跟随。
+- `PlayerController.cs`：玩家输入处理、移动控制（New Input System）。`applyRootMotion = false`。
+- `RPGCameraController.cs`：第三人称相机跟随。右键拖拽时同步玩家朝向（`target.rotation`）。
 - `PlayerTargeting.cs`：鼠标左键点击，Physics.Raycast 检测目标，验证 HealthComponent + FactionComponent + 敌对关系后设为 `CurrentTarget`（public Transform，只读）。
 - `PlayerSkillController.cs`：按数字键 1 读取 `PlayerTargeting.CurrentTarget`，验证目标有效性后调用 `HealthComponent.TakeDamage(damage, transform)`（传入攻击来源）。
+- `PlayerDeathHandler.cs`：挂载在 Player 上，监听 `HealthComponent.OnDied`，死亡时执行以下操作（通过 `_isDeadHandled` 防止重复）：
+  - 禁用 `PlayerController`、`PlayerSkillController`、`PlayerTargeting`
+  - 禁用 `RPGCameraController`（阻止右键改变玩家朝向）
+  - 清零 Rigidbody 速度并设置 `isKinematic = true`（防止斜面滑动）
+  - 调用 `animator.SetTrigger("IsDead")` 播放死亡动画
+  - 输出 `[PlayerDeathHandler] Player died. Controls disabled.`
 
 ### Health & Combat
 - `HealthComponent.cs`：通用血量组件。
@@ -65,34 +71,41 @@
 
 ### Scene Objects (SampleScene.unity)
 - **Player**
-  - Components: Transform, Animator, CapsuleCollider, Rigidbody, PlayerController, FactionComponent（faction=Player）, HealthComponent, WorldHealthBar, PlayerTargeting, PlayerSkillController
-  - ⚠️ HealthComponent 和 WorldHealthBar 可能各有两个实例（未确认）
+  - Components: Transform, Animator, CapsuleCollider, Rigidbody, PlayerController, FactionComponent（faction=Player）, HealthComponent, WorldHealthBar, PlayerTargeting, PlayerSkillController, PlayerDeathHandler
+  - HealthComponent と WorldHealthBar は各1インスタンスに整理済み
 - **Skeleton_Enemy**
   - Components: Transform, Animator, Rigidbody, CapsuleCollider, FactionComponent（faction=Skeleton）, FOVDetector, EnemyAI, HealthComponent, WorldHealthBar, EnemyDeathHandler
-- **Ground**、**Main Camera**、**Directional Light**、**Global Volume**、**DebugManager**、**SkeletonSpawnerManager**
+- **Main Camera**
+  - Components: RPGCameraController（target = Player Transform）
+- **Ground**、**Directional Light**、**Global Volume**、**DebugManager**、**SkeletonSpawnerManager**
 
 ### Prefabs
 - `Assets/Resources/SkeletonEnemy.prefab`：含 EnemyDeathHandler
 - `Assets/Resources/Skeleton_110.prefab`：骷髅模型资产
 
 ### Animator Controllers
-- `Assets/Scripts/SkeletonAnimator.controller`：
+- `Assets/Scripts/SkeletonAnimator.controller`（敌人用）：
   - 参数：`Speed`（Float）、`IsAttacking`（Bool）、`IsDead`（Trigger）
   - 状态：Idle、Walk、Attack、Death
-  - Idle → Attack：`IsAttacking` == true
-  - Attack → Idle：`hasExitTime=true, exitTime=0.9`（不可改，核心配置）
+  - Attack → Idle：`hasExitTime=true, exitTime=0.9`（**不可改**）
   - Any State → Death：`IsDead` Trigger（canTransitionToSelf=false）
   - Death 状态：clip=`root|death`（1.4s），无出口过渡
+- `Assets/Scripts/PlayerAnimator.controller`（玩家用）：
+  - 参数：`Speed`（Float）、`Horizontal`（Float）、`IsGrounded`（Bool）、`IsSprinting`（Bool）、`VerticalVelocity`（Float）、`IsJumping`（Bool）、`IsDead`（Trigger）
+  - 状态：Idle、RunForward、RunBackward、StrafeLeft、StrafeRight、Jump、JumpDown、FallingLoop、Sprint、Death
+  - Any State → Death：`IsDead` Trigger（canTransitionToSelf=false、hasExitTime=false）
+  - Death 状态：clip=`HumanM@CombatDamage01`（1.0s、非ループ）、**无出口过渡**
 
 ### Animation Events
 - `Skeleton_slash01.fbx` 第 20 帧：调用 `OnAttackHit()`（**方法名不可改**）
-- Death 动画：当前无 Animation Event，使用计时器销毁
+- 玩家死亡动画：`Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/HumanM@CombatDamage01.fbx`、clip名 `HumanM@CombatDamage01`
 
 ## 5. Input / Control
 - 使用：New Input System 1.19.0
 - 玩家移动：WASD（PlayerController）
 - 目标选择：鼠标左键（Mouse.current.leftButton.wasPressedThisFrame）
 - 技能释放：键盘 1（Keyboard.current.digit1Key.wasPressedThisFrame）
+- 摄像机/玩家朝向：鼠标右键拖拽（RPGCameraController.LateUpdate）。死亡後は RPGCameraController ごと無効化。
 
 ## 6. Completed Features
 - ✅ 玩家第三人称移动控制
@@ -111,13 +124,14 @@
 - ✅ 骷髅死亡动画播放（root|death，1.4s）
 - ✅ 死亡后 AI/物理/Collider 禁用，延迟销毁实体（EnemyDeathHandler）
 - ✅ 敌人仇恨系统：多目标列表 + 仇恨值排序 + 视野/受击两路加仇恨 + 距离脱战
+- ✅ 玩家死亡处理：禁用移动/攻击/目标选择/摄像机控制，物理静止，播放死亡动画（PlayerDeathHandler）
 
 ## 7. In Progress / Known Issues
-- ⚠️ Player 组件重复：HealthComponent 和 WorldHealthBar 可能各有两个实例（未确认）
 - ⚠️ EntityStats.cs 未充分使用
-- ⚠️ 死亡后 PlayerTargeting.CurrentTarget 仍可能持有已销毁对象的引用（PlayerSkillController 有 null 检查保护，但未主动清除引用）
+- ⚠️ 死亡后 PlayerTargeting.CurrentTarget 未主动清除（PlayerSkillController 有 null 检查保护，但引用仍存在）
 - ⚠️ EnemyDeathHandler 使用固定 destroyDelay 计时，未使用 Animation Event，时机可能受播放速度影响
 - ⚠️ `ScanForTarget()` 每 0.2s 调用 `FindObjectsOfType<FactionComponent>()`，敌人数量多时有性能隐患
+- ⚠️ 玩家死亡后 RPGCameraController 被整体禁用，相机静止在死亡位置（无死亡镜头演出）
 
 ## 8. Development Rules
 
@@ -129,15 +143,17 @@
 - ✅ 优先小步修改，每次改动后确认编译通过
 
 ### Animator 修改注意
-- `Attack → Idle` 的 `hasExitTime=true, exitTime=0.9` 是核心配置，不可改
-- `IsAttacking` bool：EnemyAI 脉冲式触发（set true → 检测到 Attack 动画播放后 set false）
-- `IsDead` Trigger：EnemyDeathHandler 触发，从 Any State 过渡到 Death，不可回到其他状态
-- `OnAttackHit()` 方法名不可改（Animation Event 绑定）
+- **骷髅（SkeletonAnimator.controller）**：
+  - `Attack → Idle` 的 `hasExitTime=true, exitTime=0.9` 不可改
+  - `IsDead` Trigger 由 EnemyDeathHandler 触发，不可回到其他状态
+  - `OnAttackHit()` 方法名不可改（Animation Event 绑定）
+- **玩家（PlayerAnimator.controller）**：
+  - Death 状态无出口过渡，死亡后不会自动回到其他状态，不可添加出口
+  - `IsDead` Trigger 由 PlayerDeathHandler 触发
 
 ### 代码修改原则
 - Rigidbody 使用 `rb.linearVelocity`（Unity 6）
 - 输入系统使用 `Mouse.current` / `Keyboard.current`（New Input System），不得使用 `UnityEngine.Input`
-- `FaceTarget()` 仅在 FixedUpdate 中调用，使用 `Time.fixedDeltaTime`
 
 ## 9. Files That Should Be Treated Carefully
 
@@ -148,11 +164,14 @@
 - `Assets/Scripts/HealthComponent.cs`：`TakeDamage(float/float+Transform)`、`IsDead`、`OnDied`、`OnDamaged` 事件
 - `Assets/Scripts/Player/PlayerTargeting.cs`：`CurrentTarget`（public Transform, get-only）
 - `Assets/Scripts/Player/PlayerSkillController.cs`：技能判定 + 伤害调用
+- `Assets/Scripts/Player/PlayerDeathHandler.cs`：玩家死亡处理，`_isDeadHandled` 防重复，禁用5个组件 + Rigidbody isKinematic + IsDead Trigger
 
 ### 核心资产
 - `Assets/Scripts/SkeletonAnimator.controller`：参数 Speed/IsAttacking/IsDead，状态 Idle/Walk/Attack/Death
+- `Assets/Scripts/PlayerAnimator.controller`：参数含 IsDead Trigger，Death 状态无出口过渡
 - `Assets/SazenGames/Skeleton/Art/Animations/Skeleton_slash01.fbx`：第 20 帧 Animation Event
 - `Assets/SazenGames/Skeleton/Art/Animations/Skeleton_death.fbx`：clip `root|death`，1.4s
+- `Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/HumanM@Death01.fbx`：玩家死亡动画，clip `HumanM@CombatDamage01`（1.0s）
 - `Assets/Resources/SkeletonEnemy.prefab`：含 EnemyDeathHandler
 
 ### 不应修改的文件
@@ -163,21 +182,22 @@
 ## 10. Next Suggested Tasks
 
 ### ⭐ 最推荐的下一个小任务
-**修复 Player 组件重复问题**：确认并移除 Player 上多余的 HealthComponent / WorldHealthBar 实例，避免血量计算异常。
+**玩家普通攻击动画**：按 1 攻击时播放玩家挥击动作，需要在 PlayerAnimator.controller 中添加 Attack 状态和过渡，在 PlayerSkillController 中调用 SetTrigger。
 
-### 优先级 1：稳定性
-1. 修复 Player 组件重复（HealthComponent / WorldHealthBar 各可能有两个实例）
-2. 死亡后主动清除 PlayerTargeting.CurrentTarget（在 EnemyDeathHandler 中或 PlayerTargeting 每帧检查 null）
-3. 将 `FindObjectsOfType<FactionComponent>()` 替换为缓存列表（如场景 Manager 注册），减少 EnemyAI 扫描开销
+### 优先级 1：战斗体验
+1. ⭐ 玩家普通攻击动画（PlayerAnimator.controller + PlayerSkillController）
+2. Game Over UI：玩家死亡后显示简单的"Game Over"提示界面
+3. 玩家死亡后相机演出（死亡时 RPGCameraController 被禁用，可改为死亡镜头而非静止）
 
-### 优先级 2：战斗体验
-4. 玩家普通攻击动画（按 1 时播放玩家攻击动作）
+### 优先级 2：系统完善
+4. 死亡后主动清除 `PlayerTargeting.CurrentTarget`（PlayerDeathHandler 中 `_targeting.CurrentTarget` 无法直接清除，需为 PlayerTargeting 添加 `ClearTarget()` 方法）
 5. 集成 EntityStats 系统，支持攻击力/血量等属性可配置
+6. 将 `FindObjectsOfType<FactionComponent>()` 替换为注册缓存，减少 EnemyAI 扫描开销
 
 ---
 
-**最后更新**：2026-04-29
+**最后更新**：2026-05-01
 **本次有效变更**：
-1. `HealthComponent` 新增 `TakeDamage(float, Transform)` 重载和 `OnDamaged(float, Transform)` 事件，旧接口保持兼容。
-2. `EnemyAI` 仇恨系统升级为多目标列表（hateTable）：视野发现、受击均通过 `AddHate()` 统一加仇恨，始终追击仇恨值最高的有效目标。
-3. `EnemyAI` 新增距离脱战机制（disengageDistance=15m，disengageDelay=3s），目标超距持续超时后清除仇恨并回 Idle。
+1. 新增 `PlayerDeathHandler.cs`（`Assets/Scripts/Player/`）：玩家死亡时禁用 PlayerController / PlayerSkillController / PlayerTargeting / RPGCameraController，Rigidbody 速度清零并设 isKinematic，触发死亡动画 IsDead Trigger。
+2. `PlayerAnimator.controller` 新增 `IsDead` Trigger 参数、`Death` 状态（clip: `HumanM@CombatDamage01`，1.0s）、Any State → Death 无出口过渡。
+3. Player 上多余的 HealthComponent / WorldHealthBar 实例已手动删除，当前各保留1个。

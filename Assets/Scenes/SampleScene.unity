@@ -657,38 +657,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FactionComponent
   faction: 0
---- !u!114 &919417048
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 919417038}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c468ba25f0d349b4e8badaebd45932b1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::WorldHealthBar
-  health: {fileID: 919417049}
-  followTarget: {fileID: 919417043}
-  offset: {x: 0, y: 0.3, z: 0}
-  barWidth: 80
-  barHeight: 8
-  bgColor: {r: 0.2, g: 0.2, b: 0.2, a: 0.8}
-  fgColor: {r: 0, g: 1, b: 0, a: 1}
---- !u!114 &919417049
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 919417038}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4bfce9b0f60110e49ae623edb385e961, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::HealthComponent
-  maxHealth: 100
 --- !u!114 &919417050
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -748,6 +716,18 @@ MonoBehaviour:
   normalAttackDamage: 20
   normalAttackRange: 2
   normalAttackCooldown: 1
+--- !u!114 &919417056
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 919417038}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 26f6d0363364e904096ac81bdf628a5e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerDeathHandler
 --- !u!1 &971681417
 GameObject:
   m_ObjectHideFlags: 0
@@ -1258,12 +1238,6 @@ PrefabInstance:
       addedObject: {fileID: 919417046}
     - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 919417049}
-    - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 919417048}
-    - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
-      insertIndex: -1
       addedObject: {fileID: 919417051}
     - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
       insertIndex: -1
@@ -1274,6 +1248,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
       insertIndex: -1
       addedObject: {fileID: 919417054}
+    - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 919417056}
   m_SourcePrefab: {fileID: 100100000, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
 --- !u!1001 &517507445416020324
 PrefabInstance:
