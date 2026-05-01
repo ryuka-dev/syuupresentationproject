@@ -55,12 +55,26 @@
   - `TakeDamage(float)`：向后兼容接口，内部调用带来源版本
   - `TakeDamage(float, Transform attacker)`：带攻击来源接口，attacker 可为 null
   - `IsDead`（只读属性）
-  - 事件：`OnHealthChanged(float, float)`、`OnDied`、`OnDamaged(float, Transform)`
+  - 事件：`OnHealthChanged(float, float)`、`OnDied`（Action，无参数）、`OnDamaged(float, Transform)`
 - `WorldHealthBar.cs`：世界空间血条 UI（头顶）。
 - `PlayerHealthBar.cs`：玩家血条 UI。
 
+### Level 系统
+- `LevelObjectiveManager.cs`（`Assets/Scripts/Level/`）：最小关卡流程控制器。
+  - `[SerializeField] HealthComponent playerHealth`：引用玩家 HealthComponent
+  - `[SerializeField] List<HealthComponent> enemyHealthComponents`：已注册的敌人列表
+  - `[SerializeField] int requiredKills = 3`：胜利所需击杀数
+  - `[SerializeField] TextMeshProUGUI progressText / resultText / restartHintText`：UI 文本引用（已在场景中绑定）
+  - 击杀数达到 requiredKills 时 Victory；玩家死亡时 Game Over
+  - 胜利/失败后按 R（`Keyboard.current.rKey.wasPressedThisFrame`）重载当前场景
+  - `RegisterEnemy(HealthComponent)`：公开接口，供动态生成的敌人注册，防重复注册
+  - 内部用 `HashSet<HealthComponent> _countedEnemies` 防重复计数，`bool _isLevelEnded` 防重复结算
+  - 使用 `MakeEnemyDiedHandler(enemy)` 闭包捕获，保证事件取消订阅正确匹配
+
 ### Spawner & Debug
-- `SkeletonSpawner.cs`：敌人生成器。
+- `SkeletonSpawner.cs`（`Assets/Scripts/Spawner/`）：敌人生成器。
+  - `SpawnSkeleton()` 末尾自动调用 `FindFirstObjectByType<LevelObjectiveManager>()?.RegisterEnemy(hc)`，动态生成的敌人自动计入关卡目标
+  - F1 调试菜单生成的骷髅通过此机制自动注册
 - `SkeletonDebugUI.cs`：调试用 UI。
 - `PhysicsLayerSetup.cs`：物理层设置。
 
@@ -77,6 +91,16 @@
   - Components: Transform, Animator, Rigidbody, CapsuleCollider, FactionComponent（faction=Skeleton）, FOVDetector, EnemyAI, HealthComponent, WorldHealthBar, EnemyDeathHandler
 - **Main Camera**
   - Components: RPGCameraController（target = Player Transform）
+- **LevelObjectiveManager**（空 GameObject）
+  - Components: LevelObjectiveManager
+  - Inspector 绑定：`playerHealth` = Player.HealthComponent、`enemyHealthComponents` = 场景内预置敌人列表、`progressText` / `resultText` / `restartHintText` = LevelUI 下各 TMP 文本
+- **LevelUI**（Canvas, Screen Space Overlay, sortingOrder=10）
+  - CanvasScaler、GraphicRaycaster
+  - 子对象：
+    - `ProgressText`（TextMeshProUGUI）：左上，字号 36，常时显示击杀进度
+    - `ResultText`（TextMeshProUGUI）：画面中央，黄色，字号 72，初始隐藏，Victory/Game Over 时显示
+    - `RestartHintText`（TextMeshProUGUI）：中央偏下，字号 32，初始隐藏，结算后显示"按 R 重新开始"
+  - 所有 TMP 文本字体：`SourceHanSansSC-Medium SDF`（Dynamic，支持中日英）
 - **Ground**、**Directional Light**、**Global Volume**、**DebugManager**、**SkeletonSpawnerManager**
 
 ### Prefabs
@@ -98,7 +122,11 @@
 
 ### Animation Events
 - `Skeleton_slash01.fbx` 第 20 帧：调用 `OnAttackHit()`（**方法名不可改**）
-- 玩家死亡动画：`Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/HumanM@CombatDamage01.fbx`、clip名 `HumanM@CombatDamage01`
+- 玩家死亡动画：`Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/HumanM@Death01.fbx`
+
+### Font Assets
+- `Assets/Fonts/09_SourceHanSansSC/OTF/SimplifiedChinese/SourceHanSansSC-Medium.otf`：源字体文件
+- `Assets/Fonts/09_SourceHanSansSC/TMP/SourceHanSansSC-Medium SDF.asset`：Dynamic TMP Font Asset（中日英，samplingPointSize=90，atlas=1024x1024，SDFAA）
 
 ## 5. Input / Control
 - 使用：New Input System 1.19.0
@@ -106,6 +134,7 @@
 - 目标选择：鼠标左键（Mouse.current.leftButton.wasPressedThisFrame）
 - 技能释放：键盘 1（Keyboard.current.digit1Key.wasPressedThisFrame）
 - 摄像机/玩家朝向：鼠标右键拖拽（RPGCameraController.LateUpdate）。死亡後は RPGCameraController ごと無効化。
+- 关卡重开：R 键（`Keyboard.current.rKey.wasPressedThisFrame`），仅在 Victory/Game Over 后生效
 
 ## 6. Completed Features
 - ✅ 玩家第三人称移动控制
@@ -117,7 +146,7 @@
 - ✅ 世界空间血条显示（头顶）
 - ✅ 敌人攻击动画 + Animation Event 伤害触发（OnAttackHit）
 - ✅ 攻击冷却机制（attackCooldown 默认 2 秒）
-- ✅ 骷髅敌人生成器
+- ✅ 骷髅敌人生成器（SkeletonSpawner）
 - ✅ 追击时 stoppingDistance 停止移动
 - ✅ 玩家鼠标左键选中敌对目标（PlayerTargeting）
 - ✅ 玩家按 1 使用普通攻击（PlayerSkillController，默认 20 伤害，2m 范围，1s 冷却）
