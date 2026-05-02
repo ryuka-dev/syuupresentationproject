@@ -42,7 +42,7 @@
 - `PlayerController.cs`：玩家输入处理、移动控制（New Input System）。`applyRootMotion = false`。
 - `RPGCameraController.cs`：第三人称相机跟随。右键拖拽时同步玩家朝向（`target.rotation`）。
 - `PlayerTargeting.cs`：鼠标左键点击，Physics.Raycast 检测目标，验证 HealthComponent + FactionComponent + 敌对关系后设为 `CurrentTarget`（public Transform，只读）。
-- `PlayerSkillController.cs`：按数字键 1 读取 `PlayerTargeting.CurrentTarget`，验证目标有效性后调用 `HealthComponent.TakeDamage(damage, transform)`（传入攻击来源）。
+- `PlayerSkillController.cs`：按数字键 1 读取 `PlayerTargeting.CurrentTarget`，验证目标有效性后调用 `HealthComponent.TakeDamage(damage, transform)`。攻击判定成功后调用 `animator.SetTrigger("Attack")` 触发攻击动画。持有 `_animator`、`_selfHealth` 引用（Awake 中 GetComponent 获取）。
 - `PlayerDeathHandler.cs`：挂载在 Player 上，监听 `HealthComponent.OnDied`，死亡时执行以下操作（通过 `_isDeadHandled` 防止重复）：
   - 禁用 `PlayerController`、`PlayerSkillController`、`PlayerTargeting`
   - 禁用 `RPGCameraController`（阻止右键改变玩家朝向）
@@ -86,7 +86,9 @@
 ### Scene Objects (SampleScene.unity)
 - **Player**
   - Components: Transform, Animator, CapsuleCollider, Rigidbody, PlayerController, FactionComponent（faction=Player）, HealthComponent, WorldHealthBar, PlayerTargeting, PlayerSkillController, PlayerDeathHandler
-  - HealthComponent と WorldHealthBar は各1インスタンスに整理済み
+  - 骨骼层级：`Armature/Root_M/.../Wrist_R/WeaponHolder_R/TempStaff`
+    - `WeaponHolder_R`：空 GameObject，挂在 Wrist_R（右手骨骼）下，作为武器挂点
+    - `TempStaff`：Cylinder（无 Collider、无 Rigidbody），localScale=(0.04, 0.70, 0.04)，localRotation=(90,0,0)，localPosition=(0,0,0.7)。位置可能需要在 Scene 视图微调。
 - **Skeleton_Enemy**
   - Components: Transform, Animator, Rigidbody, CapsuleCollider, FactionComponent（faction=Skeleton）, FOVDetector, EnemyAI, HealthComponent, WorldHealthBar, EnemyDeathHandler
 - **Main Camera**
@@ -94,13 +96,13 @@
 - **LevelObjectiveManager**（空 GameObject）
   - Components: LevelObjectiveManager
   - Inspector 绑定：`playerHealth` = Player.HealthComponent、`enemyHealthComponents` = 场景内预置敌人列表、`progressText` / `resultText` / `restartHintText` = LevelUI 下各 TMP 文本
-- **LevelUI**（Canvas, Screen Space Overlay, sortingOrder=10）
-  - CanvasScaler、GraphicRaycaster
+  - ⚠️ LevelUI 的 TMP 文本字体当前需要手动重新绑定为 `SourceHanSansSC-Medium_TMP`（见 Font Assets）
+- **LevelUI**（Canvas, Screen Space Overlay, sortingOrder=10, ScaleWithScreenSize 1920x1080）
+  - CanvasScaler（matchWidthOrHeight=0.5）、GraphicRaycaster
   - 子对象：
     - `ProgressText`（TextMeshProUGUI）：左上，字号 36，常时显示击杀进度
-    - `ResultText`（TextMeshProUGUI）：画面中央，黄色，字号 72，初始隐藏，Victory/Game Over 时显示
-    - `RestartHintText`（TextMeshProUGUI）：中央偏下，字号 32，初始隐藏，结算后显示"按 R 重新开始"
-  - 所有 TMP 文本字体：`SourceHanSansSC-Medium SDF`（Dynamic，支持中日英）
+    - `ResultText`（TextMeshProUGUI）：画面中央，初始隐藏，Victory/Game Over 时显示
+    - `RestartHintText`（TextMeshProUGUI）：中央偏下，初始隐藏，结算后显示「按 R 重新开始」
 - **Ground**、**Directional Light**、**Global Volume**、**DebugManager**、**SkeletonSpawnerManager**
 
 ### Prefabs
@@ -115,18 +117,30 @@
   - Any State → Death：`IsDead` Trigger（canTransitionToSelf=false）
   - Death 状态：clip=`root|death`（1.4s），无出口过渡
 - `Assets/Scripts/PlayerAnimator.controller`（玩家用）：
-  - 参数：`Speed`（Float）、`Horizontal`（Float）、`IsGrounded`（Bool）、`IsSprinting`（Bool）、`VerticalVelocity`（Float）、`IsJumping`（Bool）、`IsDead`（Trigger）
-  - 状态：Idle、RunForward、RunBackward、StrafeLeft、StrafeRight、Jump、JumpDown、FallingLoop、Sprint、Death
-  - Any State → Death：`IsDead` Trigger（canTransitionToSelf=false、hasExitTime=false）
-  - Death 状态：clip=`HumanM@CombatDamage01`（1.0s、非ループ）、**无出口过渡**
+  - **参数：** `Speed`（Float）、`Horizontal`（Float）、`IsGrounded`（Bool）、`IsSprinting`（Bool）、`VerticalVelocity`（Float）、`IsJumping`（Bool）、`IsDead`（Trigger）、`Attack`（Trigger）
+  - **Base Layer（移动/全身动画）：**
+    - 状态：Idle、RunForward、RunBackward、StrafeLeft、StrafeRight、Jump、JumpDown、FallingLoop、Sprint、Death
+    - Any State → Death：`IsDead` Trigger（hasExitTime=false）、Death 状态无出口过渡
+  - **UpperBody Layer（上半身攻击覆盖）：**
+    - Blending: Override、Weight: 1、Avatar Mask: `PlayerUpperBody`
+    - 状态：`UpperBodyIdle`（default、motion=`UpperBodyIdle.anim`空clip）、`Attack1H`（motion=`HumanM@Attack1H01_R`）
+    - Any State → Attack1H：`Attack` Trigger、hasExitTime=false、duration=0.05
+    - Attack1H → UpperBodyIdle：hasExitTime=true、exitTime=0.9、duration=0.1
+    - Any State → UpperBodyIdle：`IsDead` Trigger（死亡时清除攻击覆盖，确保全身死亡动画正常）
 
 ### Animation Events
 - `Skeleton_slash01.fbx` 第 20 帧：调用 `OnAttackHit()`（**方法名不可改**）
 - 玩家死亡动画：`Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/HumanM@Death01.fbx`
+- 玩家攻击动画：`Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/1H/HumanM@Attack1H01_R.fbx`（无 Animation Event，伤害由 PlayerSkillController 立即判定）
 
 ### Font Assets
-- `Assets/Fonts/09_SourceHanSansSC/OTF/SimplifiedChinese/SourceHanSansSC-Medium.otf`：源字体文件
-- `Assets/Fonts/09_SourceHanSansSC/TMP/SourceHanSansSC-Medium SDF.asset`：Dynamic TMP Font Asset（中日英，samplingPointSize=90，atlas=1024x1024，SDFAA）
+- `Assets/Fonts/09_SourceHanSansSC/OTF/SimplifiedChinese/SourceHanSansSC-Medium.otf`：源字体文件（不可修改）
+- `Assets/Fonts/09_SourceHanSansSC/TMP/SourceHanSansSC-Medium_TMP.asset`：Dynamic TMP Font Asset（samplingPointSize=90、atlas=2048x2048、SDFAA、padding=9、MultiAtlas=true）
+  - ⚠️ 旧的 `SourceHanSansSC-Medium SDF.asset` 已删除。新 asset 需手动绑定到场景中 3 个 TMP 文本组件。
+
+### Animation Assets（新增）
+- `Assets/Scripts/Animation/PlayerUpperBody.mask`：上半身 Avatar Mask（Head/Body/Arms/Fingers 有效，Legs/Root 无效）
+- `Assets/Scripts/Animation/UpperBodyIdle.anim`：空动画 clip，用于 UpperBody Layer 默认状态
 
 ## 5. Input / Control
 - 使用：New Input System 1.19.0
@@ -154,8 +168,13 @@
 - ✅ 死亡后 AI/物理/Collider 禁用，延迟销毁实体（EnemyDeathHandler）
 - ✅ 敌人仇恨系统：多目标列表 + 仇恨值排序 + 视野/受击两路加仇恨 + 距离脱战
 - ✅ 玩家死亡处理：禁用移动/攻击/目标选择/摄像机控制，物理静止，播放死亡动画（PlayerDeathHandler）
+- ✅ 玩家普通攻击动画：按 1 攻击成功时触发 `Attack` Trigger，UpperBody Layer 播放 `HumanM@Attack1H01_R`，结束后自动回到 UpperBodyIdle
+- ✅ 上半身/下半身动画分离：移动时攻击，下半身继续跑步，上半身播放攻击动画（PlayerUpperBody Avatar Mask）
+- ✅ 玩家右手临时长棍视觉模型（TempStaff，无 Collider/Rigidbody，跟随 Wrist_R 骨骼）
 
 ## 7. In Progress / Known Issues
+- ⚠️ **LevelUI TMP 字体未绑定**：旧字体 asset 已删除，新 `SourceHanSansSC-Medium_TMP.asset` 需手动拖拽绑定到 ProgressText / ResultText / RestartHintText 的 Font Asset 字段，否则中文不显示。
+- ⚠️ TempStaff 位置为自动估算值，实际握持位置可能需要在 Scene 视图微调 `WeaponHolder_R.localRotation` 或 `TempStaff.localPosition/Rotation`。
 - ⚠️ EntityStats.cs 未充分使用
 - ⚠️ 死亡后 PlayerTargeting.CurrentTarget 未主动清除（PlayerSkillController 有 null 检查保护，但引用仍存在）
 - ⚠️ EnemyDeathHandler 使用固定 destroyDelay 计时，未使用 Animation Event，时机可能受播放速度影响
@@ -177,8 +196,11 @@
   - `IsDead` Trigger 由 EnemyDeathHandler 触发，不可回到其他状态
   - `OnAttackHit()` 方法名不可改（Animation Event 绑定）
 - **玩家（PlayerAnimator.controller）**：
-  - Death 状态无出口过渡，死亡后不会自动回到其他状态，不可添加出口
+  - Base Layer 的 Death 状态无出口过渡，不可添加出口
   - `IsDead` Trigger 由 PlayerDeathHandler 触发
+  - `Attack` Trigger 由 PlayerSkillController 触发，仅在 UpperBody Layer 使用
+  - UpperBody Layer 的 `AnyState → UpperBodyIdle`（IsDead 条件）确保死亡时全身死亡动画不被上半身层覆盖，不可删除
+  - `UpperBodyIdle` 状态必须有 motion（当前为 `UpperBodyIdle.anim` 空 clip），设为 null 会导致 Inspector DoPopup NullReferenceException 报错刷屏
 
 ### 代码修改原则
 - Rigidbody 使用 `rb.linearVelocity`（Unity 6）
@@ -192,41 +214,45 @@
 - `Assets/Scripts/Enemy/FactionSystem.cs`：阵营枚举和 `ShouldAttack()` 接口
 - `Assets/Scripts/HealthComponent.cs`：`TakeDamage(float/float+Transform)`、`IsDead`、`OnDied`、`OnDamaged` 事件
 - `Assets/Scripts/Player/PlayerTargeting.cs`：`CurrentTarget`（public Transform, get-only）
-- `Assets/Scripts/Player/PlayerSkillController.cs`：技能判定 + 伤害调用
+- `Assets/Scripts/Player/PlayerSkillController.cs`：技能判定 + 伤害调用 + `Attack` Trigger 触发
 - `Assets/Scripts/Player/PlayerDeathHandler.cs`：玩家死亡处理，`_isDeadHandled` 防重复，禁用5个组件 + Rigidbody isKinematic + IsDead Trigger
 
 ### 核心资产
 - `Assets/Scripts/SkeletonAnimator.controller`：参数 Speed/IsAttacking/IsDead，状态 Idle/Walk/Attack/Death
-- `Assets/Scripts/PlayerAnimator.controller`：参数含 IsDead Trigger，Death 状态无出口过渡
+- `Assets/Scripts/PlayerAnimator.controller`：2层结构（Base Layer + UpperBody Layer），参数含 IsDead/Attack Trigger，详见第 4 节
+- `Assets/Scripts/Animation/PlayerUpperBody.mask`：上半身 Avatar Mask，UpperBody Layer 依赖此文件
+- `Assets/Scripts/Animation/UpperBodyIdle.anim`：UpperBody Layer 默认状态 clip，不可删除
 - `Assets/SazenGames/Skeleton/Art/Animations/Skeleton_slash01.fbx`：第 20 帧 Animation Event
 - `Assets/SazenGames/Skeleton/Art/Animations/Skeleton_death.fbx`：clip `root|death`，1.4s
 - `Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/HumanM@Death01.fbx`：玩家死亡动画，clip `HumanM@CombatDamage01`（1.0s）
+- `Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/1H/HumanM@Attack1H01_R.fbx`：玩家普通攻击动画
+- `Assets/Fonts/09_SourceHanSansSC/TMP/SourceHanSansSC-Medium_TMP.asset`：当前唯一中文 TMP Font Asset，需手动绑定到 LevelUI 的 3 个 TMP 文本
 - `Assets/Resources/SkeletonEnemy.prefab`：含 EnemyDeathHandler
 
 ### 不应修改的文件
 - `Assets/Blink/`：第三方角色资产
 - `Assets/SazenGames/`：第三方骷髅资产（模型/贴图本体）
+- `Assets/Fonts/09_SourceHanSansSC/OTF/SimplifiedChinese/SourceHanSansSC-Medium.otf`：源字体，不可改
 - `Packages/manifest.json`：包配置
 
 ## 10. Next Suggested Tasks
 
 ### ⭐ 最推荐的下一个小任务
-**玩家普通攻击动画**：按 1 攻击时播放玩家挥击动作，需要在 PlayerAnimator.controller 中添加 Attack 状态和过渡，在 PlayerSkillController 中调用 SetTrigger。
+**绑定新 TMP Font Asset**：将 `SourceHanSansSC-Medium_TMP.asset` 手动拖拽到 LevelUI 下 ProgressText / ResultText / RestartHintText 的 Font Asset 字段，并确认 Play Mode 中中文正常显示。（已绑定）
 
-### 优先级 1：战斗体验
-1. ⭐ 玩家普通攻击动画（PlayerAnimator.controller + PlayerSkillController）
-2. Game Over UI：玩家死亡后显示简单的"Game Over"提示界面
-3. 玩家死亡后相机演出（死亡时 RPGCameraController 被禁用，可改为死亡镜头而非静止）
+### 优先级 1：待解决
+1. TempStaff 握持位置微调（在 Scene 视图中调整 WeaponHolder_R.localRotation 和 TempStaff.localPosition）
+2. 玩家死亡后相机演出（死亡时 RPGCameraController 被禁用，可改为死亡镜头而非静止）
 
 ### 优先级 2：系统完善
-4. 死亡后主动清除 `PlayerTargeting.CurrentTarget`（PlayerDeathHandler 中 `_targeting.CurrentTarget` 无法直接清除，需为 PlayerTargeting 添加 `ClearTarget()` 方法）
+4. 死亡后主动清除 `PlayerTargeting.CurrentTarget`（需为 PlayerTargeting 添加 `ClearTarget()` 方法）
 5. 集成 EntityStats 系统，支持攻击力/血量等属性可配置
 6. 将 `FindObjectsOfType<FactionComponent>()` 替换为注册缓存，减少 EnemyAI 扫描开销
 
 ---
 
-**最后更新**：2026-05-01
+**最后更新**：2026-05-02
 **本次有效变更**：
-1. 新增 `PlayerDeathHandler.cs`（`Assets/Scripts/Player/`）：玩家死亡时禁用 PlayerController / PlayerSkillController / PlayerTargeting / RPGCameraController，Rigidbody 速度清零并设 isKinematic，触发死亡动画 IsDead Trigger。
-2. `PlayerAnimator.controller` 新增 `IsDead` Trigger 参数、`Death` 状态（clip: `HumanM@CombatDamage01`，1.0s）、Any State → Death 无出口过渡。
-3. Player 上多余的 HealthComponent / WorldHealthBar 实例已手动删除，当前各保留1个。
+1. 玩家普通攻击动画实装：`PlayerSkillController.cs` 追加 `_animator`/`_selfHealth` 引用，攻击成功后调用 `animator.SetTrigger("Attack")`；`PlayerAnimator.controller` 新增 `Attack` Trigger 参数和 `UpperBody` Layer（Avatar Mask: PlayerUpperBody，Override Weight=1），含 `Attack1H` 状态和返回 `UpperBodyIdle` 的过渡；移动时攻击下半身不受影响。
+2. Player 右手添加临时长棍视觉模型：`Wrist_R` 骨骼下创建 `WeaponHolder_R`，其下挂 `TempStaff`（Cylinder，无 Collider，scale=0.04/0.70/0.04），跟随攻击动画。
+3. TMP 字体 asset 重建：旧 `SourceHanSansSC-Medium SDF.asset` 已删除，新建 `SourceHanSansSC-Medium_TMP.asset`（Dynamic、2048x2048、SDFAA），已手动绑定到场景 TMP 文本。

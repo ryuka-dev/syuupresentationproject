@@ -4,6 +4,7 @@ using UnityEngine.InputSystem;
 /// <summary>
 /// 玩家技能输入控制器
 /// 按数字键 1 对当前目标释放普通攻击并造成伤害。
+/// 攻击成功时触发 Animator 的 Attack Trigger 播放攻击动画。
 /// </summary>
 public class PlayerSkillController : MonoBehaviour
 {
@@ -14,6 +15,8 @@ public class PlayerSkillController : MonoBehaviour
 
     private PlayerTargeting  _targeting;
     private FactionComponent _selfFaction;
+    private HealthComponent  _selfHealth;
+    private Animator         _animator;
     private float            _cooldownTimer;
 
     private void Awake()
@@ -25,6 +28,11 @@ public class PlayerSkillController : MonoBehaviour
         _selfFaction = GetComponent<FactionComponent>();
         if (_selfFaction == null)
             Debug.LogWarning("[PlayerSkillController] FactionComponent が見つかりません。");
+
+        _selfHealth = GetComponent<HealthComponent>();
+        _animator   = GetComponent<Animator>();
+        if (_animator == null)
+            Debug.LogWarning("[PlayerSkillController] Animator が見つかりません。攻撃動画は再生されません。");
     }
 
     private void Update()
@@ -103,7 +111,13 @@ public class PlayerSkillController : MonoBehaviour
 
         // 8. 全部通过 — 造成伤害
         _cooldownTimer = normalAttackCooldown;
-        health.TakeDamage(normalAttackDamage, transform);;
+        health.TakeDamage(normalAttackDamage, transform);
         Debug.Log($"[PlayerSkillController] Normal Attack hit {target.name} for {normalAttackDamage} damage.");
+
+        // 9. 触发攻击动画（玩家未死亡时）
+        if (_animator != null && (_selfHealth == null || !_selfHealth.IsDead))
+        {
+            _animator.SetTrigger("Attack");
+        }
     }
 }
