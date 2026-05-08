@@ -54,4 +54,11 @@ public class PlayerTargeting : MonoBehaviour
         CurrentTarget = faction.transform;
         Debug.Log($"[PlayerTargeting] 当前目标：{CurrentTarget.name}");
     }
+
+
+public void ClearTarget()
+    {
+        CurrentTarget = null;
+        Debug.Log("[PlayerTargeting] CurrentTarget cleared.");
+    }
 }

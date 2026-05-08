@@ -41,14 +41,26 @@
 ### Player 系统
 - `PlayerController.cs`：玩家输入处理、移动控制（New Input System）。`applyRootMotion = false`。
 - `RPGCameraController.cs`：第三人称相机跟随。右键拖拽时同步玩家朝向（`target.rotation`）。
-- `PlayerTargeting.cs`：鼠标左键点击，Physics.Raycast 检测目标，验证 HealthComponent + FactionComponent + 敌对关系后设为 `CurrentTarget`（public Transform，只读）。
+- `PlayerTargeting.cs`：鼠标左键点击，Physics.Raycast 检测目标，验证 HealthComponent + FactionComponent + 敌对关系后设为 `CurrentTarget`（public Transform，只读）。提供 `ClearTarget()` 方法，用于在玩家死亡等场景主动清空当前目标。
 - `PlayerSkillController.cs`：按数字键 1 读取 `PlayerTargeting.CurrentTarget`，验证目标有效性后调用 `HealthComponent.TakeDamage(damage, transform)`。攻击判定成功后调用 `animator.SetTrigger("Attack")` 触发攻击动画。持有 `_animator`、`_selfHealth` 引用（Awake 中 GetComponent 获取）。
 - `PlayerDeathHandler.cs`：挂载在 Player 上，监听 `HealthComponent.OnDied`，死亡时执行以下操作（通过 `_isDeadHandled` 防止重复）：
+  - 调用 `PlayerTargeting.ClearTarget()` 清除当前锁定目标
   - 禁用 `PlayerController`、`PlayerSkillController`、`PlayerTargeting`
   - 禁用 `RPGCameraController`（阻止右键改变玩家朝向）
   - 清零 Rigidbody 速度并设置 `isKinematic = true`（防止斜面滑动）
   - 调用 `animator.SetTrigger("IsDead")` 播放死亡动画
   - 输出 `[PlayerDeathHandler] Player died. Controls disabled.`
+  
+### Respawn / SavePoint 基础系统
+- `PlayerRespawnPointTracker.cs`：挂载在 Player 上，记录当前最近复活点的位置和朝向。
+  - `CurrentRespawnPosition`：当前最近复活点位置，只读属性
+  - `CurrentRespawnRotation`：当前最近复活点朝向，只读属性
+  - `Awake()`：默认将玩家初始位置和朝向作为初始复活点
+  - `SetRespawnPoint(Vector3, Quaternion)`：更新最近复活点位置和朝向，并输出 Debug.Log
+- `SavePoint.cs`：挂载在复活点对象上，通过 Trigger 检测玩家进入。
+  - `OnTriggerEnter(Collider other)`：从进入对象上查找 `PlayerRespawnPointTracker`
+  - 找到后调用 `SetRespawnPoint(transform.position, transform.rotation)`
+  - 使用 `_hasActivated` 防止同一个 SavePoint 反复触发日志
 
 ### Health & Combat
 - `HealthComponent.cs`：通用血量组件。
@@ -75,7 +87,9 @@
 - `SkeletonSpawner.cs`（`Assets/Scripts/Spawner/`）：敌人生成器。
   - `SpawnSkeleton()` 末尾自动调用 `FindFirstObjectByType<LevelObjectiveManager>()?.RegisterEnemy(hc)`，动态生成的敌人自动计入关卡目标
   - F1 调试菜单生成的骷髅通过此机制自动注册
-- `SkeletonDebugUI.cs`：调试用 UI。
+- `SkeletonDebugUI.cs`：调试用 UI（F1 开关）。
+  - "恢复玩家满血" 按钮：查找 FactionComponent(Player) 并调用 HealthComponent.RestoreFullHealth()。
+  - "复活玩家测试" 按钮：依次调用 RestoreFullHealth() → ResetForRespawn() → ClearLevelResultForRespawn()，实现 Debug 级别完整复活（不传送到复活点）。
 - `PhysicsLayerSetup.cs`：物理层设置。
 
 ### Stats（未充分使用）
@@ -85,10 +99,10 @@
 
 ### Scene Objects (SampleScene.unity)
 - **Player**
-  - Components: Transform, Animator, CapsuleCollider, Rigidbody, PlayerController, FactionComponent（faction=Player）, HealthComponent, WorldHealthBar, PlayerTargeting, PlayerSkillController, PlayerDeathHandler
+  - Components: Transform, Animator, CapsuleCollider, Rigidbody, PlayerController, FactionComponent（faction=Player）, HealthComponent, WorldHealthBar, PlayerTargeting, PlayerSkillController, PlayerDeathHandler, PlayerRespawnPointTracker
   - 骨骼层级：`Armature/Root_M/.../Wrist_R/WeaponHolder_R/TempStaff`
     - `WeaponHolder_R`：空 GameObject，挂在 Wrist_R（右手骨骼）下，作为武器挂点
-    - `TempStaff`：Cylinder（无 Collider、无 Rigidbody），localScale=(0.04, 0.70, 0.04)，localRotation=(90,0,0)，localPosition=(0,0,0.7)。位置可能需要在 Scene 视图微调。
+    - `TempStaff`：Cylinder（无 Collider、无 Rigidbody），已调整到右手握持位置，跟随 Wrist_R / WeaponHolder_R 运动。
 - **Skeleton_Enemy**
   - Components: Transform, Animator, Rigidbody, CapsuleCollider, FactionComponent（faction=Skeleton）, FOVDetector, EnemyAI, HealthComponent, WorldHealthBar, EnemyDeathHandler
 - **Main Camera**
@@ -104,6 +118,10 @@
     - `ResultText`（TextMeshProUGUI）：画面中央，初始隐藏，Victory/Game Over 时显示
     - `RestartHintText`（TextMeshProUGUI）：中央偏下，初始隐藏，结算后显示「按 R 重新开始」
 - **Ground**、**Directional Light**、**Global Volume**、**DebugManager**、**SkeletonSpawnerManager**
+- **SavePoint**
+  - Components: Transform, BoxCollider（Is Trigger=true）, SavePoint
+  - 用途：玩家进入 Trigger 后更新 `PlayerRespawnPointTracker` 中保存的最近复活点位置和朝向
+  - 当前仅记录复活点，不执行真正复活
 
 ### Prefabs
 - `Assets/Resources/SkeletonEnemy.prefab`：含 EnemyDeathHandler
@@ -171,12 +189,16 @@
 - ✅ 玩家普通攻击动画：按 1 攻击成功时触发 `Attack` Trigger，UpperBody Layer 播放 `HumanM@Attack1H01_R`，结束后自动回到 UpperBodyIdle
 - ✅ 上半身/下半身动画分离：移动时攻击，下半身继续跑步，上半身播放攻击动画（PlayerUpperBody Avatar Mask）
 - ✅ 玩家右手临时长棍视觉模型（TempStaff，无 Collider/Rigidbody，跟随 Wrist_R 骨骼）
+- ✅ 玩家死亡时主动清除当前锁定目标：`PlayerTargeting.ClearTarget()` 会将 `CurrentTarget` 设为 null，`PlayerDeathHandler` 在死亡流程中先清除目标再禁用 `PlayerTargeting`。
+- ✅ 复活点记录基础功能：玩家进入 SavePoint Trigger 后，会记录最近复活点的位置和朝向。
+- ✅ 复活用恢复满血接口：HealthComponent.RestoreFullHealth() 可将 currentHealth 恢复为 maxHealth 并触发 OnHealthChanged。
+- ✅ 玩家死亡状态恢复接口：PlayerDeathHandler.ResetForRespawn() 可恢复控制/物理/Animator 状态，使玩家重新可操作。
+- ✅ Debug 复活后结算 UI 清理：LevelObjectiveManager.ClearLevelResultForRespawn() 可隐藏 Game Over / Victory UI 并重置 _isLevelEnded。
+- ✅ Debug UI 完整复活测试："复活玩家测试" 按钮依次调用上述三个接口，可在不重载场景的情况下完成 Debug 级别复活。
 
 ## 7. In Progress / Known Issues
 - ⚠️ **LevelUI TMP 字体未绑定**：旧字体 asset 已删除，新 `SourceHanSansSC-Medium_TMP.asset` 需手动拖拽绑定到 ProgressText / ResultText / RestartHintText 的 Font Asset 字段，否则中文不显示。
-- ⚠️ TempStaff 位置为自动估算值，实际握持位置可能需要在 Scene 视图微调 `WeaponHolder_R.localRotation` 或 `TempStaff.localPosition/Rotation`。
 - ⚠️ EntityStats.cs 未充分使用
-- ⚠️ 死亡后 PlayerTargeting.CurrentTarget 未主动清除（PlayerSkillController 有 null 检查保护，但引用仍存在）
 - ⚠️ EnemyDeathHandler 使用固定 destroyDelay 计时，未使用 Animation Event，时机可能受播放速度影响
 - ⚠️ `ScanForTarget()` 每 0.2s 调用 `FindObjectsOfType<FactionComponent>()`，敌人数量多时有性能隐患
 - ⚠️ 玩家死亡后 RPGCameraController 被整体禁用，相机静止在死亡位置（无死亡镜头演出）
@@ -216,6 +238,8 @@
 - `Assets/Scripts/Player/PlayerTargeting.cs`：`CurrentTarget`（public Transform, get-only）
 - `Assets/Scripts/Player/PlayerSkillController.cs`：技能判定 + 伤害调用 + `Attack` Trigger 触发
 - `Assets/Scripts/Player/PlayerDeathHandler.cs`：玩家死亡处理，`_isDeadHandled` 防重复，禁用5个组件 + Rigidbody isKinematic + IsDead Trigger
+- `Assets/Scripts/Player/PlayerRespawnPointTracker.cs`：玩家最近复活点记录组件，当前只负责保存位置和朝向，不负责真正复活。
+- `Assets/Scripts/Level/SavePoint.cs`：复活点触发器，进入 Trigger 后调用 `PlayerRespawnPointTracker.SetRespawnPoint()`。
 
 ### 核心资产
 - `Assets/Scripts/SkeletonAnimator.controller`：参数 Speed/IsAttacking/IsDead，状态 Idle/Walk/Attack/Death
@@ -241,7 +265,6 @@
 **绑定新 TMP Font Asset**：将 `SourceHanSansSC-Medium_TMP.asset` 手动拖拽到 LevelUI 下 ProgressText / ResultText / RestartHintText 的 Font Asset 字段，并确认 Play Mode 中中文正常显示。（已绑定）
 
 ### 优先级 1：待解决
-1. TempStaff 握持位置微调（在 Scene 视图中调整 WeaponHolder_R.localRotation 和 TempStaff.localPosition）
 2. 玩家死亡后相机演出（死亡时 RPGCameraController 被禁用，可改为死亡镜头而非静止）
 
 ### 优先级 2：系统完善
@@ -251,8 +274,11 @@
 
 ---
 
-**最后更新**：2026-05-02
+**最后更新**：2026-05-08
 **本次有效变更**：
-1. 玩家普通攻击动画实装：`PlayerSkillController.cs` 追加 `_animator`/`_selfHealth` 引用，攻击成功后调用 `animator.SetTrigger("Attack")`；`PlayerAnimator.controller` 新增 `Attack` Trigger 参数和 `UpperBody` Layer（Avatar Mask: PlayerUpperBody，Override Weight=1），含 `Attack1H` 状态和返回 `UpperBodyIdle` 的过渡；移动时攻击下半身不受影响。
-2. Player 右手添加临时长棍视觉模型：`Wrist_R` 骨骼下创建 `WeaponHolder_R`，其下挂 `TempStaff`（Cylinder，无 Collider，scale=0.04/0.70/0.04），跟随攻击动画。
-3. TMP 字体 asset 重建：旧 `SourceHanSansSC-Medium SDF.asset` 已删除，新建 `SourceHanSansSC-Medium_TMP.asset`（Dynamic、2048x2048、SDFAA），已手动绑定到场景 TMP 文本。
+1. `HealthComponent.cs` 新增 `RestoreFullHealth()`：将 currentHealth 恢复为 maxHealth，触发 OnHealthChanged，不触发 OnDied / OnDamaged。
+2. `PlayerDeathHandler.cs` 新增 `ResetForRespawn()`：恢复死亡时禁用的 PlayerController / PlayerSkillController / PlayerTargeting / RPGCameraController、Rigidbody 物理状态、Animator（Rebind+Update）。
+3. `LevelObjectiveManager.cs` 新增 `ClearLevelResultForRespawn()`：隐藏 Game Over / Victory 结算 UI，重置 _isLevelEnded，不改变击杀数。
+4. `SkeletonDebugUI.cs` 新增 "恢复玩家满血" 和 "复活玩家测试" 两个 Debug 按钮；后者完整串联上述三个接口，可在 Play Mode 中 Debug 复活玩家（不传送到复活点）。
+5. 测试确认：玩家死亡后点击 Debug 复活按钮，可正常恢复移动、攻击、摄像机控制，敌人仇恨系统恢复正常，Game Over UI 消失，_isLevelEnded 重置后可再次触发死亡结算。
+6. 本次未修改 Animator Controller、Prefab、Scene，未实现传送到 SavePoint。

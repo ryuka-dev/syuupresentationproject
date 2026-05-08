@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 /// <summary>
 /// 玩家死亡处理器。挂载在 Player 对象上。
@@ -58,7 +58,10 @@ public class PlayerDeathHandler : MonoBehaviour
 
         // 禁用目标选择
         if (_targeting != null)
+        {
+            _targeting.ClearTarget();
             _targeting.enabled = false;
+        }
 
         // 禁用右クリック朝向制御（RPGCameraController を無効化）
         if (_cameraController != null)
@@ -77,5 +80,41 @@ public class PlayerDeathHandler : MonoBehaviour
             _animator.SetTrigger("IsDead");
 
         Debug.Log("[PlayerDeathHandler] Player died. Controls disabled.");
+    }
+
+    /// <summary>
+    /// 复活专用：将 PlayerDeathHandler 在死亡时修改过的玩家状态恢复为可操作状态。
+    /// 不恢复 HP、不传送玩家、不处理 UI。
+    /// </summary>
+    public void ResetForRespawn()
+    {
+        _isDeadHandled = false;
+
+        if (_rb != null)
+        {
+            _rb.linearVelocity  = Vector3.zero;
+            _rb.angularVelocity = Vector3.zero;
+            _rb.isKinematic     = false;
+        }
+
+        if (_animator != null)
+        {
+            _animator.Rebind();
+            _animator.Update(0f);
+        }
+
+        if (_playerController != null)
+            _playerController.enabled = true;
+
+        if (_skillController != null)
+            _skillController.enabled = true;
+
+        if (_targeting != null)
+            _targeting.enabled = true;
+
+        if (_cameraController != null)
+            _cameraController.enabled = true;
+
+        Debug.Log("[PlayerDeathHandler] Player reset for respawn.");
     }
 }

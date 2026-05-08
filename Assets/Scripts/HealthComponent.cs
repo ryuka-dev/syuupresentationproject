@@ -45,5 +45,17 @@ public class HealthComponent : MonoBehaviour
         currentHealth = Mathf.Min(maxHealth, currentHealth + amount);
         OnHealthChanged?.Invoke(currentHealth, maxHealth);
     }
+
+    /// <summary>
+    /// 复活专用接口：将生命值恢复至最大值，并触发 OnHealthChanged 以刷新 UI 血条。
+    /// 不触发 OnDied / OnDamaged。若 HealthComponent 内无额外死亡 bool，
+    /// 调用后 IsDead 自然变为 false（currentHealth > 0）。
+    /// </summary>
+    public void RestoreFullHealth()
+    {
+        currentHealth = maxHealth;
+        Debug.Log($"[Health] RestoreFullHealth() called. currentHealth={currentHealth}");
+        OnHealthChanged?.Invoke(currentHealth, maxHealth);
+    }
 }
 

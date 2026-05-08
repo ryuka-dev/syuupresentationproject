@@ -162,4 +162,21 @@ public class LevelObjectiveManager : MonoBehaviour
         enemyHealthComponents.Add(enemy);
         enemy.OnDied += MakeEnemyDiedHandler(enemy);
     }
+
+    /// <summary>
+    /// Debug / 复活专用：清除当前结算 UI，并将关卡从结算状态恢复为进行中。
+    /// 不重置击杀数、不复活敌人、不重载场景、不清空 progressText。
+    /// </summary>
+    public void ClearLevelResultForRespawn()
+    {
+        _isLevelEnded = false;
+
+        if (resultText != null)
+            resultText.gameObject.SetActive(false);
+
+        if (restartHintText != null)
+            restartHintText.gameObject.SetActive(false);
+
+        Debug.Log("[LevelObjectiveManager] Level result UI cleared for respawn.");
+    }
 }
