@@ -17,7 +17,7 @@ public class SkeletonDebugUI : MonoBehaviour
     {
         if (!showUI) return;
 
-        GUILayout.BeginArea(new Rect(20, 20, 300, 370));
+        GUILayout.BeginArea(new Rect(20, 20, 300, 430));
 
         GUILayout.Label("Skeleton Spawner", new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold });
         GUILayout.Space(10);
@@ -49,64 +49,114 @@ public class SkeletonDebugUI : MonoBehaviour
             RespawnPlayerTest();
         GUI.backgroundColor = Color.white;
 
+        GUI.backgroundColor = new Color(1f, 0.75f, 0.2f);
+        if (GUILayout.Button("\u590d\u6d3b\u5230\u6700\u8fd1\u5b58\u6863\u70b9", GUILayout.Height(40)))
+            RespawnPlayerAtSavePointTest();
+        GUI.backgroundColor = Color.white;
+
         GUILayout.Label("F1: Toggle");
 
         GUILayout.EndArea();
     }
 
-    private void RestorePlayerFullHealth()
+    // ────────────────────────────────────────────────
+    // ヘルパー：FactionComponent(Player) からゲームオブジェクトを取得
+    // ────────────────────────────────────────────────
+    private GameObject FindPlayerGameObject()
     {
         var factions = FindObjectsByType<FactionComponent>(FindObjectsSortMode.None);
         foreach (var fc in factions)
         {
             if (fc.faction == Faction.Player)
-            {
-                var health = fc.GetComponent<HealthComponent>();
-                if (health != null)
-                {
-                    Debug.Log("[DebugUI] Restore player full health button clicked.");
-                    health.RestoreFullHealth();
-                    return;
-                }
-            }
+                return fc.gameObject;
         }
-        Debug.LogWarning("[DebugUI] Player HealthComponent not found.");
+        return null;
     }
 
+    // ────────────────────────────────────────────────
+    // ボタン1: 恢复玩家满血
+    // ────────────────────────────────────────────────
+    private void RestorePlayerFullHealth()
+    {
+        var player = FindPlayerGameObject();
+        if (player == null) { Debug.LogWarning("[DebugUI] Player not found."); return; }
+
+        var health = player.GetComponent<HealthComponent>();
+        if (health == null) { Debug.LogWarning("[DebugUI] Player HealthComponent not found."); return; }
+
+        Debug.Log("[DebugUI] Restore player full health button clicked.");
+        health.RestoreFullHealth();
+    }
+
+    // ────────────────────────────────────────────────
+    // ボタン2: 原地复活玩家测试
+    // ────────────────────────────────────────────────
     private void RespawnPlayerTest()
     {
-        var factions = FindObjectsByType<FactionComponent>(FindObjectsSortMode.None);
-        foreach (var fc in factions)
+        var player = FindPlayerGameObject();
+        if (player == null) { Debug.LogWarning("[DebugUI] Player not found."); return; }
+
+        var health       = player.GetComponent<HealthComponent>();
+        var deathHandler = player.GetComponent<PlayerDeathHandler>();
+
+        if (health == null)       { Debug.LogWarning("[DebugUI] Player HealthComponent not found."); return; }
+        if (deathHandler == null) { Debug.LogWarning("[DebugUI] PlayerDeathHandler not found.");     return; }
+
+        health.RestoreFullHealth();
+        deathHandler.ResetForRespawn();
+
+        var levelManager = FindFirstObjectByType<LevelObjectiveManager>();
+        if (levelManager != null)
+            levelManager.ClearLevelResultForRespawn();
+        else
+            Debug.LogWarning("[DebugUI] LevelObjectiveManager not found. UI not cleared.");
+
+        Debug.Log("[DebugUI] Player respawn test executed.");
+    }
+
+    // ────────────────────────────────────────────────
+    // ボタン3: 复活到最近存档点
+    // ────────────────────────────────────────────────
+    private void RespawnPlayerAtSavePointTest()
+    {
+        var player = FindPlayerGameObject();
+        if (player == null) { Debug.LogWarning("[DebugUI] Player not found."); return; }
+
+        var health          = player.GetComponent<HealthComponent>();
+        var deathHandler    = player.GetComponent<PlayerDeathHandler>();
+        var respawnTracker  = player.GetComponent<PlayerRespawnPointTracker>();
+
+        if (health == null)
         {
-            if (fc.faction == Faction.Player)
-            {
-                var health       = fc.GetComponent<HealthComponent>();
-                var deathHandler = fc.GetComponent<PlayerDeathHandler>();
-
-                if (health == null)
-                {
-                    Debug.LogWarning("[DebugUI] Player HealthComponent not found.");
-                    return;
-                }
-                if (deathHandler == null)
-                {
-                    Debug.LogWarning("[DebugUI] PlayerDeathHandler not found.");
-                    return;
-                }
-
-                health.RestoreFullHealth();
-                deathHandler.ResetForRespawn();
-
-                var levelManager = FindFirstObjectByType<LevelObjectiveManager>();
-                if (levelManager != null)
-                    levelManager.ClearLevelResultForRespawn();
-                else
-                    Debug.LogWarning("[DebugUI] LevelObjectiveManager not found. UI not cleared.");
-
-                Debug.Log("[DebugUI] Player respawn test executed.");
-                return;
-            }
+            Debug.LogWarning("[DebugUI] Player HealthComponent not found.");
+            return;
         }
-        Debug.LogWarning("[DebugUI] Player (FactionComponent) not found.");
+        if (deathHandler == null)
+        {
+            Debug.LogWarning("[DebugUI] PlayerDeathHandler not found.");
+            return;
+        }
+        if (respawnTracker == null)
+        {
+            Debug.LogWarning("[DebugUI] PlayerRespawnPointTracker not found.");
+            return;
+        }
+
+        // 先传送到最近存档点，再恢复物理/控制（ResetForRespawn 会清零速度）
+        player.transform.SetPositionAndRotation(
+            respawnTracker.CurrentRespawnPosition,
+            respawnTracker.CurrentRespawnRotation
+        );
+
+        health.RestoreFullHealth();
+        deathHandler.ResetForRespawn();
+
+        var levelManager = FindFirstObjectByType<LevelObjectiveManager>();
+        if (levelManager != null)
+            levelManager.ClearLevelResultForRespawn();
+        else
+            Debug.LogWarning("[DebugUI] LevelObjectiveManager not found. UI not cleared.");
+
+        Debug.Log($"[DebugUI] Player respawned at SavePoint: {respawnTracker.CurrentRespawnPosition}");
     }
 }

@@ -82,15 +82,43 @@
   - `RegisterEnemy(HealthComponent)`：公开接口，供动态生成的敌人注册，防重复注册
   - 内部用 `HashSet<HealthComponent> _countedEnemies` 防重复计数，`bool _isLevelEnded` 防重复结算
   - 使用 `MakeEnemyDiedHandler(enemy)` 闭包捕获，保证事件取消订阅正确匹配
+  - `ClearLevelResultForRespawn()`：Debug 复活测试用接口。
+    - 将 `_isLevelEnded` 重置为 false
+    - 隐藏 `resultText`
+    - 隐藏 `restartHintText`
+    - 不清空 `progressText`
+    - 不重置击杀数
+    - 不复活敌人
+    - 不重载场景
 
 ### Spawner & Debug
 - `SkeletonSpawner.cs`（`Assets/Scripts/Spawner/`）：敌人生成器。
   - `SpawnSkeleton()` 末尾自动调用 `FindFirstObjectByType<LevelObjectiveManager>()?.RegisterEnemy(hc)`，动态生成的敌人自动计入关卡目标
   - F1 调试菜单生成的骷髅通过此机制自动注册
-- `SkeletonDebugUI.cs`：调试用 UI（F1 开关）。
-  - "恢复玩家满血" 按钮：查找 FactionComponent(Player) 并调用 HealthComponent.RestoreFullHealth()。
-  - "复活玩家测试" 按钮：依次调用 RestoreFullHealth() → ResetForRespawn() → ClearLevelResultForRespawn()，实现 Debug 级别完整复活（不传送到复活点）。
+- `SkeletonDebugUI.cs`：调试用 UI。
+  - 可生成调试用骷髅
+  - 提供“恢复玩家满血”按钮：调用 `HealthComponent.RestoreFullHealth()`
+  - 提供“原地复活测试”按钮：调用 `RestoreFullHealth()` + `PlayerDeathHandler.ResetForRespawn()`
+  - 提供“复活到最近存档点”按钮：
+    - 读取 Player 上的 `PlayerRespawnPointTracker`
+    - 将 Player 传送到 `CurrentRespawnPosition / CurrentRespawnRotation`
+    - 调用 `HealthComponent.RestoreFullHealth()`
+    - 调用 `PlayerDeathHandler.ResetForRespawn()`
+    - 如已接入，则调用 `LevelObjectiveManager.ClearLevelResultForRespawn()` 清理结算 UI
 - `PhysicsLayerSetup.cs`：物理层设置。
+
+### Debug Respawn 测试流程
+- 当前已形成最小 Debug 复活测试闭环：
+  1. 玩家进入 SavePoint Trigger
+  2. `SavePoint` 调用 `PlayerRespawnPointTracker.SetRespawnPoint()`
+  3. 玩家死亡
+  4. Debug UI 点击“复活到最近存档点”
+  5. Player 传送到最近记录的复活点位置和朝向
+  6. `HealthComponent.RestoreFullHealth()` 恢复 HP
+  7. `PlayerDeathHandler.ResetForRespawn()` 恢复控制、相机、Rigidbody 和 Animator 状态
+  8. 如已接入，`LevelObjectiveManager.ClearLevelResultForRespawn()` 清理结算 UI
+- 注意：该流程仍属于 Debug 测试功能，不是正式游戏 UI / 正式复活系统。
+
 
 ### Stats（未充分使用）
 - `EntityStats.cs`：已创建但未集成。
@@ -122,6 +150,10 @@
   - Components: Transform, BoxCollider（Is Trigger=true）, SavePoint
   - 用途：玩家进入 Trigger 后更新 `PlayerRespawnPointTracker` 中保存的最近复活点位置和朝向
   - 当前仅记录复活点，不执行真正复活
+  - **SavePoint / SavePoint_Test**
+  - Components: Transform, BoxCollider（Is Trigger=true）, SavePoint
+  - 用途：玩家进入 Trigger 后，将该对象的位置和朝向记录为最近复活点
+  - 当前用于 Debug 复活测试，不是最终正式存档点表现
 
 ### Prefabs
 - `Assets/Resources/SkeletonEnemy.prefab`：含 EnemyDeathHandler
@@ -195,6 +227,7 @@
 - ✅ 玩家死亡状态恢复接口：PlayerDeathHandler.ResetForRespawn() 可恢复控制/物理/Animator 状态，使玩家重新可操作。
 - ✅ Debug 复活后结算 UI 清理：LevelObjectiveManager.ClearLevelResultForRespawn() 可隐藏 Game Over / Victory UI 并重置 _isLevelEnded。
 - ✅ Debug UI 完整复活测试："复活玩家测试" 按钮依次调用上述三个接口，可在不重载场景的情况下完成 Debug 级别复活。
+- ✅ Debug 复活到最近 SavePoint：Debug UI 新增“复活到最近存档点”按钮，玩家死亡后可传送到 `PlayerRespawnPointTracker.CurrentRespawnPosition / CurrentRespawnRotation`，并执行满血恢复、死亡状态恢复与结算 UI 清理。
 
 ## 7. In Progress / Known Issues
 - ⚠️ **LevelUI TMP 字体未绑定**：旧字体 asset 已删除，新 `SourceHanSansSC-Medium_TMP.asset` 需手动拖拽绑定到 ProgressText / ResultText / RestartHintText 的 Font Asset 字段，否则中文不显示。
@@ -202,6 +235,9 @@
 - ⚠️ EnemyDeathHandler 使用固定 destroyDelay 计时，未使用 Animation Event，时机可能受播放速度影响
 - ⚠️ `ScanForTarget()` 每 0.2s 调用 `FindObjectsOfType<FactionComponent>()`，敌人数量多时有性能隐患
 - ⚠️ 玩家死亡后 RPGCameraController 被整体禁用，相机静止在死亡位置（无死亡镜头演出）
+- ⚠️ 当前复活到 SavePoint 仍属于 Debug UI 测试流程，尚未接入正式死亡 / 复活 UI。
+- ⚠️ Victory 和 Game Over 的正式状态管理仍需后续区分；Debug 清理结算 UI 不等同于最终关卡流程设计。
+- ⚠️ 正式复活系统尚未决定敌人是否重置、是否回血、是否回到出生点。
 
 ## 8. Development Rules
 
@@ -238,8 +274,11 @@
 - `Assets/Scripts/Player/PlayerTargeting.cs`：`CurrentTarget`（public Transform, get-only）
 - `Assets/Scripts/Player/PlayerSkillController.cs`：技能判定 + 伤害调用 + `Attack` Trigger 触发
 - `Assets/Scripts/Player/PlayerDeathHandler.cs`：玩家死亡处理，`_isDeadHandled` 防重复，禁用5个组件 + Rigidbody isKinematic + IsDead Trigger
-- `Assets/Scripts/Player/PlayerRespawnPointTracker.cs`：玩家最近复活点记录组件，当前只负责保存位置和朝向，不负责真正复活。
-- `Assets/Scripts/Level/SavePoint.cs`：复活点触发器，进入 Trigger 后调用 `PlayerRespawnPointTracker.SetRespawnPoint()`。
+- `Assets/Scripts/Player/PlayerRespawnPointTracker.cs`：玩家最近复活点记录组件，保存 `CurrentRespawnPosition` / `CurrentRespawnRotation`，由 SavePoint 更新。
+- `Assets/Scripts/Level/SavePoint.cs`：复活点 Trigger，玩家进入后调用 `PlayerRespawnPointTracker.SetRespawnPoint()`。
+- `Assets/Scripts/Player/PlayerDeathHandler.cs`：除死亡处理外，包含 `ResetForRespawn()`，用于 Debug 复活时恢复控制、相机、Rigidbody 和 Animator 状态。
+- `Assets/Scripts/HealthComponent.cs`：包含 `RestoreFullHealth()`，用于复活测试时恢复满血并刷新血条。
+- `Assets/Scripts/Spawner/SkeletonDebugUI.cs`：包含 Debug 复活测试按钮，包括恢复满血、原地复活、复活到最近 SavePoint。
 
 ### 核心资产
 - `Assets/Scripts/SkeletonAnimator.controller`：参数 Speed/IsAttacking/IsDead，状态 Idle/Walk/Attack/Death
@@ -253,6 +292,7 @@
 - `Assets/Fonts/09_SourceHanSansSC/TMP/SourceHanSansSC-Medium_TMP.asset`：当前唯一中文 TMP Font Asset，需手动绑定到 LevelUI 的 3 个 TMP 文本
 - `Assets/Resources/SkeletonEnemy.prefab`：含 EnemyDeathHandler
 
+
 ### 不应修改的文件
 - `Assets/Blink/`：第三方角色资产
 - `Assets/SazenGames/`：第三方骷髅资产（模型/贴图本体）
@@ -262,15 +302,26 @@
 ## 10. Next Suggested Tasks
 
 ### ⭐ 最推荐的下一个小任务
-**绑定新 TMP Font Asset**：将 `SourceHanSansSC-Medium_TMP.asset` 手动拖拽到 LevelUI 下 ProgressText / ResultText / RestartHintText 的 Font Asset 字段，并确认 Play Mode 中中文正常显示。（已绑定）
+**将 Debug 复活流程整理为正式复活流程设计**：
+当前已经完成 Debug 复活到最近 SavePoint 的最小闭环，下一步应开始从“调试按钮流程”过渡到“正式游戏流程”。
+
+建议先只做设计拆分，不要立刻大改系统：
+- 区分 Game Over、Victory、Respawn 三种状态
+- 死亡后显示正式复活 UI，而不是依赖 Debug UI
+- 决定复活入口：按钮、按键，或死亡 UI 菜单
+- 决定复活后敌人状态：保留仇恨、清空仇恨、回出生点、回血或重新生成
 
 ### 优先级 1：待解决
-2. 玩家死亡后相机演出（死亡时 RPGCameraController 被禁用，可改为死亡镜头而非静止）
+1. 正式死亡 / 复活 UI：玩家死亡后显示“复活 / 重新开始”等正式选项
+2. Victory 与 Game Over 状态分离：避免 Debug 复活清理接口影响正式胜利流程
+3. 玩家死亡后相机演出：死亡时目前通过禁用 `RPGCameraController` 让相机静止，后续可改为死亡镜头或复活镜头过渡
+4. 复活后敌人状态规则：决定敌人是否脱战、清空仇恨、返回出生点或保持当前状态
 
 ### 优先级 2：系统完善
-4. 死亡后主动清除 `PlayerTargeting.CurrentTarget`（需为 PlayerTargeting 添加 `ClearTarget()` 方法）
-5. 集成 EntityStats 系统，支持攻击力/血量等属性可配置
-6. 将 `FindObjectsOfType<FactionComponent>()` 替换为注册缓存，减少 EnemyAI 扫描开销
+1. 集成 `EntityStats` 系统，支持攻击力 / 最大血量等属性可配置
+2. 将 `FindObjectsOfType<FactionComponent>()` 替换为注册缓存，减少 EnemyAI 扫描开销
+3. 将 Debug 复活流程迁移到正式 Respawn 流程，减少对 Debug UI 的依赖
+4. 存档点正式化：加入激活提示、视觉表现、音效 / 特效，以及是否保存到硬盘的规则
 
 ---
 
