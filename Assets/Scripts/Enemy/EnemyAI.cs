@@ -1,11 +1,11 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-public enum EnemyState { Idle, Chase, Attack }
+public enum EnemyState { Idle, Chase, Attack, ReturnToSpawn }
 
 /// <summary>
-/// 敌人 AI - 有限状态机（Idle / Chase / Attack）
+/// 敌人 AI - 有限状态机（Idle / Chase / Attack / ReturnToSpawn）
 /// 攻击触发：attackCooldownTimer 到 0 时设 IsAttacking=true 一帧，动画开始后立刻清除，
 /// 依赖 Animator Controller 的 hasExitTime=0.9 完成动画后自动回 Idle，防止双触发。
 /// </summary>
@@ -32,9 +32,16 @@ public class EnemyAI : MonoBehaviour
     [Header("仇恨")]
     [SerializeField] private float sightHateAmount      = 10f;
     [SerializeField] private float damageHateMultiplier = 1f;
-    [SerializeField] private float disengageDistance = 15f;
-    [SerializeField] private float disengageDelay    = 3f;
+    [SerializeField] private float disengageDistance    = 15f;
+    [SerializeField] private float disengageDelay       = 3f;
     private float disengageTimer = 0f;
+
+    [Header("返回出生点")]
+    [SerializeField] private float returnToSpawnStopDistance = 0.5f;
+
+    [Header("活动范围")]
+    [SerializeField] private float wanderRadius = 6f;
+    [SerializeField] private float leashRadius  = 25f;
 
 
     // 状态
@@ -52,20 +59,19 @@ public class EnemyAI : MonoBehaviour
     // 扫描频率控制
     private float scanTimer = 0f;
     private const float scanInterval = 0.2f;
+
     // ─── 出生点 ──────────────────────────────────────────────
     private Vector3    _spawnPosition;
     private Quaternion _spawnRotation;
 
-
     // ─── 生命周期 ────────────────────────────────────────────
-void Awake()
+    void Awake()
     {
         if (animator    == null) animator    = GetComponent<Animator>();
         if (fovDetector == null) fovDetector = GetComponent<FOVDetector>();
         myFaction = GetComponent<FactionComponent>();
         myHealth  = GetComponent<HealthComponent>();
 
-        // 出生点记录（地面上配置时初始位置和朝向）
         _spawnPosition = transform.position;
         _spawnRotation = transform.rotation;
     }
@@ -87,6 +93,13 @@ void Awake()
 
 void Update()
     {
+        // ReturnToSpawn 中はスキャン・脱戦・状態更新を行わない
+        if (currentState == EnemyState.ReturnToSpawn) return;
+
+        // leashRadius 超過チェック：超えたら即座に帰還
+        CheckLeashRadius();
+        if (currentState == EnemyState.ReturnToSpawn) return;
+
         scanTimer -= Time.deltaTime;
         if (scanTimer <= 0f)
         {
@@ -97,8 +110,10 @@ void Update()
         UpdateState();
     }
 
-/// <summary>
-    /// 距离脱战逗计时：如果当前目标持续远于 disengageDistance，超时后清除该目标。
+    // ─── 脱战计时 ────────────────────────────────────────────
+    /// <summary>
+    /// 距离脱战计时：目标持续超出 disengageDistance 超过 disengageDelay 秒后，
+    /// 进入 ReturnToSpawn 状态自行走回出生点。
     /// </summary>
     void UpdateDisengage()
     {
@@ -114,10 +129,8 @@ void Update()
             disengageTimer += Time.deltaTime;
             if (disengageTimer >= disengageDelay)
             {
-                // 超过脱战时间，从仇恨列表移除该目标并重新选择
-                hateTable.Remove(currentTarget);
                 disengageTimer = 0f;
-                SelectHighestHateTarget();
+                EnterReturnToSpawn();
             }
         }
         else
@@ -126,6 +139,111 @@ void Update()
         }
     }
 
+    // ─── 返回出生点 ──────────────────────────────────────────
+    /// <summary>
+    /// 进入返回出生点状态。清空仇恨，停止追击，开始自行走回出生点。
+    /// 不恢复满血，不瞬间传送。
+    /// </summary>
+    private void EnterReturnToSpawn()
+    {
+        hateTable.Clear();
+        currentTarget       = null;
+        disengageTimer      = 0f;
+        attackCooldownTimer = 0f;
+        currentState        = EnemyState.ReturnToSpawn;
+        animator?.SetBool("IsAttacking", false);
+        Debug.Log($"[EnemyAI] {gameObject.name} 开始返回出生点。");
+    }
+
+/// <summary>
+    /// 敵と出生中心点のXZ水平距離を返す。
+    /// Y軸の高低差は活動範囲判定に影響させない。
+    /// </summary>
+    private float GetHorizontalDistanceFromSpawn()
+    {
+        Vector3 currentFlat = new Vector3(transform.position.x, 0f, transform.position.z);
+        Vector3 spawnFlat   = new Vector3(_spawnPosition.x,     0f, _spawnPosition.z);
+        return Vector3.Distance(currentFlat, spawnFlat);
+    }
+
+    /// <summary>
+    /// leashRadius 超過チェック。
+    /// 出生中心から leashRadius を超えた場合は即座に EnterReturnToSpawn() を呼ぶ。
+    /// ReturnToSpawn 状態中および死亡時は何もしない。
+    /// </summary>
+    private void CheckLeashRadius()
+    {
+        if (currentState == EnemyState.ReturnToSpawn) return;
+        if (!enabled) return;
+        if (myHealth != null && myHealth.IsDead) return;
+
+        if (GetHorizontalDistanceFromSpawn() > leashRadius)
+        {
+            Debug.Log($"[EnemyAI] {gameObject.name} 超过活动边界（leashRadius={leashRadius}），开始返回出生点。");
+            EnterReturnToSpawn();
+        }
+    }
+
+
+    /// <summary>
+    /// ReturnToSpawn 状态每帧处理（在 FixedUpdate 中调用）。
+    /// 走向出生点，到达后精确归位、恢复满血并进入 Idle。
+    /// </summary>
+private void HandleReturnToSpawn()
+    {
+        if (!enabled) return;
+
+        // 水平距離のみで到達判定（Y軸の高さ差は無視）
+        Vector3 currentFlat = new Vector3(transform.position.x, 0f, transform.position.z);
+        Vector3 spawnFlat   = new Vector3(_spawnPosition.x,     0f, _spawnPosition.z);
+        float horizontalDist = Vector3.Distance(currentFlat, spawnFlat);
+
+        if (horizontalDist > returnToSpawnStopDistance)
+        {
+            // X/Z 方向のみで移動（Y 軸は重力に任せる）
+            moveDirection = new Vector3(
+                _spawnPosition.x - transform.position.x,
+                0f,
+                _spawnPosition.z - transform.position.z).normalized;
+
+            rb.linearVelocity = new Vector3(
+                moveDirection.x * moveSpeed,
+                rb.linearVelocity.y,
+                moveDirection.z * moveSpeed);
+
+            // 出生点方向に辞を向ける
+            if (moveDirection.sqrMagnitude > 0.001f)
+                transform.rotation = Quaternion.Lerp(
+                    transform.rotation,
+                    Quaternion.LookRotation(moveDirection),
+                    rotationSpeed * Time.fixedDeltaTime);
+        }
+        else
+        {
+            // 到達：X/Z のみ修正、Y は現在値を維持（地形に着地したまま）
+            transform.position = new Vector3(
+                _spawnPosition.x,
+                transform.position.y,
+                _spawnPosition.z);
+            transform.rotation = _spawnRotation;
+
+            if (rb != null)
+            {
+                rb.linearVelocity  = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+            }
+
+            if (myHealth != null)
+                myHealth.RestoreFullHealth();
+
+            currentState        = EnemyState.Idle;
+            attackCooldownTimer = 0f;
+            moveDirection       = Vector3.zero;
+            animator?.SetBool("IsAttacking", false);
+            animator?.SetFloat("Speed", 0f);
+            Debug.Log($"[EnemyAI] {gameObject.name} 已回到出生点，重置完成。");
+        }
+    }
 
     // ─── 仇恨系统 ────────────────────────────────────────────
     /// <summary>目标是否有效：存在、有 HealthComponent、未死亡、阵营敌对。</summary>
@@ -178,13 +296,10 @@ void Update()
     // ─── 目标扫描 ────────────────────────────────────────────
     void ScanForTarget()
     {
-        // 先确保当前目标为列表中最高有效目标
         SelectHighestHateTarget();
 
-        // 如果已有仇恨目标，不需要重新 FOV 扫描
         if (currentTarget != null) return;
 
-        // 仇恨列表为空时，才通过 FOV 寻找新目标
         if (fovDetector == null) return;
         foreach (var fc in FindObjectsOfType<FactionComponent>())
         {
@@ -192,7 +307,6 @@ void Update()
             if (myFaction != null && !myFaction.ShouldAttack(fc.faction)) continue;
             if (fovDetector.CanSeeTarget(fc.transform))
             {
-                // 只有不在列表中的目标才加基础仇恨，防止每帧重复叠加
                 if (!hateTable.ContainsKey(fc.transform))
                     AddHate(fc.transform, sightHateAmount);
                 break;
@@ -203,13 +317,15 @@ void Update()
     /// <summary>自身受击时由 HealthComponent.OnDamaged 回调。</summary>
     void HandleDamaged(float amount, Transform attacker)
     {
-        // 攻击来源直接计入仇恨，不局限于是否已有目标
         AddHate(attacker, amount * damageHateMultiplier);
     }
 
     // ─── 状态机 ────────────────────────────────────────────
     void UpdateState()
     {
+        // ReturnToSpawn 状态由 HandleReturnToSpawn() 自行管理，外部不覆盖
+        if (currentState == EnemyState.ReturnToSpawn) return;
+
         if (currentTarget == null)
         {
             TransitionTo(EnemyState.Idle);
@@ -227,6 +343,7 @@ void Update()
         {
             case EnemyState.Idle:
             case EnemyState.Chase:
+            case EnemyState.ReturnToSpawn:
                 animator?.SetBool("IsAttacking", false);
                 break;
             case EnemyState.Attack:
@@ -236,7 +353,7 @@ void Update()
         }
     }
 
-    /// <summary>由攻击动画第 20 帧的 Animation Event 调用。</summary>
+    /// <summary>由攻击动画第 20 帧的 Animation Event 调用。方法名不可改。</summary>
     public void OnAttackHit()
     {
         if (!enabled || currentTarget == null) return;
@@ -279,6 +396,9 @@ void Update()
                     }
                 }
                 break;
+            case EnemyState.ReturnToSpawn:
+                HandleReturnToSpawn();
+                break;
         }
         animator?.SetFloat("Speed", moveDirection.magnitude, 0.1f, Time.fixedDeltaTime);
     }
@@ -314,34 +434,29 @@ void Update()
                 rotationSpeed * Time.fixedDeltaTime);
     }
 
-
-/// <summary>
-    /// 敌人を出生点にリセットする。
-    /// プレイヤー複活などから呼び出す想定。
+    // ─── Debug / 强制复位 ────────────────────────────────────
+    /// <summary>
+    /// 强制瞬间重置敌人到出生点。Debug 菜单 / 强制复位专用接口。
+    /// 走回出生点的正式流程请使用 EnterReturnToSpawn()。
     /// </summary>
     public void ResetToSpawn()
     {
-        // 仈// 价恨列表和目标清空
         hateTable.Clear();
         currentTarget  = null;
         disengageTimer = 0f;
 
-        // 出生点に移動
         transform.position = _spawnPosition;
         transform.rotation = _spawnRotation;
 
-        // // Rigidbody 速度清零
         if (rb != null)
         {
             rb.linearVelocity  = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
         }
 
-        // HealthComponent があれば満血に復帰
         if (myHealth != null)
             myHealth.RestoreFullHealth();
 
-        // AI ステートを Idle に戻す
         currentState        = EnemyState.Idle;
         attackCooldownTimer = 0f;
         moveDirection       = Vector3.zero;
