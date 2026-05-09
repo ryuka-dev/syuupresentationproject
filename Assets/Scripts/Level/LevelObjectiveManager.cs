@@ -16,6 +16,10 @@ public class LevelObjectiveManager : MonoBehaviour
     [SerializeField] private List<HealthComponent> enemyHealthComponents = new();
     [SerializeField] private int requiredKills = 3;
 
+    [Header("任务模式")]
+    [SerializeField] private bool useQuestObjectiveMode = true;
+
+
     [Header("UI")]
     [SerializeField] private TextMeshProUGUI progressText;
     [SerializeField] private TextMeshProUGUI resultText;
@@ -23,6 +27,8 @@ public class LevelObjectiveManager : MonoBehaviour
 
     private int _defeatedCount;
     private bool _isLevelEnded;
+    private bool _isQuestCompleted;
+
 
     // 防止同一敌人 OnDied 被重复计数
     private readonly HashSet<HealthComponent> _countedEnemies = new();
@@ -76,14 +82,20 @@ public class LevelObjectiveManager : MonoBehaviour
     // UI
     // -------------------------------------------------------
 
-    private void UpdateUI()
+private void UpdateUI()
     {
         if (progressText != null)
-            progressText.text = "目标：击败 " + _defeatedCount + " / " + requiredKills + " 个敌人";
+        {
+            string suffix = (useQuestObjectiveMode && _isQuestCompleted) ? "（完成）" : "";
+            progressText.text = "目标：击败 " + _defeatedCount + " / " + requiredKills + " 个敌人" + suffix;
+        }
 
         if (!_isLevelEnded)
         {
-            if (resultText != null)      resultText.gameObject.SetActive(false);
+            // resultText：任务未完成时隐藏；已完成时保持显示
+            if (!_isQuestCompleted)
+                if (resultText != null) resultText.gameObject.SetActive(false);
+            // restartHintText：未进入关卡结束时始终隐藏
             if (restartHintText != null) restartHintText.gameObject.SetActive(false);
         }
     }
@@ -102,7 +114,7 @@ public class LevelObjectiveManager : MonoBehaviour
         }
     }
 
-    private void ShowGameOver()
+private void ShowGameOver()
     {
         if (resultText != null)
         {
@@ -111,10 +123,22 @@ public class LevelObjectiveManager : MonoBehaviour
         }
         if (restartHintText != null)
         {
-            restartHintText.gameObject.SetActive(true);;
+            restartHintText.gameObject.SetActive(true);
             restartHintText.text = "按 R 重新开始";
         }
     }
+
+private void ShowQuestComplete()
+    {
+        if (resultText != null)
+        {
+            resultText.gameObject.SetActive(true);
+            resultText.text = "任务完成";
+        }
+        if (restartHintText != null)
+            restartHintText.gameObject.SetActive(false);
+    }
+
 
     // -------------------------------------------------------
     // 事件处理
@@ -133,7 +157,7 @@ public class LevelObjectiveManager : MonoBehaviour
         return () => HandleEnemyDied(enemy);
     }
 
-    private void HandleEnemyDied(HealthComponent enemy)
+private void HandleEnemyDied(HealthComponent enemy)
     {
         if (_isLevelEnded) return;
         if (_countedEnemies.Contains(enemy)) return;
@@ -142,9 +166,24 @@ public class LevelObjectiveManager : MonoBehaviour
         _defeatedCount++;
 
         Debug.Log("[LevelObjectiveManager] Enemy defeated: " + _defeatedCount + "/" + requiredKills);
+
+        // 任务完成判定は UpdateUI() 前に行う。
+        // こうすることで UpdateUI() 内の suffix が正しく「（完成）」を表示する。
+        bool justCompleted = false;
+        if (_defeatedCount >= requiredKills && useQuestObjectiveMode && !_isQuestCompleted)
+        {
+            _isQuestCompleted = true;
+            justCompleted = true;
+        }
+
         UpdateUI();
 
-        if (_defeatedCount >= requiredKills)
+        if (justCompleted)
+        {
+            Debug.Log("[LevelObjectiveManager] Quest Complete!");
+            ShowQuestComplete();
+        }
+        else if (_defeatedCount >= requiredKills && !useQuestObjectiveMode && !_isLevelEnded)
         {
             _isLevelEnded = true;
             Debug.Log("[LevelObjectiveManager] Victory!");
