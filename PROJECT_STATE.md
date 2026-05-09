@@ -9,34 +9,56 @@
   - AI Navigation 2.0.12
   - Unity MCP (GitHub)
 - 当前主要场景：`Assets/Scenes/SampleScene.unity`
-- 当前开发阶段：早期原型 - 核心战斗系统开发
+- 当前开发阶段：早期原型 - 野外战斗 / 刷怪循环基础开发
 
 ## 2. Game Concept
-- 游戏核心玩法：第三人称动作战斗，玩家对抗 AI 敌人
-- 主要循环：玩家移动 → 鼠标左键选中敌人 → 按 1 使用普通攻击 → 敌人血量归零 → 死亡动画 → 实体销毁
+- 游戏核心玩法：第三人称动作战斗，玩家对抗 AI 野外敌人。
+- 当前主要循环：玩家移动 → 鼠标左键选中敌人 → 按 1 使用普通攻击 → 敌人死亡 → 任务击杀进度增加 → 刷怪点延迟刷新敌人 → 继续战斗。
+- 长期方向：暗黑破坏神式刷装备循环 + FF14 式野外怪物分布 / 脱战逻辑 + 第三人称 3D RPG 战斗表现。
 - 已确认的设计方向：
-  - 基于 FSM 的敌人 AI（Idle/Chase/Attack）
+  - 基于 FSM 的敌人 AI（Idle/Chase/Attack/ReturnToSpawn）
   - 阵营系统（敌我识别）
   - 仇恨系统（多目标列表 + 仇恨值排序 + 脱战）
+  - 野怪出生中心点 / 游荡内圈 / 活动边界外圈
   - 攻击冷却机制
   - 世界空间血条显示
+  - 击杀目标逐步从“关卡 Victory”转向“任务目标 / 刷怪循环”
+  - 后续将接入掉落物、拾取、背包 / 装备系统
 
 ## 3. Current Architecture
 
 ### Enemy AI 系统
-- `EnemyAI.cs`：敌人有限状态机（Idle/Chase/Attack）+ 仇恨系统。
+- `EnemyAI.cs`：敌人有限状态机（Idle/Chase/Attack/ReturnToSpawn）+ 仇恨系统 + 野怪脱战回家逻辑。
   - 仇恨列表：`Dictionary<Transform, float> hateTable`，key=目标，value=仇恨值
   - `AddHate(Transform, float)`：统一仇恨入口，添加/累加后重新选目标
   - `IsValidTarget(Transform)`：有效性检查（非 null、有 HealthComponent、未死亡、阵营敌对）
   - `RemoveInvalidHateTargets()`：清除死亡/销毁目标
   - `SelectHighestHateTarget()`：选仇恨值最高有效目标为 currentTarget
-  - `UpdateDisengage()`：距离脱战计时，目标持续超出 disengageDistance 后脱战
-  - `HandleDamaged(float, Transform)`：订阅 `HealthComponent.OnDamaged`，受击时对攻击来源加仇恨
+  - `_spawnPosition / _spawnRotation`：在 Awake() 记录敌人出生中心点与出生朝向
+  - `wanderRadius`：预留字段，代表未来 Idle / Wander 状态允许自然游荡的内圈半径；当前暂不参与逻辑
+  - `leashRadius`：活动边界外圈；敌人离出生中心点的 XZ 水平距离超过该值时立即进入 ReturnToSpawn
+  - `UpdateDisengage()`：目标持续超出 disengageDistance + disengageDelay 后，调用 `EnterReturnToSpawn()` 脱战回家
+  - `EnterReturnToSpawn()`：清空仇恨 / currentTarget，停止攻击动画，进入 ReturnToSpawn；不瞬移、不回血
+  - `HandleReturnToSpawn()`：使用 XZ 平面方向让敌人自己走回出生中心点；到达后只修正 X/Z、保留当前 Y，清速度、回满血、恢复 Idle
+  - `ResetToSpawn()`：Debug / 强制复位接口，直接瞬移回出生点、清仇恨、回满血、Idle；不作为正式脱战行为
+  - `ForceDisengageAndReturnToSpawn()`：供外部系统调用；活着且 AI 启用时强制脱战进入 ReturnToSpawn，不调用 ResetToSpawn()
+  - `HandleDamaged(float, Transform)`：订阅 `HealthComponent.OnDamaged`，受击时对攻击来源加仇恨；ReturnToSpawn 中受击后不会立刻中断回家，后续是否无视伤害待定
   - `OnAttackHit()`：由 Animation Event 调用，首行有 `!enabled` 保护，**方法名不可改**
   - `OnEnable/OnDisable`：管理 OnDamaged 事件订阅生命周期
 - `FOVDetector.cs`：视野检测（FOV），角度 + 距离判断目标可见性。
 - `FactionSystem.cs` / `FactionComponent`：阵营枚举（Player/Skeleton/Goblin/Dragon），`ShouldAttack(Faction)` 判断敌对关系。
 - `EnemyDeathHandler.cs`：监听 `HealthComponent.OnDied`，禁用 EnemyAI、停止 Rigidbody、禁用 Collider，触发死亡动画，延迟 destroyDelay 秒后 Destroy。
+- `EnemyWorldManager.cs`：场景级敌人管理器第一版。
+  - 挂载在 SampleScene 的 `EnemyWorldManager` 空 GameObject 上
+  - `ForceAllLivingEnemiesReturnToSpawn()`：通过 `FindObjectsByType<EnemyAI>(FindObjectsSortMode.None)` 找到所有 EnemyAI，并逐个调用 `ForceDisengageAndReturnToSpawn()`
+  - 当前仅用于玩家死亡时命令所有活着敌人脱战回出生点；暂不做注册缓存、刷新管理、掉落、任务广播
+- `EnemySpawnPoint.cs`：第一版正式野外刷怪点。
+  - 一个 SpawnPoint 管理一个敌人
+  - 字段：`enemyPrefab`、`respawnDelay`、`spawnOnStart`
+  - `SpawnEnemy()`：在 SpawnPoint 自身位置 / 朝向 Instantiate 敌人，保证 EnemyAI.Awake() 记录到刷怪点位置；订阅敌人 OnDied；调用 `LevelObjectiveManager.RegisterEnemy(health)`
+  - `HandleCurrentEnemyDied()`：敌人死亡时取消订阅、清空当前引用，启动刷新协程
+  - `RespawnAfterDelay()`：等待 respawnDelay 秒后重新生成敌人
+  - Destroy 仍由 `EnemyDeathHandler` 负责，EnemySpawnPoint 不主动 Destroy 敌人
 
 ### Player 系统
 - `PlayerController.cs`：玩家输入处理、移动控制（New Input System）。`applyRootMotion = false`。
@@ -50,6 +72,8 @@
   - 清零 Rigidbody 速度并设置 `isKinematic = true`（防止斜面滑动）
   - 调用 `animator.SetTrigger("IsDead")` 播放死亡动画
   - 输出 `[PlayerDeathHandler] Player died. Controls disabled.`
+  - 通过 `FindFirstObjectByType<EnemyWorldManager>()` 找到场景敌人管理器，并调用 `ForceAllLivingEnemiesReturnToSpawn()`，让所有活着敌人脱战并自己走回出生点
+  - 玩家复活时暂不额外重置敌人；死亡负责敌人脱战，复活只恢复玩家自身
   
 ### Respawn / SavePoint 基础系统
 - `PlayerRespawnPointTracker.cs`：挂载在 Player 上，记录当前最近复活点的位置和朝向。
@@ -71,30 +95,40 @@
 - `WorldHealthBar.cs`：世界空间血条 UI（头顶）。
 - `PlayerHealthBar.cs`：玩家血条 UI。
 
-### Level 系统
-- `LevelObjectiveManager.cs`（`Assets/Scripts/Level/`）：最小关卡流程控制器。
+### Level / Quest Objective 系统
+- `LevelObjectiveManager.cs`（`Assets/Scripts/Level/`）：当前已从纯关卡 Victory 控制器转为“临时任务目标管理器 + 旧关卡模式兼容”。
   - `[SerializeField] HealthComponent playerHealth`：引用玩家 HealthComponent
   - `[SerializeField] List<HealthComponent> enemyHealthComponents`：已注册的敌人列表
-  - `[SerializeField] int requiredKills = 3`：胜利所需击杀数
+  - `[SerializeField] int requiredKills = 3`：任务目标击杀数 / 旧关卡胜利所需击杀数
+  - `[SerializeField] bool useQuestObjectiveMode = true`：任务目标模式开关
+    - true：击杀数达到 requiredKills 后显示“任务完成”，不 Victory、不设置 `_isLevelEnded`、不显示 restartHintText，玩家可继续刷怪
+    - false：保持旧关卡模式，击杀数达到 requiredKills 后 Victory，并允许按 R 重载场景
+  - `private bool _isQuestCompleted`：任务完成状态；不阻止继续击杀、不阻止 RegisterEnemy、不监听 R 重开
   - `[SerializeField] TextMeshProUGUI progressText / resultText / restartHintText`：UI 文本引用（已在场景中绑定）
-  - 击杀数达到 requiredKills 时 Victory；玩家死亡时 Game Over
-  - 胜利/失败后按 R（`Keyboard.current.rKey.wasPressedThisFrame`）重载当前场景
-  - `RegisterEnemy(HealthComponent)`：公开接口，供动态生成的敌人注册，防重复注册
-  - 内部用 `HashSet<HealthComponent> _countedEnemies` 防重复计数，`bool _isLevelEnded` 防重复结算
-  - 使用 `MakeEnemyDiedHandler(enemy)` 闭包捕获，保证事件取消订阅正确匹配
+  - 玩家死亡时仍走旧 Game Over：`_isLevelEnded = true`、显示 Game Over / “按 R 重新开始”、按 R 重载当前场景；正式死亡 / 复活 UI 尚未接入
+  - `RegisterEnemy(HealthComponent)`：公开接口，供 SkeletonSpawner / EnemySpawnPoint 等运行时生成器注册敌人；任务完成后仍允许继续注册，只有 `_isLevelEnded` 为 true 时拒绝注册
+  - 内部用 `HashSet<HealthComponent> _countedEnemies` 防重复计数
+  - 内部用 `Dictionary<HealthComponent, System.Action> _enemyDiedHandlers` 保存每个敌人 OnDied handler，确保 OnEnable / OnDisable / RegisterEnemy 使用同一委托实例订阅 / 取消订阅
+  - `ShowQuestComplete()`：显示“任务完成”，隐藏 restartHintText，不设置 `_isLevelEnded`
   - `ClearLevelResultForRespawn()`：Debug 复活测试用接口。
     - 将 `_isLevelEnded` 重置为 false
     - 隐藏 `resultText`
     - 隐藏 `restartHintText`
     - 不清空 `progressText`
     - 不重置击杀数
+    - 不重置 `_isQuestCompleted`
     - 不复活敌人
     - 不重载场景
 
 ### Spawner & Debug
-- `SkeletonSpawner.cs`（`Assets/Scripts/Spawner/`）：敌人生成器。
-  - `SpawnSkeleton()` 末尾自动调用 `FindFirstObjectByType<LevelObjectiveManager>()?.RegisterEnemy(hc)`，动态生成的敌人自动计入关卡目标
+- `SkeletonSpawner.cs`（`Assets/Scripts/Spawner/`）：Debug 敌人生成器。
+  - `SpawnSkeleton()` 末尾自动调用 `FindFirstObjectByType<LevelObjectiveManager>()?.RegisterEnemy(hc)`，动态生成的敌人自动计入任务击杀进度
   - F1 调试菜单生成的骷髅通过此机制自动注册
+- `EnemySpawnPoint.cs`（`Assets/Scripts/Enemy/`）：正式野外刷怪点第一版。
+  - `enemyPrefab`：生成用敌人 Prefab
+  - `respawnDelay`：死亡后刷新等待时间
+  - `spawnOnStart`：Play Mode 开始时是否自动生成
+  - 当前 SampleScene 中已有 `EnemySpawnPoint_Test`，绑定 `Assets/Resources/SkeletonEnemy.prefab`，respawnDelay=5s，spawnOnStart=true
 - `SkeletonDebugUI.cs`：调试用 UI。
   - 可生成调试用骷髅
   - 提供“恢复玩家满血”按钮：调用 `HealthComponent.RestoreFullHealth()`
@@ -105,6 +139,13 @@
     - 调用 `HealthComponent.RestoreFullHealth()`
     - 调用 `PlayerDeathHandler.ResetForRespawn()`
     - 如已接入，则调用 `LevelObjectiveManager.ClearLevelResultForRespawn()` 清理结算 UI
+  - 显示当前玩家锁定目标：
+    - 无目标：显示“当前目标：无”
+    - 非 EnemyAI：显示“当前目标：{名称}（非可重置敌人）”
+    - EnemyAI disabled：显示“当前目标：{名称}（AI已禁用）”
+    - HealthComponent.IsDead：显示“当前目标：{名称}（已死亡）”
+    - 可重置活敌人：显示“当前目标：{名称}”
+  - 提供“重置当前目标敌人”按钮：仅当当前目标存在、挂有 EnemyAI、EnemyAI.enabled=true、HealthComponent 存在且未死亡时，调用 `EnemyAI.ResetToSpawn()`；用于 Debug 强制复位，不代表正式脱战逻辑
 - `PhysicsLayerSetup.cs`：物理层设置。
 
 ### Debug Respawn 测试流程
@@ -117,6 +158,7 @@
   6. `HealthComponent.RestoreFullHealth()` 恢复 HP
   7. `PlayerDeathHandler.ResetForRespawn()` 恢复控制、相机、Rigidbody 和 Animator 状态
   8. 如已接入，`LevelObjectiveManager.ClearLevelResultForRespawn()` 清理结算 UI
+- 玩家死亡时，`EnemyWorldManager` 已经命令所有活着敌人进入 ReturnToSpawn；复活到 SavePoint 时不额外重置敌人。
 - 注意：该流程仍属于 Debug 测试功能，不是正式游戏 UI / 正式复活系统。
 
 
@@ -146,6 +188,16 @@
     - `ResultText`（TextMeshProUGUI）：画面中央，初始隐藏，Victory/Game Over 时显示
     - `RestartHintText`（TextMeshProUGUI）：中央偏下，初始隐藏，结算后显示「按 R 重新开始」
 - **Ground**、**Directional Light**、**Global Volume**、**DebugManager**、**SkeletonSpawnerManager**
+- **EnemyWorldManager**
+  - Components: EnemyWorldManager
+  - 用途：场景级敌人管理入口；玩家死亡时由 PlayerDeathHandler 调用，使所有活着敌人脱战并 ReturnToSpawn
+- **EnemySpawnPoint_Test**
+  - Components: EnemySpawnPoint
+  - 位置：约 `(0, 0, 5)`
+  - enemyPrefab = `Assets/Resources/SkeletonEnemy.prefab`
+  - respawnDelay = 5 秒
+  - spawnOnStart = true
+  - 用途：第一版正式刷怪点测试；生成一只骷髅，死亡后延迟刷新
 - **SavePoint**
   - Components: Transform, BoxCollider（Is Trigger=true）, SavePoint
   - 用途：玩家进入 Trigger 后更新 `PlayerRespawnPointTracker` 中保存的最近复活点位置和朝向
@@ -229,15 +281,32 @@
 - ✅ Debug UI 完整复活测试："复活玩家测试" 按钮依次调用上述三个接口，可在不重载场景的情况下完成 Debug 级别复活。
 - ✅ Debug 复活到最近 SavePoint：Debug UI 新增“复活到最近存档点”按钮，玩家死亡后可传送到 `PlayerRespawnPointTracker.CurrentRespawnPosition / CurrentRespawnRotation`，并执行满血恢复、死亡状态恢复与结算 UI 清理。
 
+- ✅ EnemyAI 新增出生点记录：`_spawnPosition / _spawnRotation`，作为野怪出生中心点与回家朝向。
+- ✅ EnemyAI 新增 `ResetToSpawn()`：Debug / 强制复位接口，可瞬间回出生点、清仇恨、回满血、回 Idle。
+- ✅ Debug UI 新增当前目标显示与“重置当前目标敌人”按钮，并加入活体检查，避免重置死亡 / AI 已禁用敌人。
+- ✅ EnemyAI 新增 ReturnToSpawn 状态：正式脱战时不瞬移，而是自己走回出生点。
+- ✅ ReturnToSpawn 使用 XZ 平面距离与方向，避免 Awake 高度 / 落地高度不一致导致无法判定到达。
+- ✅ EnemyAI 新增 `wanderRadius` 预留字段与 `leashRadius` 活动边界；超过 leashRadius 会立即脱战 ReturnToSpawn。
+- ✅ EnemyAI 新增 `ForceDisengageAndReturnToSpawn()`，供外部系统命令敌人脱战回家。
+- ✅ 新增 `EnemyWorldManager`：玩家死亡时统一命令所有活着敌人 ReturnToSpawn；Debug 生成的多个敌人也可被捕捉。
+- ✅ LevelObjectiveManager 改为任务目标模式：`useQuestObjectiveMode=true` 时，击杀 requiredKills 后显示“任务完成”，不 Victory，不按 R 重开，后续仍可继续刷怪和计数。
+- ✅ LevelObjectiveManager 修复敌人 OnDied 事件订阅：使用 `_enemyDiedHandlers` 字典保存委托实例，避免 OnDisable 取消订阅失败 / 重复计数风险。
+- ✅ 新增 `EnemySpawnPoint`：一个刷怪点管理一个敌人，死亡后等待 respawnDelay 自动刷新，并注册到 LevelObjectiveManager。
+- ✅ SampleScene 新增 `EnemyWorldManager` 与 `EnemySpawnPoint_Test`，后者绑定 SkeletonEnemy.prefab，respawnDelay=5 秒，测试循环正常。
+
 ## 7. In Progress / Known Issues
 - ⚠️ **LevelUI TMP 字体未绑定**：旧字体 asset 已删除，新 `SourceHanSansSC-Medium_TMP.asset` 需手动拖拽绑定到 ProgressText / ResultText / RestartHintText 的 Font Asset 字段，否则中文不显示。
 - ⚠️ EntityStats.cs 未充分使用
 - ⚠️ EnemyDeathHandler 使用固定 destroyDelay 计时，未使用 Animation Event，时机可能受播放速度影响
+- ⚠️ `EnemySpawnPoint.OnDisable()` 当前只解除 OnDied 订阅；刷新协程是否需要 StopAllCoroutines() 后续再决定。
 - ⚠️ `ScanForTarget()` 每 0.2s 调用 `FindObjectsOfType<FactionComponent>()`，敌人数量多时有性能隐患
+- ⚠️ `EnemyWorldManager` 与 `EnemySpawnPoint` 当前使用 Find 系列 API，敌人数量增加后应改为注册缓存 / 场景管理。
 - ⚠️ 玩家死亡后 RPGCameraController 被整体禁用，相机静止在死亡位置（无死亡镜头演出）
 - ⚠️ 当前复活到 SavePoint 仍属于 Debug UI 测试流程，尚未接入正式死亡 / 复活 UI。
-- ⚠️ Victory 和 Game Over 的正式状态管理仍需后续区分；Debug 清理结算 UI 不等同于最终关卡流程设计。
-- ⚠️ 正式复活系统尚未决定敌人是否重置、是否回血、是否回到出生点。
+- ⚠️ Victory 已在任务模式下弱化为“任务完成”，但旧 Game Over 仍保留：玩家死亡仍显示 Game Over / 按 R 重新开始；正式死亡 / 复活 UI 尚未接入。
+- ⚠️ Debug 清理结算 UI 不等同于最终关卡流程设计；`ClearLevelResultForRespawn()` 目前会隐藏 resultText，即使任务已完成也可能临时隐藏“任务完成”提示。
+- ⚠️ 玩家死亡时敌人会 ReturnToSpawn；玩家复活到 SavePoint 时不额外处理敌人。若复活点靠近敌人出生点，敌人回 Idle 后重新发现玩家是允许行为。
+- ⚠️ `EnemySpawnPoint` 在玩家死亡 / Game Over 状态下仍可能继续刷新敌人；是否暂停刷新待正式游戏状态管理决定。
 
 ## 8. Development Rules
 
@@ -267,7 +336,9 @@
 ## 9. Files That Should Be Treated Carefully
 
 ### 核心脚本
-- `Assets/Scripts/Enemy/EnemyAI.cs`：FSM + 仇恨系统核心，`OnAttackHit()` 有 Animation Event 绑定
+- `Assets/Scripts/Enemy/EnemyAI.cs`：FSM + 仇恨系统 + ReturnToSpawn / leashRadius 核心，`OnAttackHit()` 有 Animation Event 绑定
+- `Assets/Scripts/Enemy/EnemyWorldManager.cs`：场景级敌人全体命令入口，当前用于玩家死亡时全体敌人脱战回家
+- `Assets/Scripts/Enemy/EnemySpawnPoint.cs`：正式野外刷怪点第一版，负责生成、监听死亡、延迟刷新、注册到 LevelObjectiveManager
 - `Assets/Scripts/Enemy/EnemyDeathHandler.cs`：订阅 `HealthComponent.OnDied`，触发死亡流程
 - `Assets/Scripts/Enemy/FactionSystem.cs`：阵营枚举和 `ShouldAttack()` 接口
 - `Assets/Scripts/HealthComponent.cs`：`TakeDamage(float/float+Transform)`、`IsDead`、`OnDied`、`OnDamaged` 事件
@@ -278,7 +349,7 @@
 - `Assets/Scripts/Level/SavePoint.cs`：复活点 Trigger，玩家进入后调用 `PlayerRespawnPointTracker.SetRespawnPoint()`。
 - `Assets/Scripts/Player/PlayerDeathHandler.cs`：除死亡处理外，包含 `ResetForRespawn()`，用于 Debug 复活时恢复控制、相机、Rigidbody 和 Animator 状态。
 - `Assets/Scripts/HealthComponent.cs`：包含 `RestoreFullHealth()`，用于复活测试时恢复满血并刷新血条。
-- `Assets/Scripts/Spawner/SkeletonDebugUI.cs`：包含 Debug 复活测试按钮，包括恢复满血、原地复活、复活到最近 SavePoint。
+- `Assets/Scripts/Spawner/SkeletonDebugUI.cs`：包含 Debug 复活测试按钮，包括恢复满血、原地复活、复活到最近 SavePoint，以及当前目标敌人 Debug Reset。
 
 ### 核心资产
 - `Assets/Scripts/SkeletonAnimator.controller`：参数 Speed/IsAttacking/IsDead，状态 Idle/Walk/Attack/Death
@@ -302,34 +373,51 @@
 ## 10. Next Suggested Tasks
 
 ### ⭐ 最推荐的下一个小任务
-**将 Debug 复活流程整理为正式复活流程设计**：
-当前已经完成 Debug 复活到最近 SavePoint 的最小闭环，下一步应开始从“调试按钮流程”过渡到“正式游戏流程”。
+**掉落系统第一版：地面掉落物 + 拾取日志，不先做完整背包。**
 
-建议先只做设计拆分，不要立刻大改系统：
-- 区分 Game Over、Victory、Respawn 三种状态
-- 死亡后显示正式复活 UI，而不是依赖 Debug UI
-- 决定复活入口：按钮、按键，或死亡 UI 菜单
-- 决定复活后敌人状态：保留仇恨、清空仇恨、回出生点、回血或重新生成
+当前已经具备野外刷怪循环基础：
+- EnemySpawnPoint 生成敌人
+- 玩家击杀敌人
+- LevelObjectiveManager 继续计数且不 Victory
+- EnemyDeathHandler 播放死亡动画并 Destroy
+- EnemySpawnPoint 延迟刷新敌人
+
+下一步应验证刷装备路线的“收益闭环”：
+- 怪物死亡时生成一个 PickupItem
+- 玩家靠近 / 按键拾取
+- Console 输出“获得：XXX”
+- 暂不实现背包 UI、装备栏、随机词条
+
+建议小步拆分：
+1. 新增 `ItemData` ScriptableObject：itemName、rarity、description（icon 可后续）
+2. 新增 `PickupItem`：地面拾取物，持有 ItemData，玩家靠近后按 E 拾取，Debug.Log 并 Destroy 自己
+3. 新增 `EnemyDropper`：挂到敌人 Prefab，监听 HealthComponent.OnDied，死亡时在尸体附近生成 PickupItem
+4. 后续再做 `PlayerInventory` 最小版与背包 UI
 
 ### 优先级 1：待解决
-1. 正式死亡 / 复活 UI：玩家死亡后显示“复活 / 重新开始”等正式选项
-2. Victory 与 Game Over 状态分离：避免 Debug 复活清理接口影响正式胜利流程
-3. 玩家死亡后相机演出：死亡时目前通过禁用 `RPGCameraController` 让相机静止，后续可改为死亡镜头或复活镜头过渡
-4. 复活后敌人状态规则：决定敌人是否脱战、清空仇恨、返回出生点或保持当前状态
+1. 掉落系统第一版：固定 / 简单随机掉落物 + 玩家拾取日志
+2. 正式死亡 / 复活 UI：玩家死亡后显示“复活到最近存档点 / 重新开始”等正式选项，替代 Debug UI 流程
+3. Game Over / Respawn / Quest Complete 状态分离：当前玩家死亡仍显示 Game Over / 按 R 重新开始
+4. EnemySpawnPoint 与 EnemyWorldManager 的注册缓存：替换 Find 系列 API
+5. EnemySpawnPoint 在玩家死亡 / Game Over / 切场景时是否暂停刷新，需要正式 GameState 后决定
 
 ### 优先级 2：系统完善
-1. 集成 `EntityStats` 系统，支持攻击力 / 最大血量等属性可配置
-2. 将 `FindObjectsOfType<FactionComponent>()` 替换为注册缓存，减少 EnemyAI 扫描开销
-3. 将 Debug 复活流程迁移到正式 Respawn 流程，减少对 Debug UI 的依赖
-4. 存档点正式化：加入激活提示、视觉表现、音效 / 特效，以及是否保存到硬盘的规则
+1. Wander / 游荡状态：使用 `wanderRadius` 在出生中心点内圈自然移动
+2. 集成 `EntityStats` 系统，支持攻击力 / 最大血量等属性可配置
+3. 将 `ScanForTarget()` 的 FindObjectsOfType 替换为注册缓存，减少 EnemyAI 扫描开销
+4. 将 Debug 复活流程迁移到正式 Respawn 流程，减少对 Debug UI 的依赖
+5. 存档点正式化：加入激活提示、视觉表现、音效 / 特效，以及是否保存到硬盘的规则
+6. 背包 / 装备系统：在掉落拾取验证后再实现
 
 ---
 
-**最后更新**：2026-05-08
+**最后更新**：2026-05-10
 **本次有效变更**：
-1. `HealthComponent.cs` 新增 `RestoreFullHealth()`：将 currentHealth 恢复为 maxHealth，触发 OnHealthChanged，不触发 OnDied / OnDamaged。
-2. `PlayerDeathHandler.cs` 新增 `ResetForRespawn()`：恢复死亡时禁用的 PlayerController / PlayerSkillController / PlayerTargeting / RPGCameraController、Rigidbody 物理状态、Animator（Rebind+Update）。
-3. `LevelObjectiveManager.cs` 新增 `ClearLevelResultForRespawn()`：隐藏 Game Over / Victory 结算 UI，重置 _isLevelEnded，不改变击杀数。
-4. `SkeletonDebugUI.cs` 新增 "恢复玩家满血" 和 "复活玩家测试" 两个 Debug 按钮；后者完整串联上述三个接口，可在 Play Mode 中 Debug 复活玩家（不传送到复活点）。
-5. 测试确认：玩家死亡后点击 Debug 复活按钮，可正常恢复移动、攻击、摄像机控制，敌人仇恨系统恢复正常，Game Over UI 消失，_isLevelEnded 重置后可再次触发死亡结算。
-6. 本次未修改 Animator Controller、Prefab、Scene，未实现传送到 SavePoint。
+1. `EnemyAI.cs` 新增出生点记录、Debug 强制 `ResetToSpawn()`、正式 `ReturnToSpawn` 状态、XZ 平面回家判定、`wanderRadius` 预留、`leashRadius` 活动边界与 `ForceDisengageAndReturnToSpawn()` 外部接口。
+2. `SkeletonDebugUI.cs` 新增当前目标显示与“重置当前目标敌人”按钮，带 EnemyAI.enabled / HealthComponent.IsDead 活体检查。
+3. 新增 `EnemyWorldManager.cs`，并在 SampleScene 中配置 `EnemyWorldManager` GameObject；玩家死亡时所有活着敌人会脱战并自己走回出生点。
+4. `PlayerDeathHandler.cs` 在死亡流程中调用 `EnemyWorldManager.ForceAllLivingEnemiesReturnToSpawn()`；复活时不额外处理敌人。
+5. `LevelObjectiveManager.cs` 改为任务目标模式：`useQuestObjectiveMode=true` 时，击杀 requiredKills 后显示“任务完成”，不 Victory、不进入 `_isLevelEnded`、不阻止继续刷怪。
+6. `LevelObjectiveManager.cs` 修复敌人死亡事件订阅管理，使用 `_enemyDiedHandlers` 字典保存 handler，避免 lambda 取消订阅失败。
+7. 新增 `EnemySpawnPoint.cs`，并在 SampleScene 中配置 `EnemySpawnPoint_Test`，绑定 `SkeletonEnemy.prefab`，respawnDelay=5 秒，spawnOnStart=true。
+8. 测试确认：Debug 生成的多个敌人会在玩家死亡后被 EnemyWorldManager 捕捉并 ReturnToSpawn；EnemySpawnPoint 生成的敌人死亡后可延迟刷新；任务完成后仍可继续计数与刷怪。
