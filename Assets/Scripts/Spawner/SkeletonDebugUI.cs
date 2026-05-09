@@ -13,7 +13,7 @@ public class SkeletonDebugUI : MonoBehaviour
             showUI = !showUI;
     }
 
-void OnGUI()
+    void OnGUI()
     {
         if (!showUI) return;
 
@@ -54,28 +54,39 @@ void OnGUI()
             RespawnPlayerAtSavePointTest();
         GUI.backgroundColor = Color.white;
 
-        // ─── 当前目标 / ResetToSpawn ───────────────────────
+        // \u2500\u2500\u2500 \u654c\u4eba\u8c03\u8bd5\u533a\u57df \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
         GUILayout.Space(10);
-        GUILayout.Label("\u2500\u2500\u2500 \u6562\u4eba\u8c03\u8bd5 \u2500\u2500\u2500");
+        GUILayout.Label("\u2500\u2500\u2500 \u654c\u4eba\u8c03\u8bd5 \u2500\u2500\u2500");
 
-        // 从 Player 取 PlayerTargeting
-        var player = FindPlayerGameObject();
-        var targeting = player != null ? player.GetComponent<PlayerTargeting>() : null;
-        var currentTarget = targeting != null ? targeting.CurrentTarget : null;
-        var enemyAI = currentTarget != null ? currentTarget.GetComponent<EnemyAI>() : null;
+        // \u4ece Player \u53d6\u5f53\u524d\u9501\u5b9a\u76ee\u6807\u53ca\u76f8\u5173\u7ec4\u4ef6
+        var player       = FindPlayerGameObject();
+        var targeting    = player     != null ? player.GetComponent<PlayerTargeting>()    : null;
+        var currentTarget = targeting != null ? targeting.CurrentTarget                   : null;
+        var enemyAI      = currentTarget != null ? currentTarget.GetComponent<EnemyAI>()          : null;
+        var healthComp   = currentTarget != null ? currentTarget.GetComponent<HealthComponent>()  : null;
 
-        // 显示当前目标信息
+        // \u5168\u6761\u4ef6\u5224\u5b9a\uff1a\u76ee\u6807\u4e0d\u4e3a null\u3001EnemyAI \u5b58\u5728\u4e14\u542f\u7528\u3001HealthComponent \u5b58\u5728\u4e14\u672a\u6b7b\u4ea1
+        bool canReset = enemyAI   != null && enemyAI.enabled
+                     && healthComp != null && !healthComp.IsDead;
+
+        // \u72b6\u6001\u6807\u7b7e\u663e\u793a
+        string targetLabel;
         if (currentTarget == null)
-            GUILayout.Label("\u5f53\u524d\u76ee\u6807\uff1a\u65e0");
+            targetLabel = "\u5f53\u524d\u76ee\u6807\uff1a\u65e0";
         else if (enemyAI == null)
-            GUILayout.Label($"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}\uff08\u975e\u53ef\u91cd\u7f6e\u6562\u4eba\uff09");
+            targetLabel = $"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}\uff08\u975e\u53ef\u91cd\u7f6e\u654c\u4eba\uff09";
+        else if (!enemyAI.enabled)
+            targetLabel = $"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}\uff08AI\u5df2\u7981\u7528\uff09";
+        else if (healthComp == null || healthComp.IsDead)
+            targetLabel = $"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}\uff08\u5df2\u6b7b\u4ea1\uff09";
         else
-            GUILayout.Label($"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}");
+            targetLabel = $"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}";
+        GUILayout.Label(targetLabel);
 
-        // 重置当前目标敌人按钮
-        GUI.backgroundColor = enemyAI != null ? new Color(1f, 0.5f, 0.5f) : new Color(0.6f, 0.6f, 0.6f);
-        if (GUILayout.Button("\u91cd\u7f6e\u5f53\u524d\u76ee\u6807\u6562\u4eba", GUILayout.Height(40)))
-            ResetCurrentTargetEnemy(enemyAI);
+        // \u6309\u9215\uff1a\u6ee1\u8db3\u6761\u4ef6\u65f6\u663e\u793a\u7ea2\u8272\uff0c\u4e0d\u6ee1\u8db3\u65f6\u663e\u793a\u7070\u8272
+        GUI.backgroundColor = canReset ? new Color(1f, 0.5f, 0.5f) : new Color(0.6f, 0.6f, 0.6f);
+        if (GUILayout.Button("\u91cd\u7f6e\u5f53\u524d\u76ee\u6807\u654c\u4eba", GUILayout.Height(40)))
+            ResetCurrentTargetEnemy(enemyAI, healthComp);
         GUI.backgroundColor = Color.white;
 
         GUILayout.Space(10);
@@ -84,9 +95,9 @@ void OnGUI()
         GUILayout.EndArea();
     }
 
-    // ────────────────────────────────────────────────
-    // ヘルパー：FactionComponent(Player) からゲームオブジェクトを取得
-    // ────────────────────────────────────────────────
+    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    // \u8f85\u52a9: FactionComponent(Player) \u304b\u3089 GameObject \u3092\u53d6\u5f97
+    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     private GameObject FindPlayerGameObject()
     {
         var factions = FindObjectsByType<FactionComponent>(FindObjectsSortMode.None);
@@ -98,9 +109,9 @@ void OnGUI()
         return null;
     }
 
-    // ────────────────────────────────────────────────
-    // ボタン1: 恢复玩家满血
-    // ────────────────────────────────────────────────
+    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    // \u6309\u9215 1: \u6062\u590d\u73a9\u5bb6\u6ee1\u8840
+    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     private void RestorePlayerFullHealth()
     {
         var player = FindPlayerGameObject();
@@ -113,9 +124,9 @@ void OnGUI()
         health.RestoreFullHealth();
     }
 
-    // ────────────────────────────────────────────────
-    // ボタン2: 原地复活玩家测试
-    // ────────────────────────────────────────────────
+    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    // \u6309\u9215 2: \u539f\u5730\u590d\u6d3b\u73a9\u5bb6\u6d4b\u8bd5
+    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     private void RespawnPlayerTest()
     {
         var player = FindPlayerGameObject();
@@ -139,17 +150,17 @@ void OnGUI()
         Debug.Log("[DebugUI] Player respawn test executed.");
     }
 
-    // ────────────────────────────────────────────────
-    // ボタン3: 复活到最近存档点
-    // ────────────────────────────────────────────────
+    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    // \u6309\u9215 3: \u590d\u6d3b\u5230\u6700\u8fd1\u5b58\u6863\u70b9
+    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     private void RespawnPlayerAtSavePointTest()
     {
         var player = FindPlayerGameObject();
         if (player == null) { Debug.LogWarning("[DebugUI] Player not found."); return; }
 
-        var health          = player.GetComponent<HealthComponent>();
-        var deathHandler    = player.GetComponent<PlayerDeathHandler>();
-        var respawnTracker  = player.GetComponent<PlayerRespawnPointTracker>();
+        var health         = player.GetComponent<HealthComponent>();
+        var deathHandler   = player.GetComponent<PlayerDeathHandler>();
+        var respawnTracker = player.GetComponent<PlayerRespawnPointTracker>();
 
         if (health == null)
         {
@@ -167,7 +178,7 @@ void OnGUI()
             return;
         }
 
-        // 先传送到最近存档点，再恢复物理/控制（ResetForRespawn 会清零速度）
+        // \u5148\u4f20\u9001\u5230\u6700\u8fd1\u5b58\u6863\u70b9\uff0c\u518d\u6062\u590d\u7269\u7406/\u63a7\u5236\uff08ResetForRespawn \u4f1a\u6e05\u96f6\u901f\u5ea6\uff09
         player.transform.SetPositionAndRotation(
             respawnTracker.CurrentRespawnPosition,
             respawnTracker.CurrentRespawnRotation
@@ -185,22 +196,28 @@ void OnGUI()
         Debug.Log($"[DebugUI] Player respawned at SavePoint: {respawnTracker.CurrentRespawnPosition}");
     }
 
-// ──────────────────────────────────────────────
-    // 按鈕: 重置当前目标敌人
-    // ──────────────────────────────────────────────
-    private void ResetCurrentTargetEnemy(EnemyAI enemyAI)
+    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    // \u6309\u9215 4: \u91cd\u7f6e\u5f53\u524d\u76ee\u6807\u654c\u4eba\uff08\u5e26\u6d3b\u4f53\u68c0\u67e5\uff09
+    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    private void ResetCurrentTargetEnemy(EnemyAI enemyAI, HealthComponent healthComp)
     {
         if (enemyAI == null)
         {
-            Debug.LogWarning("[DebugUI] ResetCurrentTargetEnemy: 当前目标为空或无 EnemyAI。");
+            Debug.LogWarning("[DebugUI] ResetCurrentTargetEnemy: \u5f53\u524d\u76ee\u6807\u4e3a\u7a7a\u6216\u65e0 EnemyAI\u3002");
+            return;
+        }
+        if (!enemyAI.enabled)
+        {
+            Debug.LogWarning($"[DebugUI] ResetCurrentTargetEnemy: {enemyAI.gameObject.name} \u7684 AI \u5df2\u7981\u7528\uff0c\u8df3\u8fc7\u91cd\u7f6e\u3002");
+            return;
+        }
+        if (healthComp == null || healthComp.IsDead)
+        {
+            Debug.LogWarning($"[DebugUI] ResetCurrentTargetEnemy: {enemyAI.gameObject.name} \u5df2\u6b7b\u4ea1\u6216\u65e0 HealthComponent\uff0c\u8df3\u8fc7\u91cd\u7f6e\u3002");
             return;
         }
 
         enemyAI.ResetToSpawn();
-        Debug.Log($"[DebugUI] ResetToSpawn() 已调用: {enemyAI.gameObject.name}");
+        Debug.Log($"[DebugUI] ResetToSpawn() \u5df2\u8c03\u7528: {enemyAI.gameObject.name}");
     }
-
-    // ────────────────────────────────────────────────
-    // 按钮: 重置当前目标敌人
-    // ────────────────────────────────────────────────
 }
