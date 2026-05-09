@@ -43,31 +43,22 @@ public class PlayerDeathHandler : MonoBehaviour
     private void OnEnable()  => _health.OnDied += HandlePlayerDied;
     private void OnDisable() => _health.OnDied -= HandlePlayerDied;
 
-    private void HandlePlayerDied()
+private void HandlePlayerDied()
     {
         if (_isDeadHandled) return;
         _isDeadHandled = true;
 
-        // 禁用移动输入
-        if (_playerController != null)
-            _playerController.enabled = false;
+        if (_playerController != null) _playerController.enabled = false;
+        if (_skillController  != null) _skillController.enabled  = false;
 
-        // 禁用攻击输入
-        if (_skillController != null)
-            _skillController.enabled = false;
-
-        // 禁用目标选择
         if (_targeting != null)
         {
             _targeting.ClearTarget();
             _targeting.enabled = false;
         }
 
-        // 禁用右クリック朝向制御（RPGCameraController を無効化）
-        if (_cameraController != null)
-            _cameraController.enabled = false;
+        if (_cameraController != null) _cameraController.enabled = false;
 
-        // 停止 Rigidbody（Unity 6 使用 linearVelocity）
         if (_rb != null)
         {
             _rb.linearVelocity  = Vector3.zero;
@@ -75,11 +66,16 @@ public class PlayerDeathHandler : MonoBehaviour
             _rb.isKinematic     = true;
         }
 
-        // 死亡アニメーション再生
-        if (_animator != null)
-            _animator.SetTrigger("IsDead");
+        if (_animator != null) _animator.SetTrigger("IsDead");
 
         Debug.Log("[PlayerDeathHandler] Player died. Controls disabled.");
+
+        // Notify all living enemies to return to their spawn points
+        var enemyWorldManager = FindFirstObjectByType<EnemyWorldManager>();
+        if (enemyWorldManager != null)
+            enemyWorldManager.ForceAllLivingEnemiesReturnToSpawn();
+        else
+            Debug.LogWarning("[PlayerDeathHandler] EnemyWorldManager not found in scene. Enemy disengage skipped.");
     }
 
     /// <summary>

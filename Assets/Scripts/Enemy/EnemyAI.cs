@@ -463,4 +463,20 @@ private void HandleReturnToSpawn()
         animator?.SetBool("IsAttacking", false);
         animator?.SetFloat("Speed", 0f);
     }
+
+/// <summary>
+    /// 外部から敌人を強制脱戦させ、出生点へ帰還させる。
+    /// プレイヤー死亡時など、EnemyWorldManager から呼び出す想定。
+    /// 値得注意：瘜間移動なし。歩いて歷る正式帰還フローを使用する。
+    /// </summary>
+    public void ForceDisengageAndReturnToSpawn()
+    {
+        if (!enabled) return;
+        if (myHealth != null && myHealth.IsDead) return;
+        if (currentState == EnemyState.ReturnToSpawn) return;
+
+        Debug.Log($"[EnemyAI] {gameObject.name} 外部指令により強制脱戦、出生点へ帰還。");
+        EnterReturnToSpawn();
+    }
+
 }
