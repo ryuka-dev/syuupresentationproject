@@ -13,11 +13,11 @@ public class SkeletonDebugUI : MonoBehaviour
             showUI = !showUI;
     }
 
-    void OnGUI()
+void OnGUI()
     {
         if (!showUI) return;
 
-        GUILayout.BeginArea(new Rect(20, 20, 300, 430));
+        GUILayout.BeginArea(new Rect(20, 20, 300, 560));
 
         GUILayout.Label("Skeleton Spawner", new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold });
         GUILayout.Space(10);
@@ -54,6 +54,31 @@ public class SkeletonDebugUI : MonoBehaviour
             RespawnPlayerAtSavePointTest();
         GUI.backgroundColor = Color.white;
 
+        // ─── 当前目标 / ResetToSpawn ───────────────────────
+        GUILayout.Space(10);
+        GUILayout.Label("\u2500\u2500\u2500 \u6562\u4eba\u8c03\u8bd5 \u2500\u2500\u2500");
+
+        // 从 Player 取 PlayerTargeting
+        var player = FindPlayerGameObject();
+        var targeting = player != null ? player.GetComponent<PlayerTargeting>() : null;
+        var currentTarget = targeting != null ? targeting.CurrentTarget : null;
+        var enemyAI = currentTarget != null ? currentTarget.GetComponent<EnemyAI>() : null;
+
+        // 显示当前目标信息
+        if (currentTarget == null)
+            GUILayout.Label("\u5f53\u524d\u76ee\u6807\uff1a\u65e0");
+        else if (enemyAI == null)
+            GUILayout.Label($"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}\uff08\u975e\u53ef\u91cd\u7f6e\u6562\u4eba\uff09");
+        else
+            GUILayout.Label($"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}");
+
+        // 重置当前目标敌人按钮
+        GUI.backgroundColor = enemyAI != null ? new Color(1f, 0.5f, 0.5f) : new Color(0.6f, 0.6f, 0.6f);
+        if (GUILayout.Button("\u91cd\u7f6e\u5f53\u524d\u76ee\u6807\u6562\u4eba", GUILayout.Height(40)))
+            ResetCurrentTargetEnemy(enemyAI);
+        GUI.backgroundColor = Color.white;
+
+        GUILayout.Space(10);
         GUILayout.Label("F1: Toggle");
 
         GUILayout.EndArea();
@@ -159,4 +184,23 @@ public class SkeletonDebugUI : MonoBehaviour
 
         Debug.Log($"[DebugUI] Player respawned at SavePoint: {respawnTracker.CurrentRespawnPosition}");
     }
+
+// ──────────────────────────────────────────────
+    // 按鈕: 重置当前目标敌人
+    // ──────────────────────────────────────────────
+    private void ResetCurrentTargetEnemy(EnemyAI enemyAI)
+    {
+        if (enemyAI == null)
+        {
+            Debug.LogWarning("[DebugUI] ResetCurrentTargetEnemy: 当前目标为空或无 EnemyAI。");
+            return;
+        }
+
+        enemyAI.ResetToSpawn();
+        Debug.Log($"[DebugUI] ResetToSpawn() 已调用: {enemyAI.gameObject.name}");
+    }
+
+    // ────────────────────────────────────────────────
+    // 按钮: 重置当前目标敌人
+    // ────────────────────────────────────────────────
 }

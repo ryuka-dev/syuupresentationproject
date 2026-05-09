@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
@@ -52,14 +52,22 @@ public class EnemyAI : MonoBehaviour
     // 扫描频率控制
     private float scanTimer = 0f;
     private const float scanInterval = 0.2f;
+    // ─── 出生点 ──────────────────────────────────────────────
+    private Vector3    _spawnPosition;
+    private Quaternion _spawnRotation;
+
 
     // ─── 生命周期 ────────────────────────────────────────────
-    void Awake()
+void Awake()
     {
         if (animator    == null) animator    = GetComponent<Animator>();
         if (fovDetector == null) fovDetector = GetComponent<FOVDetector>();
         myFaction = GetComponent<FactionComponent>();
         myHealth  = GetComponent<HealthComponent>();
+
+        // 出生点记录（地面上配置时初始位置和朝向）
+        _spawnPosition = transform.position;
+        _spawnRotation = transform.rotation;
     }
 
     void OnEnable()
@@ -304,5 +312,40 @@ void Update()
                 transform.rotation,
                 Quaternion.LookRotation(dir),
                 rotationSpeed * Time.fixedDeltaTime);
+    }
+
+
+/// <summary>
+    /// 敌人を出生点にリセットする。
+    /// プレイヤー複活などから呼び出す想定。
+    /// </summary>
+    public void ResetToSpawn()
+    {
+        // 仈// 价恨列表和目标清空
+        hateTable.Clear();
+        currentTarget  = null;
+        disengageTimer = 0f;
+
+        // 出生点に移動
+        transform.position = _spawnPosition;
+        transform.rotation = _spawnRotation;
+
+        // // Rigidbody 速度清零
+        if (rb != null)
+        {
+            rb.linearVelocity  = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+        }
+
+        // HealthComponent があれば満血に復帰
+        if (myHealth != null)
+            myHealth.RestoreFullHealth();
+
+        // AI ステートを Idle に戻す
+        currentState        = EnemyState.Idle;
+        attackCooldownTimer = 0f;
+        moveDirection       = Vector3.zero;
+        animator?.SetBool("IsAttacking", false);
+        animator?.SetFloat("Speed", 0f);
     }
 }
