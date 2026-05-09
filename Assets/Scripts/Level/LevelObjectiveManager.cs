@@ -33,6 +33,10 @@ public class LevelObjectiveManager : MonoBehaviour
     // 防止同一敌人 OnDied 被重复计数
     private readonly HashSet<HealthComponent> _countedEnemies = new();
 
+    // 每エネミに対応する OnDied ハンドラを保存。正確な取り消しのため。
+    private readonly Dictionary<HealthComponent, System.Action> _enemyDiedHandlers = new();
+
+
     // -------------------------------------------------------
     // 生命周期
     // -------------------------------------------------------
@@ -42,29 +46,45 @@ public class LevelObjectiveManager : MonoBehaviour
         UpdateUI();
     }
 
-    private void OnEnable()
+private void OnEnable()
     {
         if (playerHealth != null)
             playerHealth.OnDied += HandlePlayerDied;
 
         foreach (var enemy in enemyHealthComponents)
-        {
-            if (enemy != null)
-                enemy.OnDied += MakeEnemyDiedHandler(enemy);
-        }
+            SubscribeEnemy(enemy);
     }
 
-    private void OnDisable()
+private void OnDisable()
     {
         if (playerHealth != null)
             playerHealth.OnDied -= HandlePlayerDied;
 
-        foreach (var enemy in enemyHealthComponents)
+        // キーリストをコピーしてから反復し、辞書を安全にクリア
+        var keys = new System.Collections.Generic.List<HealthComponent>(_enemyDiedHandlers.Keys);
+        foreach (var key in keys)
+            UnsubscribeEnemy(key);
+    }
+
+private void SubscribeEnemy(HealthComponent enemy)
+    {
+        if (enemy == null) return;
+        if (_enemyDiedHandlers.ContainsKey(enemy)) return;
+        System.Action handler = () => HandleEnemyDied(enemy);
+        _enemyDiedHandlers[enemy] = handler;
+        enemy.OnDied += handler;
+    }
+
+    private void UnsubscribeEnemy(HealthComponent enemy)
+    {
+        if (enemy == null) return;
+        if (_enemyDiedHandlers.TryGetValue(enemy, out var handler))
         {
-            if (enemy != null)
-                enemy.OnDied -= MakeEnemyDiedHandler(enemy);
+            enemy.OnDied -= handler;
+            _enemyDiedHandlers.Remove(enemy);
         }
     }
+
 
     private void Update()
     {
@@ -152,10 +172,7 @@ private void ShowQuestComplete()
         ShowGameOver();
     }
 
-    private System.Action MakeEnemyDiedHandler(HealthComponent enemy)
-    {
-        return () => HandleEnemyDied(enemy);
-    }
+
 
 private void HandleEnemyDied(HealthComponent enemy)
     {
@@ -194,12 +211,15 @@ private void HandleEnemyDied(HealthComponent enemy)
     /// <summary>
     /// 动态注册敌人（供 SkeletonSpawner 等运行时生成器调用）。
     /// </summary>
+/// <summary>
+    /// 動的登録敢人（供 SkeletonSpawner 等运行时生成器调用）。
+    /// </summary>
     public void RegisterEnemy(HealthComponent enemy)
     {
         if (enemy == null || _isLevelEnded) return;
         if (enemyHealthComponents.Contains(enemy)) return;
         enemyHealthComponents.Add(enemy);
-        enemy.OnDied += MakeEnemyDiedHandler(enemy);
+        SubscribeEnemy(enemy);
     }
 
     /// <summary>
