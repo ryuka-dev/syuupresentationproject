@@ -1,25 +1,38 @@
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 
 /// <summary>
-/// プレイヤーが拾得したアイテムを保持する最小インベントリ。
-/// UI・装備・スタック機能はなし。データ記録のみ。
+/// プレイヤーが拾得したアイテムをスタック形式で保持する最小インベントリ。
+/// 同一 itemId のアイテムは ItemStack にまとめて count で管理する。
+/// UI・装備・保存機能はなし。
 /// </summary>
 public class PlayerInventory : MonoBehaviour
 {
-    private readonly List<ItemData> _items = new List<ItemData>();
+    private readonly List<ItemStack> _items = new List<ItemStack>();
 
-    /// <summary>現在の所持アイテム数。</summary>
-    public int ItemCount => _items.Count;
+    /// <summary>全スタックの count 合計（総所持アイテム数）。</summary>
+    public int ItemCount
+    {
+        get
+        {
+            int total = 0;
+            foreach (var stack in _items) total += stack.Count;
+            return total;
+        }
+    }
 
-    /// <summary>所持アイテムの読み取り専用リスト。</summary>
-    public IReadOnlyList<ItemData> Items => _items;
+    /// <summary>異なるアイテム種類数（スタック数）。</summary>
+    public int StackCount => _items.Count;
+
+    /// <summary>所持スタックの読み取り専用リスト。</summary>
+    public IReadOnlyList<ItemStack> Items => _items;
 
     /// <summary>
     /// アイテムをインベントリに追加する。
-    /// null の場合は warning を出して何もしない。
+    /// 同一 itemId が既に存在する場合は count を +1 するだけ。
     /// </summary>
-public void AddItem(ItemData item)
+    public void AddItem(ItemData item)
     {
         if (item == null)
         {
@@ -29,54 +42,48 @@ public void AddItem(ItemData item)
 
         if (string.IsNullOrEmpty(item.ItemId))
         {
-            Debug.LogWarning($"[PlayerInventory] ItemData has empty itemId: {item.ItemName}");
+            Debug.LogWarning($"[PlayerInventory] ItemData has empty itemId: {item.ItemName} — itemId を設定してください。");
         }
 
-        _items.Add(item);
-        Debug.Log($"获得：{item.ItemName}（ID: {item.ItemId}），当前持有总数：{_items.Count}");
+        ItemStack existing = FindStack(item);
+        if (existing != null)
+        {
+            existing.AddCount(1);
+        }
+        else
+        {
+            _items.Add(new ItemStack(item, 1));
+        }
+
+        Debug.Log($"获得：{item.ItemName}（ID: {item.ItemId}），当前持有总数：{ItemCount}");
         PrintInventorySummary();
     }
 
-
-private void PrintInventorySummary()
+    private ItemStack FindStack(ItemData item)
     {
-        // ItemId をキーに数量を一時集計（List のまま走査）
-        var counts = new System.Collections.Generic.Dictionary<string, (string displayName, int count)>();
-
-        foreach (var it in _items)
+        bool hasId = !string.IsNullOrEmpty(item.ItemId);
+        foreach (var stack in _items)
         {
-            if (it == null)
+            if (stack.ItemData == null) continue;
+            if (hasId)
             {
-                Debug.LogWarning("[PlayerInventory] Null entry found in inventory list.");
-                continue;
-            }
-
-            string key;
-            if (string.IsNullOrEmpty(it.ItemId))
-            {
-                Debug.LogWarning($"[PlayerInventory] Empty itemId in summary, falling back to ItemName: {it.ItemName}");
-                key = "__name__" + it.ItemName;
+                if (stack.ItemId == item.ItemId) return stack;
             }
             else
             {
-                key = it.ItemId;
-            }
-
-            if (counts.TryGetValue(key, out var entry))
-            {
-                counts[key] = (entry.displayName, entry.count + 1);
-            }
-            else
-            {
-                counts[key] = (it.ItemName, 1);
+                if (stack.ItemName == item.ItemName) return stack;
             }
         }
+        return null;
+    }
 
-        var sb = new System.Text.StringBuilder("（当前库存）");
-        foreach (var kv in counts)
+    private void PrintInventorySummary()
+    {
+        var sb = new StringBuilder("（当前库存）");
+        foreach (var stack in _items)
         {
-            string id = kv.Key.StartsWith("__name__") ? "(no id)" : kv.Key;
-            sb.Append($" {kv.Value.displayName}（ID: {id}）数量：{kv.Value.count}");
+            string id = string.IsNullOrEmpty(stack.ItemId) ? "(no id)" : stack.ItemId;
+            sb.Append($" {stack.ItemName}（ID: {id}）数量：{stack.Count}");
         }
         Debug.Log(sb.ToString());
     }
