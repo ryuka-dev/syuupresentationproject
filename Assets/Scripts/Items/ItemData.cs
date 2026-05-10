@@ -1,5 +1,19 @@
 using UnityEngine;
 
+
+/// <summary>
+/// アイテムの種別を表す列挙型。
+/// </summary>
+public enum ItemType
+{
+    Material,
+    Equipment,
+    Consumable,
+    Currency,
+    Quest,
+    Cosmetic
+}
+
 /// <summary>
 /// アイテムの稀有度を表す列挙型。
 /// </summary>
@@ -29,4 +43,18 @@ public class ItemData : ScriptableObject
 
     [SerializeField, TextArea] private string description;
     public string Description => description;
+
+    [SerializeField] private ItemType itemType;
+    public ItemType ItemType => itemType;
+
+    [SerializeField] private int maxStack = 99;
+    public int MaxStack => maxStack;
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        if (maxStack < 1) maxStack = 1;
+        if (itemType == ItemType.Equipment) maxStack = 1;
+    }
+#endif
 }

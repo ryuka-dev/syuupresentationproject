@@ -16,3 +16,5 @@ MonoBehaviour:
   itemName: "\u94C1\u5251"
   rarity: 0
   description: "\u4E00\u628A\u666E\u901A\u7684\u94C1\u5251\u3002"
+  itemType: 1
+  maxStack: 1
