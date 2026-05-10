@@ -578,6 +578,7 @@ GameObject:
   - component: {fileID: 7182466527157778218}
   - component: {fileID: 747241281135192487}
   - component: {fileID: 340504308782068087}
+  - component: {fileID: 6757057786128687492}
   m_Layer: 9
   m_Name: SkeletonEnemy
   m_TagString: Untagged
@@ -726,6 +727,13 @@ MonoBehaviour:
   attackDamage: 10
   attackCooldown: 2
   animator: {fileID: 3411108188465799624}
+  sightHateAmount: 10
+  damageHateMultiplier: 1
+  disengageDistance: 15
+  disengageDelay: 3
+  returnToSpawnStopDistance: 0.5
+  wanderRadius: 6
+  leashRadius: 25
 --- !u!114 &7182466527157778218
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -771,6 +779,21 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyDeathHandler
   destroyDelay: 1.6
+--- !u!114 &6757057786128687492
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1593989802227870837}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 308fcefa53b01a94d8e4c56cabb1c7fa, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyDropper
+  dropItem: {fileID: 11400000, guid: 81f8c2bad2732a24e829bf41d8b7f4f7, type: 2}
+  pickupPrefab: {fileID: 6508404235517748597, guid: e7c39331bf5f8f641a41a154ef4cab77, type: 3}
+  dropOffset: {x: 0, y: 0.2, z: 0}
 --- !u!1 &1629691151487848044
 GameObject:
   m_ObjectHideFlags: 0
