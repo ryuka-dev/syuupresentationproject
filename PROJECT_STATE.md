@@ -13,7 +13,7 @@
 
 ## 2. Game Concept
 - 游戏核心玩法：第三人称动作战斗，玩家对抗 AI 野外敌人。
-- 当前主要循环：玩家移动 → 鼠标左键选中敌人 → 按 1 使用普通攻击 → 敌人死亡 → 任务击杀进度增加 → 刷怪点延迟刷新敌人 → 继续战斗。
+- 当前主要循环：玩家移动 → 鼠标左键选中敌人 → 按 1 使用普通攻击 → 敌人死亡 → 任务击杀进度增加 → 敌人掉落 ItemDrop → 玩家靠近按 E 拾取 → PlayerInventory 按 itemId 合并数量 → 刷怪点延迟刷新敌人 → 继续战斗。
 - 长期方向：暗黑破坏神式刷装备循环 + FF14 式野外怪物分布 / 脱战逻辑 + 第三人称 3D RPG 战斗表现。
 - 已确认的设计方向：
   - 基于 FSM 的敌人 AI（Idle/Chase/Attack/ReturnToSpawn）
@@ -23,7 +23,8 @@
   - 攻击冷却机制
   - 世界空间血条显示
   - 击杀目标逐步从“关卡 Victory”转向“任务目标 / 刷怪循环”
-  - 后续将接入掉落物、拾取、背包 / 装备系统
+  - 掉落物、拾取、最小 PlayerInventory / ItemStack 库存结构已接入
+  - 后续将接入物品类型、最大堆叠、背包 UI / 装备系统
   
 ### Long-term Core Direction / 最终定位
 
@@ -108,6 +109,50 @@
 - `WorldHealthBar.cs`：世界空间血条 UI（头顶）。
 - `PlayerHealthBar.cs`：玩家血条 UI。
 
+### Items / Drop / Inventory 系统
+- `ItemData.cs`（`Assets/Scripts/Items/`）：物品数据 ScriptableObject。
+  - `itemId`：内部稳定 ID，例如 `bone`、`iron_sword`；用于未来掉落表、背包堆叠、存档、本地化 key，不作为玩家最终显示文本。
+  - `itemName`：当前阶段临时显示名；未来多语言系统接入后应逐步替换 / 扩展为 localization key。
+  - `rarity`：`ItemRarity` enum，当前包含 Common / Rare / Epic / Legendary。
+  - `description`：当前阶段临时描述文本。
+  - `CreateAssetMenu`：可通过 Create → RPG → Items → Item Data 创建物品数据 asset。
+- `ItemStack.cs`（`Assets/Scripts/Items/`）：库存堆叠数据类。
+  - 保存 `ItemData itemData` 与 `int count`。
+  - `ItemData / ItemId / ItemName / Count` 为只读属性。
+  - `AddCount(int amount)`：增加数量；amount ≤ 0 时 warning 并 return。
+  - 构造时 count < 1 会修正为 1。
+- `PickupItem.cs`（`Assets/Scripts/Items/`）：地面拾取物脚本。
+  - 字段：`itemData`、`playerTag = "Player"`。
+  - `SetItemData(ItemData data)`：供 EnemyDropper 在运行时注入物品数据。
+  - 使用 Trigger 检测 Player 进入 / 离开范围，按 E 拾取。
+  - 使用 New Input System：`Keyboard.current.eKey.wasPressedThisFrame`。
+  - 玩家进入范围时缓存 `PlayerInventory`；拾取时调用 `PlayerInventory.AddItem(itemData)`，成功后 Destroy 自身。
+  - 若 `itemData` 或 `PlayerInventory` 缺失，只输出 warning，不崩溃。
+- `EnemyDropper.cs`（`Assets/Scripts/Items/`）：敌人固定掉落第一版。
+  - 挂载在敌人 Prefab 上。
+  - 字段：`dropItem`、`pickupPrefab`、`dropOffset`。
+  - Awake 获取同对象 `HealthComponent`，OnEnable 订阅 `OnDied`，OnDisable 取消订阅。
+  - 敌人死亡时 Instantiate `pickupPrefab`，并调用 `PickupItem.SetItemData(dropItem)` 注入掉落物数据。
+  - 当前是固定 100% 掉落；没有随机掉落表、掉率、稀有度抽取。
+- `PlayerInventory.cs`（`Assets/Scripts/Player/`）：玩家最小库存结构。
+  - 挂载在场景 Player 上。
+  - 内部使用 `List<ItemStack>`，不再使用重复 `List<ItemData>`。
+  - `AddItem(ItemData item)`：按 itemId 查找已有 ItemStack；找到则 count + 1，未找到则新增 ItemStack。
+  - `ItemCount`：所有 stack 的 count 总和。
+  - `StackCount`：不同物品种类数量。
+  - `Items`：`IReadOnlyList<ItemStack>`。
+  - 每次成功拾取后输出本次获得物品、当前总数量，并输出当前库存统计。
+- `ItemDrop.prefab`（`Assets/Resources/ItemDrop.prefab`）：地面掉落物 Prefab。
+  - Sphere 临时外观，scale 约 `(0.4, 0.4, 0.4)`。
+  - 包含 SphereCollider，`isTrigger = true`。
+  - 挂载 `PickupItem`。
+  - `itemData` 保持为空，由 EnemyDropper 运行时注入。
+- `TestItem_Bone.asset`（`Assets/Items/TestItem_Bone.asset`）：测试用 ItemData。
+  - 当前绑定到 `SkeletonEnemy.prefab` 的 EnemyDropper，作为骷髅固定掉落测试物品。
+- 注意：
+  - Player 的 Tag 必须为 `Player`，否则 PickupItem 的 Trigger 判断不会认定玩家。
+  - 当前库存数据只存在运行时内存中，停止 Play Mode 后会消失；正式存档系统未来应保存 `itemId + count`，而不是直接保存 ItemData 引用。
+
 ### Level / Quest Objective 系统
 - `LevelObjectiveManager.cs`（`Assets/Scripts/Level/`）：当前已从纯关卡 Victory 控制器转为“临时任务目标管理器 + 旧关卡模式兼容”。
   - `[SerializeField] HealthComponent playerHealth`：引用玩家 HealthComponent
@@ -182,7 +227,8 @@
 
 ### Scene Objects (SampleScene.unity)
 - **Player**
-  - Components: Transform, Animator, CapsuleCollider, Rigidbody, PlayerController, FactionComponent（faction=Player）, HealthComponent, WorldHealthBar, PlayerTargeting, PlayerSkillController, PlayerDeathHandler, PlayerRespawnPointTracker
+  - Components: Transform, Animator, CapsuleCollider, Rigidbody, PlayerController, FactionComponent（faction=Player）, HealthComponent, WorldHealthBar, PlayerTargeting, PlayerSkillController, PlayerDeathHandler, PlayerRespawnPointTracker, PlayerInventory
+  - Tag: `Player`（PickupItem 依赖此 Tag 识别玩家）
   - 骨骼层级：`Armature/Root_M/.../Wrist_R/WeaponHolder_R/TempStaff`
     - `WeaponHolder_R`：空 GameObject，挂在 Wrist_R（右手骨骼）下，作为武器挂点
     - `TempStaff`：Cylinder（无 Collider、无 Rigidbody），已调整到右手握持位置，跟随 Wrist_R / WeaponHolder_R 运动。
@@ -221,8 +267,12 @@
   - 当前用于 Debug 复活测试，不是最终正式存档点表现
 
 ### Prefabs
-- `Assets/Resources/SkeletonEnemy.prefab`：含 EnemyDeathHandler
+- `Assets/Resources/SkeletonEnemy.prefab`：含 EnemyDeathHandler / EnemyDropper，掉落测试已绑定 TestItem_Bone 与 ItemDrop.prefab
+- `Assets/Resources/ItemDrop.prefab`：地面掉落物 Prefab，PickupItem 的 itemData 运行时注入
+- `Assets/Items/TestItem_Bone.asset`：测试物品数据，骷髅固定掉落依赖；当前已挂载 EnemyDropper，固定掉落 `Assets/Items/TestItem_Bone.asset`，pickupPrefab 绑定 `Assets/Resources/ItemDrop.prefab`
+- `Assets/Resources/ItemDrop.prefab`：地面掉落物 Prefab，Sphere 临时外观，SphereCollider isTrigger=true，挂载 PickupItem，itemData 运行时注入
 - `Assets/Resources/Skeleton_110.prefab`：骷髅模型资产
+- `Assets/Items/TestItem_Bone.asset`：测试用 ItemData，itemId=`bone`，itemName=`骨头`，rarity=Common，用于骷髅固定掉落测试
 
 ### Animator Controllers
 - `Assets/Scripts/SkeletonAnimator.controller`（敌人用）：
@@ -262,6 +312,7 @@
 - 玩家移动：WASD（PlayerController）
 - 目标选择：鼠标左键（Mouse.current.leftButton.wasPressedThisFrame）
 - 技能释放：键盘 1（Keyboard.current.digit1Key.wasPressedThisFrame）
+- 拾取物品：E 键（PickupItem 使用 `Keyboard.current.eKey.wasPressedThisFrame`）
 - 摄像机/玩家朝向：鼠标右键拖拽（RPGCameraController.LateUpdate）。死亡後は RPGCameraController ごと無効化。
 - 关卡重开：R 键（`Keyboard.current.rKey.wasPressedThisFrame`），仅在 Victory/Game Over 后生效
 
@@ -307,7 +358,21 @@
 - ✅ 新增 `EnemySpawnPoint`：一个刷怪点管理一个敌人，死亡后等待 respawnDelay 自动刷新，并注册到 LevelObjectiveManager。
 - ✅ SampleScene 新增 `EnemyWorldManager` 与 `EnemySpawnPoint_Test`，后者绑定 SkeletonEnemy.prefab，respawnDelay=5 秒，测试循环正常。
 
+- ✅ 掉落系统第一版：新增 ItemData / PickupItem / EnemyDropper / ItemDrop.prefab，敌人死亡后可生成地面掉落物。
+- ✅ ItemData 增加稳定内部 ID `itemId`，用于未来掉落表、背包、存档与本地化 key。
+- ✅ PickupItem 支持运行时 `SetItemData()` 注入数据，玩家进入 Trigger 后按 E 拾取。
+- ✅ SkeletonEnemy.prefab 已挂载 EnemyDropper，并绑定 TestItem_Bone 与 ItemDrop.prefab，骷髅死亡后可固定掉落骨头。
+- ✅ Player 新增 PlayerInventory，拾取物品后可加入运行时库存。
+- ✅ 库存结构已从 `List<ItemData>` 升级为 `List<ItemStack>`，相同 itemId 的物品会合并数量。
+- ✅ PlayerInventory 可输出当前总持有数量与按 itemId 聚合的库存统计。
+- ✅ 测试确认：击杀骷髅 → 掉落 ItemDrop → 玩家靠近按 E → 输出“获得：骨头（ID: bone）”并统计数量 → ItemDrop 消失 → 刷新后可重复拾取。
+
 ## 7. In Progress / Known Issues
+- ⚠️ ItemData 目前只有 itemId / itemName / rarity / description，尚未加入 itemType / maxStack；装备、材料、消耗品等类型区分未完成。
+- ⚠️ 当前库存只存在运行时内存中，停止 Play Mode 后消失；尚未实现存档系统。
+- ⚠️ 当前 PlayerInventory 只支持 AddItem 和 Debug 输出，不支持背包 UI、删除、使用、装备、排序。
+- ⚠️ 当前 EnemyDropper 是固定 100% 掉落，不支持随机掉落表、掉率、稀有度抽取。
+- ⚠️ PickupItem 依赖 Player Tag；如果 Player Tag 不是 `Player`，拾取不会触发。
 - ⚠️ **LevelUI TMP 字体未绑定**：旧字体 asset 已删除，新 `SourceHanSansSC-Medium_TMP.asset` 需手动拖拽绑定到 ProgressText / ResultText / RestartHintText 的 Font Asset 字段，否则中文不显示。
 - ⚠️ EntityStats.cs 未充分使用
 - ⚠️ EnemyDeathHandler 使用固定 destroyDelay 计时，未使用 Animation Event，时机可能受播放速度影响
@@ -363,6 +428,11 @@
 - `Assets/Scripts/Player/PlayerDeathHandler.cs`：除死亡处理外，包含 `ResetForRespawn()`，用于 Debug 复活时恢复控制、相机、Rigidbody 和 Animator 状态。
 - `Assets/Scripts/HealthComponent.cs`：包含 `RestoreFullHealth()`，用于复活测试时恢复满血并刷新血条。
 - `Assets/Scripts/Spawner/SkeletonDebugUI.cs`：包含 Debug 复活测试按钮，包括恢复满血、原地复活、复活到最近 SavePoint，以及当前目标敌人 Debug Reset。
+- `Assets/Scripts/Items/ItemData.cs`：物品数据核心，itemId 是未来存档 / 掉落表 / 本地化 key 的稳定标识，避免随意删除或改名。
+- `Assets/Scripts/Items/ItemStack.cs`：库存堆叠数据结构，PlayerInventory 依赖。
+- `Assets/Scripts/Items/PickupItem.cs`：地面拾取逻辑，依赖 Player Tag 与 PlayerInventory。
+- `Assets/Scripts/Items/EnemyDropper.cs`：敌人死亡掉落入口，订阅 HealthComponent.OnDied。
+- `Assets/Scripts/Player/PlayerInventory.cs`：玩家运行时库存，当前使用 List<ItemStack>。
 
 ### 核心资产
 - `Assets/Scripts/SkeletonAnimator.controller`：参数 Speed/IsAttacking/IsDead，状态 Idle/Walk/Attack/Death
@@ -374,7 +444,9 @@
 - `Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/HumanM@Death01.fbx`：玩家死亡动画，clip `HumanM@CombatDamage01`（1.0s）
 - `Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/1H/HumanM@Attack1H01_R.fbx`：玩家普通攻击动画
 - `Assets/Fonts/09_SourceHanSansSC/TMP/SourceHanSansSC-Medium_TMP.asset`：当前唯一中文 TMP Font Asset，需手动绑定到 LevelUI 的 3 个 TMP 文本
-- `Assets/Resources/SkeletonEnemy.prefab`：含 EnemyDeathHandler
+- `Assets/Resources/SkeletonEnemy.prefab`：含 EnemyDeathHandler / EnemyDropper，掉落测试已绑定 TestItem_Bone 与 ItemDrop.prefab
+- `Assets/Resources/ItemDrop.prefab`：地面掉落物 Prefab，PickupItem 的 itemData 运行时注入
+- `Assets/Items/TestItem_Bone.asset`：测试物品数据，骷髅固定掉落依赖
 
 
 ### 不应修改的文件
@@ -388,8 +460,8 @@
 当前开发应优先验证核心闭环，而不是一次性实现完整系统。
 
 短期优先级：
-1. 先完成「刷怪 → 掉落 → 拾取 → 继续刷怪」收益闭环
-2. 再实现最小 PlayerInventory
+1. 已完成「刷怪 → 掉落 → 拾取 → PlayerInventory 统计 → 继续刷怪」收益闭环第一版
+2. 下一步先补 ItemData 的 itemType / maxStack，让系统区分材料、装备、消耗品等类型
 3. 再实现 1 个装备槽，验证装备能改变战斗
 4. 再推进 Tank 感：敌人读条重击、玩家减伤技能、成功减伤奖励
 5. 最后再接入 Hikari 自动治疗与治疗负担系统
@@ -398,6 +470,8 @@
 - 完整背包 UI
 - 完整装备栏
 - 复杂随机词条
+- 完整随机掉落表
+- 完整存档系统
 - 完整 Hikari AI
 - 五人真实同屏战斗
 - 复杂仇恨表
@@ -406,42 +480,39 @@
 ## 10. Next Suggested Tasks
 
 ### ⭐ 最推荐的下一个小任务
-**掉落系统第一版：地面掉落物 + 拾取日志，不先做完整背包。**
-该任务是为了建立暗黑式刷装循环的最小收益闭环，而不是为了立即进入完整背包 / 装备系统。
+**ItemData 增加 itemType 与 maxStack。**
 
-当前已经具备野外刷怪循环基础：
-- EnemySpawnPoint 生成敌人
-- 玩家击杀敌人
-- LevelObjectiveManager 继续计数且不 Victory
-- EnemyDeathHandler 播放死亡动画并 Destroy
-- EnemySpawnPoint 延迟刷新敌人
+当前已经具备掉落 / 拾取 / 运行时库存第一版：
+- `ItemData` 可创建物品数据，已有 itemId / itemName / rarity / description
+- `ItemDrop.prefab` 可作为地面掉落物
+- `EnemyDropper` 可在敌人死亡时生成固定掉落物
+- `PickupItem` 可按 E 拾取并加入 PlayerInventory
+- `PlayerInventory` 已使用 `List<ItemStack>` 按 itemId 合并数量
+- 测试确认骨头 / 铁剑可拾取并输出库存统计
 
-下一步应验证刷装备路线的“收益闭环”：
-- 怪物死亡时生成一个 PickupItem
-- 玩家靠近 / 按键拾取
-- Console 输出“获得：XXX”
-- 暂不实现背包 UI、装备栏、随机词条
-
-建议小步拆分：
-1. 新增 `ItemData` ScriptableObject：itemName、rarity、description（icon 可后续）
-2. 新增 `PickupItem`：地面拾取物，持有 ItemData，玩家靠近后按 E 拾取，Debug.Log 并 Destroy 自己
-3. 新增 `EnemyDropper`：挂到敌人 Prefab，监听 HealthComponent.OnDied，死亡时在尸体附近生成 PickupItem
-4. 后续再做 `PlayerInventory` 最小版与背包 UI
+下一步应让系统知道“物品是什么类型、能不能堆叠”：
+- 新增 `ItemType` enum：Material / Equipment / Consumable / Currency / Quest / Cosmetic
+- 给 `ItemData` 增加 `itemType`
+- 给 `ItemData` 增加 `maxStack`
+- `OnValidate()` 中保护 maxStack：小于 1 修正为 1；Equipment 自动修正为 1
+- 暂不修改 PlayerInventory 的堆叠逻辑；先只补数据字段
 
 ### 优先级 1：待解决
-1. 掉落系统第一版：固定 / 简单随机掉落物 + 玩家拾取日志
-2. 正式死亡 / 复活 UI：玩家死亡后显示“复活到最近存档点 / 重新开始”等正式选项，替代 Debug UI 流程
-3. Game Over / Respawn / Quest Complete 状态分离：当前玩家死亡仍显示 Game Over / 按 R 重新开始
-4. EnemySpawnPoint 与 EnemyWorldManager 的注册缓存：替换 Find 系列 API
-5. EnemySpawnPoint 在玩家死亡 / Game Over / 切场景时是否暂停刷新，需要正式 GameState 后决定
+1. ItemData 增加 itemType / maxStack，为材料、装备、消耗品、外观等类型区分做准备。
+2. 最小装备槽：先做 1 个饰品 / Core 槽，验证装备能改变战斗或数值。
+3. 正式死亡 / 复活 UI：玩家死亡后显示“复活到最近存档点 / 重新开始”等正式选项，替代 Debug UI 流程。
+4. Game Over / Respawn / Quest Complete 状态分离：当前玩家死亡仍显示 Game Over / 按 R 重新开始。
+5. EnemySpawnPoint 与 EnemyWorldManager 的注册缓存：替换 Find 系列 API。
+6. EnemySpawnPoint 在玩家死亡 / Game Over / 切场景时是否暂停刷新，需要正式 GameState 后决定。
 
 ### 优先级 2：系统完善
-1. Wander / 游荡状态：使用 `wanderRadius` 在出生中心点内圈自然移动
-2. 集成 `EntityStats` 系统，支持攻击力 / 最大血量等属性可配置
-3. 将 `ScanForTarget()` 的 FindObjectsOfType 替换为注册缓存，减少 EnemyAI 扫描开销
-4. 将 Debug 复活流程迁移到正式 Respawn 流程，减少对 Debug UI 的依赖
-5. 存档点正式化：加入激活提示、视觉表现、音效 / 特效，以及是否保存到硬盘的规则
-6. 背包 / 装备系统：在掉落拾取验证后再实现
+1. 背包 Debug UI / 简单 UI：显示 PlayerInventory 中的 ItemStack 列表。
+2. 掉落表第一版：从固定掉落扩展为小型 DropTable，但不要做复杂随机词条。
+3. Wander / 游荡状态：使用 `wanderRadius` 在出生中心点内圈自然移动。
+4. 集成 `EntityStats` 系统，支持攻击力 / 最大血量等属性可配置。
+5. 将 `ScanForTarget()` 的 FindObjectsOfType 替换为注册缓存，减少 EnemyAI 扫描开销。
+6. 将 Debug 复活流程迁移到正式 Respawn 流程，减少对 Debug UI 的依赖。
+7. 存档点正式化：加入激活提示、视觉表现、音效 / 特效，以及是否保存到硬盘的规则。
 
 ---
 
@@ -455,3 +526,13 @@
 6. `LevelObjectiveManager.cs` 修复敌人死亡事件订阅管理，使用 `_enemyDiedHandlers` 字典保存 handler，避免 lambda 取消订阅失败。
 7. 新增 `EnemySpawnPoint.cs`，并在 SampleScene 中配置 `EnemySpawnPoint_Test`，绑定 `SkeletonEnemy.prefab`，respawnDelay=5 秒，spawnOnStart=true。
 8. 测试确认：Debug 生成的多个敌人会在玩家死亡后被 EnemyWorldManager 捕捉并 ReturnToSpawn；EnemySpawnPoint 生成的敌人死亡后可延迟刷新；任务完成后仍可继续计数与刷怪。
+9. 新增 `ItemData.cs` 与 `ItemRarity`，用于创建物品数据 ScriptableObject。
+10. `ItemData` 已增加稳定内部 ID `itemId`，为未来掉落表、背包堆叠、存档与多语言 key 做准备。
+11. 新增 `PickupItem.cs`，支持玩家进入 Trigger 后按 E 拾取地面物品；已确认 Player Tag 必须为 `Player`。
+12. 新增 `Assets/Resources/ItemDrop.prefab`，作为地面掉落物 Prefab；挂载 PickupItem，Collider 已设置为 Trigger。
+13. 新增 `EnemyDropper.cs`，挂载到 `Assets/Resources/SkeletonEnemy.prefab`，骷髅死亡后生成 ItemDrop 并注入固定掉落物数据。
+14. 新增测试物品 `Assets/Items/TestItem_Bone.asset`，当前作为骷髅固定掉落的骨头物品。
+15. 新增 `PlayerInventory.cs`，场景 Player 已挂载 PlayerInventory，拾取物品后可加入运行时库存。
+16. 新增 `ItemStack.cs`，PlayerInventory 已从 `List<ItemData>` 升级为 `List<ItemStack>`，相同 itemId 的物品会合并数量。
+17. PlayerInventory 现在输出本次获得物品、当前持有总数与当前库存统计。
+18. 测试确认：击杀骷髅 → 掉落骨头 → 玩家按 E 拾取 → 库存数量增加；手动测试铁剑也可加入同一库存统计。
