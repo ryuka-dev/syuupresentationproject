@@ -18,6 +18,9 @@ public enum ItemRarity
 [CreateAssetMenu(fileName = "New ItemData", menuName = "RPG/Items/Item Data")]
 public class ItemData : ScriptableObject
 {
+    [SerializeField] private string itemId;
+    public string ItemId => itemId;
+
     [SerializeField] private string itemName;
     public string ItemName => itemName;
 

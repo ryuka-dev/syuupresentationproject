@@ -11,8 +11,10 @@ public class PickupItem : MonoBehaviour
     [SerializeField] private string playerTag = "Player";
 
     private bool _playerInRange;
+    private PlayerInventory _playerInventory;
 
-    private void Update()
+
+private void Update()
     {
         if (!_playerInRange) return;
 
@@ -26,23 +28,31 @@ public class PickupItem : MonoBehaviour
             return;
         }
 
-        Debug.Log($"获得：{itemData.ItemName}");
+        if (_playerInventory == null)
+        {
+            Debug.LogWarning("[PickupItem] PlayerInventory not found on player.");
+            return;
+        }
+
+        _playerInventory.AddItem(itemData);
         Destroy(gameObject);
     }
 
-    private void OnTriggerEnter(Collider other)
+private void OnTriggerEnter(Collider other)
     {
         if (other.CompareTag(playerTag))
         {
             _playerInRange = true;
+            _playerInventory = other.GetComponent<PlayerInventory>();
         }
     }
 
-    private void OnTriggerExit(Collider other)
+private void OnTriggerExit(Collider other)
     {
         if (other.CompareTag(playerTag))
         {
             _playerInRange = false;
+            _playerInventory = null;
         }
     }
 

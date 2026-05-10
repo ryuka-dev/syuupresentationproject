@@ -12,6 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2586938c3e24c5c498f735f8eb38d9e4, type: 3}
   m_Name: IronSword_ItemData
   m_EditorClassIdentifier: Assembly-CSharp::ItemData
+  itemId: iron_sword
   itemName: "\u94C1\u5251"
   rarity: 0
   description: "\u4E00\u628A\u666E\u901A\u7684\u94C1\u5251\u3002"
