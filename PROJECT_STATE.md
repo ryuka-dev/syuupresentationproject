@@ -1,6 +1,6 @@
 ﻿# PROJECT_STATE
 
-最后更新：2026-05-11  
+最后更新：2026-05-12  
 当前主要场景：`Assets/Scenes/SampleScene.unity`  
 Unity 版本：6000.4.3f1 (Unity 6)
 
@@ -19,6 +19,9 @@ Unity 版本：6000.4.3f1 (Unity 6)
 - 当前地图状态：
   - 原本的主要 `Ground` 实体已不再作为主要地面使用。
   - 已添加 Unity 默认 `Terrain` 地形对象。
+  - SampleScene 已新增 `NavMeshSurface_World` 并完成 NavMesh Bake。
+  - 当前 NavMeshData 使用 Unity `BuildNavMesh()` 默认方式嵌入 `SampleScene.unity`，暂未另存为独立 `.asset`。
+  - 截图中曾出现多个 `Ground / Ground (1) ...` 系列对象，后续需要确认是否为旧测试地块残留，避免碰撞、NavMesh、刷怪点、掉落物高度或射线检测混乱。
 
 ---
 
@@ -70,7 +73,9 @@ Unity 版本：6000.4.3f1 (Unity 6)
 
 ### `EnemyAI.cs`
 
-敌人有限状态机（Idle / Chase / Attack / ReturnToSpawn）+ 仇恨系统 + 野怪脱战回家逻辑。
+敌人有限状态机（Idle / Wander / Chase / Attack / ReturnToSpawn）+ 仇恨系统 + NavMeshAgent 优先移动 + 野怪脱战回家逻辑。
+
+当前 EnemyAI 已从纯 Rigidbody 直线移动，推进到“NavMeshAgent 优先，Rigidbody fallback”的过渡架构。
 
 重要点：
 
@@ -80,13 +85,136 @@ Unity 版本：6000.4.3f1 (Unity 6)
 - `RemoveInvalidHateTargets()`：清除死亡 / 销毁目标
 - `SelectHighestHateTarget()`：选择最高仇恨目标
 - `_spawnPosition / _spawnRotation`：Awake 记录出生点与朝向
-- `wanderRadius`：未来游荡内圈预留字段
+- `wanderRadius`：游荡内圈半径，以 `_spawnPosition` 为中心
 - `leashRadius`：活动边界外圈，超过后 ReturnToSpawn
-- `EnterReturnToSpawn()`：清空仇恨、停止攻击动画、进入回家状态
-- `HandleReturnToSpawn()`：XZ 平面自己走回出生点，到达后回满血并恢复 Idle
-- `ResetToSpawn()`：Debug 强制复位，瞬移回出生点
-- `ForceDisengageAndReturnToSpawn()`：外部命令活敌人脱战回家
 - `OnAttackHit()`：Animation Event 绑定，方法名不可改
+
+#### 当前 FSM 状态
+
+```text
+Idle
+→ 无目标时原地待机，等待随机 Idle 时间后尝试进入 Wander
+
+Wander
+→ 无目标时在出生点附近随机游荡
+→ 优先使用 NavMeshAgent
+→ Agent 不可用时 fallback 到 Rigidbody 旧逻辑
+
+Chase
+→ 有有效仇恨目标时追击
+→ 优先使用 NavMeshAgent
+→ 目标点临时不可达时不切 Rigidbody，不放弃 Chase
+→ 继续沿旧路径 / 最后一次有效 destination 追击，并持续重试目标位置更新
+→ 只有 Agent 本身不可用时 fallback 到 Rigidbody Chase
+
+Attack
+→ 进入攻击距离后停止 Agent，保留旧攻击逻辑
+→ 不修改攻击伤害判定与 OnAttackHit()
+
+ReturnToSpawn
+→ 脱战 / 玩家死亡 / 外部命令时回出生点
+→ 优先使用 NavMeshAgent
+→ Agent 不可用或回家路径失败时 fallback 到 Rigidbody 旧逻辑
+→ 到达后回满血并恢复 Idle / Wander 循环
+```
+
+#### Wander 当前实现
+
+新增 / 使用的主要参数与状态：
+
+- `wanderMoveSpeed`：游荡移动速度
+- `wanderPointReachDistance`：到达游荡目标点的判定距离
+- `minIdleTime / maxIdleTime`：每次游荡前的随机待机时间
+- `_wanderTarget`：当前游荡目标点
+- `_idleTimer`：Idle 待机倒计时
+
+行为：
+
+```text
+Idle 随机等待
+→ TryPickWanderPoint() 选择目标点
+→ Wander 移动
+→ 到达后回到 Idle
+→ 循环
+```
+
+NavMeshAgent 可用时：
+
+- 使用 `NavMesh.SamplePosition` 修正随机点到 NavMesh。
+- 使用 `NavMeshAgent.CalculatePath` 检查 PathComplete。
+- 通过 `agent.SetDestination(_wanderTarget)` 移动。
+- 到达判断使用 Agent 路径状态 / remainingDistance。
+
+Agent 不可用时：
+
+- 使用旧 Rigidbody / `rb.linearVelocity` 逻辑作为 fallback。
+
+#### Chase 当前实现
+
+新增 / 使用的主要参数与状态：
+
+- `chaseDestinationUpdateInterval`：Chase 中更新目标 destination 的间隔，默认 0.2 秒
+- `chaseNavMeshSampleDistance`：目标位置附近 NavMesh 采样距离，默认 2f
+- `_chasingWithAgent`：当前 Chase 是否由 Agent 驱动
+- `_chasePath`：Chase 路径验证用 `NavMeshPath`
+- `_nextChaseDestinationUpdateTime`：下次更新目标位置的时间
+- `_lastValidChaseDestination`：最后一次成功设置的 Chase NavMesh 目标点
+- `_hasLastValidChaseDestination`：是否存在有效 last destination
+
+当前 Chase 规则：
+
+```text
+Agent 可用
+→ 保持 Agent Chase
+→ 定期尝试更新玩家附近 NavMesh destination
+→ 更新成功：保存 lastValidChaseDestination
+→ 更新失败：不 fallback，不 ResetPath，不放弃 Chase
+→ 继续沿旧 path / lastValidChaseDestination 追击
+
+Agent 本身不可用
+→ 才 fallback 到旧 Rigidbody Chase
+```
+
+重要设计结论：
+
+```text
+NavMesh 目标点不可达 ≠ Agent 失效
+路径更新失败只是“本次目标更新失败”，不是“放弃 Chase”。
+```
+
+#### ReturnToSpawn 当前实现
+
+新增 / 使用的主要参数与状态：
+
+- `returnNavMeshSampleDistance`：出生点附近 NavMesh 采样距离，默认 3f
+- `_returnPath`：ReturnToSpawn 路径验证用 `NavMeshPath`
+- `_returningWithAgent`：当前 ReturnToSpawn 是否由 Agent 驱动
+
+当前 ReturnToSpawn 规则：
+
+```text
+EnterReturnToSpawn()
+→ 清空仇恨
+→ 停止攻击动画
+→ 停止 Chase / Wander Agent 残留路径
+→ 尝试 SamplePosition(_spawnPosition)
+→ CalculatePath 检查 PathComplete
+→ 成功：Agent SetDestination 回家
+→ 失败：Rigidbody fallback 回家
+→ 到达后 FinishReturnToSpawn()
+→ RestoreFullHealth()
+→ TransitionTo(Idle)
+```
+
+#### NavMeshAgent / Rigidbody 当前过渡规则
+
+当前 SkeletonEnemy 同时存在 NavMeshAgent 与 Rigidbody。
+
+- Wander / Chase / ReturnToSpawn：优先 Agent。
+- Attack：停止 Agent，保留原攻击逻辑。
+- Agent 不存在 / disabled / 不在 NavMesh 上：fallback 到 Rigidbody。
+- 当前仍存在 `rb.isKinematic` 在 Agent 状态与 Rigidbody fallback 间切换的过渡结构。
+- 后续建议整理为“NavMeshAgent 负责移动，Rigidbody 主要负责碰撞检测”的更稳定结构。
 
 ### `EnemyWorldManager.cs`
 
@@ -505,7 +633,7 @@ OnEquipmentChanged → PlayerCombatStats 自动刷新
 
 敌人死亡掉落入口。
 
-当前已从固定 100% 单物品掉落升级为“小型多物品掉落测试版”。
+当前已从固定 100% 单物品掉落升级为“小型多物品掉落测试版”，并新增 Terrain / 地面贴合生成逻辑。
 
 新增结构：
 
@@ -526,6 +654,28 @@ public class DropEntry
 - `dropOffset`
 - `List<DropEntry> drops`
 
+Ground Placement 字段：
+
+- `alignDropsToGround = true`：是否启用贴地生成
+- `groundRaycastStartHeight = 5f`：从候选点上方多高开始 Raycast
+- `groundRaycastDistance = 20f`：向下检测距离
+- `groundOffset = 0.1f`：命中地面后上抬，避免嵌入地面
+- `groundLayerMask = ~0`：地面检测 LayerMask，当前默认全 Layer
+- `maxDropHeightAboveOwnerBounds = 0.2f`：允许命中点略高于敌人 Collider 顶部的容错值
+
+新增 / 修改逻辑：
+
+- `GetGroundedDropPosition(Vector3 candidatePosition)`：
+  - 从候选点上方向下 Raycast。
+  - 命中地面后返回 `hit.point + Vector3.up * groundOffset`。
+  - 未命中时 fallback 到原候选位置，不阻断掉落。
+  - 若命中点高度高于敌人自身非 Trigger Collider 顶部 + `maxDropHeightAboveOwnerBounds`，判定为头顶物体 / 生物 / Collider 误命中，忽略并 fallback。
+- `GetMaxAllowedDropGroundY()`：
+  - 遍历自身及子对象非 Trigger Collider。
+  - 取 `bounds.max.y` 最大值作为敌人自身碰撞体顶部高度。
+  - 找不到有效 Collider 时 fallback 到 `transform.position.y + maxDropHeightAboveOwnerBounds`。
+- `OnValidate()`：保护 Ground Placement 参数不为负或过小。
+
 掉落流程：
 
 ```text
@@ -535,12 +685,22 @@ HandleDied()
     遍历每个 DropEntry
     item == null → Warning + skip
     Random.value <= dropChance → Instantiate ItemDrop
-    生成位置 = transform.position + dropOffset + entry.offset
+    candidatePosition = transform.position + dropOffset + entry.offset
+    spawnPosition = GetGroundedDropPosition(candidatePosition)
     PickupItem.SetItemData(entry.item)
     return
 → 如果 drops.Count == 0：
     fallback 到旧 dropItem 固定掉落
+    candidatePosition = transform.position + dropOffset
+    spawnPosition = GetGroundedDropPosition(candidatePosition)
 ```
+
+注意：
+
+- 掉落概率逻辑未改变。
+- `PickupItem.SetItemData()` 调用方式未改变。
+- `PickupItem.cs`、`EnemyDeathHandler.cs`、Prefab、Scene、Animator 均未因贴地逻辑修改。
+- 当前 `groundLayerMask = ~0` 仍可能检测到不应视为地面的 Layer，后续可改为 Terrain / Ground / Environment 专用 Layer。
 
 ### `SkeletonEnemy.prefab` 当前掉落配置
 
@@ -765,6 +925,18 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 - 当前 F1 Debug UI 不依赖 DebugManager，而是挂在 SkeletonSpawnerManager 上。
 - 后续可单独移除该 Missing Script 组件，或删除无用 DebugManager。
 
+#### NavMeshSurface_World
+
+- SampleScene 中新增的 NavMeshSurface 场景对象。
+- 用于当前 Terrain / 地面上的敌人 NavMesh 寻路。
+- 当前设置：
+  - `agentTypeID = 0`（Humanoid）
+  - `collectObjects = All`
+  - `useGeometry = PhysicsColliders`
+  - `layerMask = ~0`（全 Layer）
+- NavMesh 已 Bake。
+- NavMeshData 当前嵌入 `SampleScene.unity`，尚未独立保存为 `.asset`。
+
 #### EnemySpawnPoint_Test
 
 - Components: `EnemySpawnPoint`
@@ -791,6 +963,18 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 - EnemyDropper
 - FactionComponent
 - FOVDetector
+- NavMeshAgent
+
+当前 NavMeshAgent 主要参数：
+
+- `speed = 2f`（Wander 时与 `wanderMoveSpeed` 一致；Chase / ReturnToSpawn 会由 EnemyAI 使用 `moveSpeed` 覆盖）
+- `radius = 0.35f`
+- `height = 1.8f`
+- `baseOffset = 0f`
+- `stoppingDistance = 0.2f`
+- `autoBraking = true`
+- `updateRotation = true`
+- Rigidbody 仍保留，当前用于非 Agent fallback / 既有碰撞结构
 
 当前 `EnemyDropper` 多掉落配置：
 
@@ -831,7 +1015,15 @@ Cursor 当前规则：
 ### 战斗 / AI
 
 - ✅ 玩家第三人称移动控制
-- ✅ 敌人 FSM AI（Idle / Chase / Attack / ReturnToSpawn）
+- ✅ 敌人 FSM AI（Idle / Wander / Chase / Attack / ReturnToSpawn）
+- ✅ EnemyAI Idle / Wander 混合游荡
+- ✅ SampleScene NavMeshSurface_World + NavMesh Bake
+- ✅ SkeletonEnemy.prefab 添加 NavMeshAgent
+- ✅ EnemyAI Wander 优先使用 NavMeshAgent
+- ✅ EnemyAI Chase 优先使用 NavMeshAgent
+- ✅ EnemyAI Chase 目标点不可达时保持 Agent Chase，不切 Rigidbody
+- ✅ EnemyAI ReturnToSpawn 优先使用 NavMeshAgent
+- ✅ EnemyAI Agent 不可用时保留 Rigidbody fallback
 - ✅ FOV 视野检测系统
 - ✅ 阵营系统
 - ✅ 血量系统
@@ -867,6 +1059,8 @@ Cursor 当前规则：
 - ✅ PickupItem 按 E 拾取
 - ✅ ItemDrop.prefab
 - ✅ EnemyDropper 多条目概率掉落测试版
+- ✅ EnemyDropper 掉落物 Terrain / 地面贴合生成第一版
+- ✅ EnemyDropper 贴地 Raycast 高度限制，避免把敌人头顶 Collider 误判为地面
 - ✅ SkeletonEnemy.prefab：骨头 100% + 守护核心 20%
 
 ### 装备 / 数值
@@ -925,16 +1119,20 @@ Cursor 当前规则：
 - ⚠️ `EnemyWorldManager` 与 `EnemySpawnPoint` 当前仍有 Find 系列 API，未来应改为注册缓存。
 - ⚠️ `SkeletonDebugUI` 目前职责较多，已接近 Runtime Debug Console，后续可拆分为 InventoryDebugPanel / EquipmentDebugPanel / CombatStatsDebugPanel。
 - ⚠️ `EntityStats.cs` 已创建但未集成。
+- ⚠️ EnemyAI 目前处于 NavMeshAgent / Rigidbody 过渡架构，`rb.isKinematic` 会在 Agent 状态与 fallback 状态间切换；后续建议整理驱动权，减少物理抖动风险。
+- ⚠️ Chase 目标不可达时会保持 Chase 并持续重试，不会因寻路失败主动放弃；如果玩家长期站在敌人永远到不了的位置，敌人可能停在最后可达点附近持续追击，后续可考虑 Evade / Unreachable 规则。
 
 ### 地图 / Terrain
 
-- ⚠️ 添加 Terrain 后，需要重新确认：
+- ⚠️ 添加 Terrain 后，需要继续确认：
   - Player / Enemy 落地高度
-  - EnemySpawnPoint 位置
+  - EnemySpawnPoint 位置是否在 NavMesh 上或足够接近 NavMesh
   - SavePoint 位置
-  - ItemDrop 掉落高度
   - NavMesh / AI 可行走区域
-- ⚠️ 旧 Ground 系列对象需确认是否保留。
+- ✅ ItemDrop 掉落高度已通过 EnemyDropper 贴地 Raycast 第一版改善。
+- ⚠️ 旧 Ground 系列对象需确认是否保留，避免参与 NavMesh Bake 或影响碰撞 / 射线检测。
+- ⚠️ 当前 NavMeshSurface 使用 `layerMask = ~0` 与 `collectObjects = All`，后续建议整理 Ground / Terrain / Environment Layer，避免临时对象或旧测试地块影响 NavMesh。
+- ⚠️ Terrain 或障碍物变化后需要重新 Bake NavMesh。
 
 ---
 
@@ -980,6 +1178,8 @@ Cursor 当前规则：
 - Rigidbody 使用 `rb.linearVelocity`（Unity 6）。
 - 输入系统使用 `Mouse.current` / `Keyboard.current`，不得使用旧 `UnityEngine.Input`。
 - Debug OnGUI 可以继续用于开发工具，但正式 UI 应使用 Canvas / TMP / Button 或 UI Toolkit。
+- EnemyAI 当前优先使用 NavMeshAgent 处理 Wander / Chase / ReturnToSpawn，但必须保留 Agent 不可用时的 Rigidbody fallback。
+- Chase 中“目标点暂时不可达”不应被视为 Agent 失效；不要因此切 Rigidbody，应该继续追最后有效 destination 并持续重试。
 
 ---
 
@@ -1053,31 +1253,40 @@ Cursor 当前规则：
 
 ### 推荐下一阶段方向
 
-#### 优先级 1：继续完善刷装备闭环
+#### 优先级 1：整理 EnemyAI / NavMesh 移动基础
+
+1. 实测 Wander / Chase / ReturnToSpawn 的 Agent 行为。
+2. 检查 Chase → Attack 是否存在滑动 / 抖动。
+3. 检查 Chase → ReturnToSpawn 是否存在 Agent 路径被旧状态清理误停的问题。
+4. 整理 EnemyAI 的 NavMeshAgent / Rigidbody 驱动权，减少 `rb.isKinematic` 状态切换。
+5. 后续再考虑 Attack 距离 hysteresis、Unreachable / Evade 规则。
+6. 整理 NavMeshSurface LayerMask，只让 Terrain / Ground / Environment 参与 Bake。
+7. 视需要将嵌入 Scene 的 NavMeshData 另存为独立 `.asset`。
+
+#### 优先级 2：继续完善刷装备闭环
 
 1. 实测并调整 SkeletonEnemy 的 Core 掉率。
 2. 增加第二个 Core 测试装备，例如：
    - 攻击核心：AttackPowerBonus 高，MaxHealthBonus 低
    - 守护核心：AttackPowerBonus 中，MaxHealthBonus 高
 3. 测试替换 Core：新 Core 从背包进装备槽，旧 Core 回背包。
-4. 让掉落物在 Terrain 上更稳定地贴地生成，避免悬空 / 嵌入地面。
-5. 之后再考虑简单 DropTable ScriptableObject。
+4. 之后再考虑简单 DropTable ScriptableObject。
 
-#### 优先级 2：装备系统扩展
+#### 优先级 3：装备系统扩展
 
 1. 在继续使用 `ItemData` 的前提下增加 Weapon / Armor / Accessory 槽。
 2. `PlayerEquipment` 从单一 Core 字段扩展到多槽位。
 3. `PlayerCombatStats` 汇总多个装备槽属性。
 4. 暂时不做随机词条。
 
-#### 优先级 3：正式 UI
+#### 优先级 4：正式 UI
 
 1. 正式背包 UI。
 2. 正式装备 UI。
 3. 正式死亡 / 复活 UI。
 4. 正式存档点提示。
 
-#### 优先级 4：中长期结构升级
+#### 优先级 5：中长期结构升级
 
 1. 引入 `ItemInstance`，支持同名装备不同词条。
 2. 引入 `StatModifier`。
@@ -1102,56 +1311,53 @@ Cursor 当前规则：
 
 ### ⭐ 最推荐的下一个小任务
 
-**增加第二个测试 Core 装备，并验证替换装备流程。**
+**EnemyAI Agent / Rigidbody 驱动权整理第一版。**
 
 目的：
 
 ```text
-当前只有 TestItem_GuardCore 一个 Core。
-如果要验证“替换装备”是否稳定，需要至少两个不同 Core。
+当前 Wander / Chase / ReturnToSpawn 都已经优先使用 NavMeshAgent。
+但 EnemyAI 仍处于过渡结构：
+Agent 状态下会切 rb.isKinematic = true，
+Attack / fallback 时又恢复 rb.isKinematic = false。
+
+下一步应减少 NavMeshAgent 与 Rigidbody 在不同状态之间争夺移动控制权，
+降低攻击时滑动、斜坡抖动、状态切换瞬间弹动的风险。
 ```
 
-建议新增：
+建议目标：
 
 ```text
-Assets/Items/TestItem_AttackCore.asset
-- itemId = test_attack_core
-- itemName = 攻击核心
-- ItemType = Equipment
-- EquipmentSlotType = Core
-- MaxStack = 1
-- AttackPowerBonus = 40
-- MaxHealthBonus = 0 或 10
-```
-
-然后把它加入 SkeletonEnemy.prefab 的 drops：
-
-```text
-TestItem_AttackCore
-DropChance = 0.10 或临时 1.0 测试
-Offset = (-0.4, 0, 0.2)
+只整理 EnemyAI.cs。
+不改 Animator / Prefab / Scene。
+不改攻击伤害判定。
+不改仇恨系统。
+确认 Agent 驱动状态与 Rigidbody fallback 状态的进入 / 退出规则。
+确保 Attack 状态停止 Agent 且不会继续滑动。
+确保 ResetToSpawn / ForceDisengageAndReturnToSpawn 清理 Agent 状态。
 ```
 
 验收目标：
 
 ```text
-背包中有守护核心和攻击核心
-点击“装备背包中的第一个 Core”装备其中一个
-再次点击时替换另一个
-旧 Core 回背包
-PlayerCombatStats 数值变化正确
-右侧背包 Debug 窗口显示正确
+Wander / Chase / ReturnToSpawn 正常使用 Agent。
+Attack 时敌人不滑动。
+Agent 不可用时 fallback 仍正常。
+Chase 目标点不可达时不切 Rigidbody。
+死亡、掉落、刷新流程不受影响。
 ```
 
 ### 备选任务
 
-1. `EnemyDropper` 掉落物贴合 Terrain。
-2. 清理 `DebugManager` Missing Script。
-3. 左侧 F1 Debug 面板加 ScrollView / 动态尺寸。
-4. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
-5. 将 `SkeletonDebugUI` 拆分为多个 Debug Panel 脚本。
-
----
+1. 增加第二个测试 Core 装备，并验证替换装备流程。
+2. 整理 NavMeshSurface LayerMask，只让 Terrain / Ground / Environment 参与 Bake。
+3. 将 SampleScene 的 NavMeshData 独立保存为 `.asset`。
+4. 给 Attack 增加距离 hysteresis，减少 Chase / Attack 边缘抖动。
+5. 设计敌人长期不可达时的 Evade / ReturnToSpawn 规则。
+6. 清理 `DebugManager` Missing Script。
+7. 左侧 F1 Debug 面板加 ScrollView / 动态尺寸。
+8. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
+9. 将 `SkeletonDebugUI` 拆分为多个 Debug Panel 脚本。
 
 ## 12. 本次有效变更摘要（2026-05-11）
 
@@ -1170,3 +1376,54 @@ PlayerCombatStats 数值变化正确
 13. 项目地图从旧 Ground 主地面转向默认 Terrain；旧 Ground 系列对象需后续确认。
 14. 已确认 F1 Debug UI 实际挂载在 `SkeletonSpawnerManager`，不是 Hierarchy 中的 Canvas Button。
 15. 发现 `DebugManager` 上有 Missing Mono Script，后续可单独清理。
+
+---
+
+## 13. 本次有效变更摘要（2026-05-12）
+
+### EnemyAI / NavMesh
+
+1. `EnemyAI.cs` 新增 `Wander` 状态，实现 Idle / Wander 混合游荡。
+2. `EnemyAI.cs` 新增游荡相关参数：`wanderMoveSpeed`、`wanderPointReachDistance`、`minIdleTime`、`maxIdleTime`。
+3. `EnemyAI.cs` 新增 `_wanderTarget`、`_idleTimer`，支持随机待机后游荡。
+4. `SampleScene.unity` 新增 `NavMeshSurface_World` 并完成 NavMesh Bake。
+5. `SkeletonEnemy.prefab` 新增 `NavMeshAgent` 组件。
+6. `EnemyAI.cs` 新增 NavMeshAgent 支持字段：`_agent`、`_hasAgent`、`_wanderPath`。
+7. Wander 状态改为优先使用 NavMeshAgent：`NavMesh.SamplePosition` + `CalculatePath` + `SetDestination`。
+8. Wander 在 Agent 不可用时保留 Rigidbody fallback。
+9. ReturnToSpawn 改为优先使用 NavMeshAgent。新增 `returnNavMeshSampleDistance`、`_returnPath`、`_returningWithAgent`。
+10. `EnterReturnToSpawn()` 会尝试采样出生点附近 NavMesh，并用 `CalculatePath` 检查回家路径。
+11. `HandleReturnToSpawn()` 支持 Agent / Rigidbody 分支，到达后统一 `FinishReturnToSpawn()`，回满血并恢复 Idle。
+12. Chase 改为优先使用 NavMeshAgent。新增 `chaseDestinationUpdateInterval`、`chaseNavMeshSampleDistance`、`_chasingWithAgent`、`_chasePath`、`_nextChaseDestinationUpdateTime`。
+13. `TryUpdateAgentChaseDestination()` 使用 `NavMesh.SamplePosition` + `CalculatePath` 定期更新玩家附近可达点。
+14. `HandleChaseMovement()` 作为 Chase 移动入口，Agent 可用时使用 Agent，Agent 本身不可用时才 fallback 到 Rigidbody。
+15. Chase 目标点临时不可达时不再切 Rigidbody，不放弃 Chase。
+16. Chase 新增 `_lastValidChaseDestination` 与 `_hasLastValidChaseDestination`，路径更新失败时继续追旧 path / last valid destination，并持续重试。
+17. Attack 进入时停止 Agent、ResetPath，并恢复旧攻击逻辑；`OnAttackHit()` 未修改。
+18. `ResetToSpawn()`、`EnterReturnToSpawn()`、Chase 退出时会清理 Chase / Return Agent 相关状态。
+
+### EnemyDropper / 掉落物贴地
+
+1. `EnemyDropper.cs` 新增 Ground Placement 参数：`alignDropsToGround`、`groundRaycastStartHeight`、`groundRaycastDistance`、`groundOffset`、`groundLayerMask`。
+2. `EnemyDropper.cs` 新增 `GetGroundedDropPosition()`，掉落物生成前从候选位置上方向下 Raycast，将 ItemDrop 放到地面上方。
+3. drops 列表路径和旧 `dropItem` fallback 路径都接入贴地位置计算。
+4. `EnemyDropper.cs` 新增 `maxDropHeightAboveOwnerBounds` 与 `GetMaxAllowedDropGroundY()`。
+5. 贴地 Raycast 命中点若高于敌人自身非 Trigger Collider 顶部 + 容错值，会被视为头顶物体 / 生物 / Collider 误命中并 fallback 到候选位置。
+6. `OnValidate()` 增加 Ground Placement 参数保护。
+
+### 当前状态总结
+
+```text
+EnemyAI：
+Idle / Wander / Chase / Attack / ReturnToSpawn 已成型。
+Wander / Chase / ReturnToSpawn 已优先使用 NavMeshAgent。
+Attack 保留旧攻击逻辑，进入 Attack 时停止 Agent。
+Rigidbody 仍作为 Agent 不可用时的 fallback。
+
+Drop：
+EnemyDropper 已支持多条目概率掉落 + Terrain / 地面贴合生成。
+
+地图：
+SampleScene 已有 Terrain + NavMeshSurface_World。
+NavMeshData 当前嵌入 Scene。
+```
