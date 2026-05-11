@@ -1,23 +1,26 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
 /// 玩家技能输入控制器
 /// 按数字键 1 对当前目标释放普通攻击并造成伤害。
 /// 攻击成功时触发 Animator 的 Attack Trigger 播放攻击动画。
+/// 最终伤害由 PlayerCombatStats.CurrentNormalAttackDamage 提供；
+/// 若 PlayerCombatStats 缺失则回退使用 normalAttackDamage。
 /// </summary>
 public class PlayerSkillController : MonoBehaviour
 {
     [Header("Normal Attack")]
-    public float normalAttackDamage   = 20f;
+    public float normalAttackDamage   = 20f;   // fallback / PlayerCombatStats 缺失时使用
     public float normalAttackRange    = 2.0f;
     public float normalAttackCooldown = 1.0f;
 
-    private PlayerTargeting  _targeting;
-    private FactionComponent _selfFaction;
-    private HealthComponent  _selfHealth;
-    private Animator         _animator;
-    private float            _cooldownTimer;
+    private PlayerTargeting   _targeting;
+    private FactionComponent  _selfFaction;
+    private HealthComponent   _selfHealth;
+    private Animator          _animator;
+    private PlayerCombatStats _combatStats;
+    private float             _cooldownTimer;
 
     private void Awake()
     {
@@ -33,6 +36,9 @@ public class PlayerSkillController : MonoBehaviour
         _animator   = GetComponent<Animator>();
         if (_animator == null)
             Debug.LogWarning("[PlayerSkillController] Animator が見つかりません。攻撃動画は再生されません。");
+
+        // PlayerCombatStats は省略可能。なくても normalAttackDamage で攻撃できる。
+        _combatStats = GetComponent<PlayerCombatStats>();
     }
 
     private void Update()
@@ -109,10 +115,24 @@ public class PlayerSkillController : MonoBehaviour
             return;
         }
 
-        // 8. 全部通过 — 造成伤害
-        _cooldownTimer = normalAttackCooldown;
-        health.TakeDamage(normalAttackDamage, transform);
-        Debug.Log($"[PlayerSkillController] Normal Attack hit {target.name} for {normalAttackDamage} damage.");
+        // 8. 最终伤害 — 优先从 PlayerCombatStats 读取
+        float finalDamage;
+        if (_combatStats != null)
+        {
+            float baseDmg    = _combatStats.BaseNormalAttackDamage;
+            float eqBonus    = _combatStats.EquipmentAttackPowerBonus;
+            finalDamage      = _combatStats.CurrentNormalAttackDamage;
+            _cooldownTimer   = normalAttackCooldown;
+            health.TakeDamage(finalDamage, transform);
+            Debug.Log($"[PlayerSkillController] Player attack hit: base={baseDmg}, equipmentBonus={eqBonus}, final={finalDamage}");
+        }
+        else
+        {
+            finalDamage    = normalAttackDamage;
+            _cooldownTimer = normalAttackCooldown;
+            health.TakeDamage(finalDamage, transform);
+            Debug.Log($"[PlayerSkillController] Player attack hit: final={finalDamage} (fallback: no PlayerCombatStats)");
+        }
 
         // 9. 触发攻击动画（玩家未死亡时）
         if (_animator != null && (_selfHealth == null || !_selfHealth.IsDead))

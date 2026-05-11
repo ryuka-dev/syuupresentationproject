@@ -19,3 +19,4 @@ MonoBehaviour:
   itemType: 1
   maxStack: 1
   equipmentSlotType: 1
+  attackPowerBonus: 20

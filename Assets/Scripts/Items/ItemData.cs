@@ -65,12 +65,17 @@ public class ItemData : ScriptableObject
     [SerializeField] private EquipmentSlotType equipmentSlotType = EquipmentSlotType.None;
     public EquipmentSlotType EquipmentSlotType => equipmentSlotType;
 
+    [SerializeField] private float attackPowerBonus = 0f;
+    public float AttackPowerBonus => attackPowerBonus;
+
 #if UNITY_EDITOR
     private void OnValidate()
     {
         if (maxStack < 1) maxStack = 1;
         if (itemType == ItemType.Equipment) maxStack = 1;
         if (itemType != ItemType.Equipment) equipmentSlotType = EquipmentSlotType.None;
+        if (itemType != ItemType.Equipment) attackPowerBonus = 0f;
+        if (attackPowerBonus < 0f) attackPowerBonus = 0f;
     }
 #endif
 }
