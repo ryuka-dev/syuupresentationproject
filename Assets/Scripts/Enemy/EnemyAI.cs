@@ -7,9 +7,9 @@ public enum EnemyState { Idle, Chase, Attack, ReturnToSpawn, Wander }
 
 /// <summary>
 /// 敌人 AI - 有限状态机（Idle / Wander / Chase / Attack / ReturnToSpawn）
-/// Wander / ReturnToSpawn は NavMeshAgent を優先使用。不可の場合は Rigidbody fallback。
-/// 攻击触发：attackCooldownTimer 到 0 时设 IsAttacking=true 一帧，动画开始后立刻清除，
-/// 依赖 Animator Controller 的 hasExitTime=0.9 完成动画后自动回 Idle，防止双触发。
+/// Wander / Chase / ReturnToSpawn は NavMeshAgent を優先使用。不可の場合は Rigidbody fallback。
+/// Chase 中は目標位置が一時的に不可達でも Agent Chase を維持し、最後の有効 destination を追い続ける。
+/// 攻击触发：attackCooldownTimer 到 0 时设 IsAttacking=true 一帧，动画开始后立刻清除。
 /// </summary>
 public class EnemyAI : MonoBehaviour
 {
@@ -39,8 +39,8 @@ public class EnemyAI : MonoBehaviour
     private float disengageTimer = 0f;
 
     [Header("返回出生点")]
-    [SerializeField] private float returnToSpawnStopDistance  = 0.5f;
-    [Tooltip("出生点の NavMesh サンプリング最大距離（m）。出生点が NavMesh に乗っていない場合に近くの点を探す。")]
+    [SerializeField] private float returnToSpawnStopDistance   = 0.5f;
+    [Tooltip("出生点の NavMesh サンプリング最大距離（m）")]
     [SerializeField] private float returnNavMeshSampleDistance = 3f;
 
     [Header("活动范围")]
@@ -56,6 +56,12 @@ public class EnemyAI : MonoBehaviour
     [SerializeField] private float minIdleTime              = 2f;
     [Tooltip("每次待机的最长时间（秒）")]
     [SerializeField] private float maxIdleTime              = 5f;
+
+    [Header("NavMesh Chase")]
+    [Tooltip("Chase 中に Agent destination を更新する間隔（秒）")]
+    [SerializeField] private float chaseDestinationUpdateInterval = 0.2f;
+    [Tooltip("目標位置の NavMesh サンプリング最大距離（m）")]
+    [SerializeField] private float chaseNavMeshSampleDistance     = 2f;
 
     // 状态
     public EnemyState currentState { get; private set; } = EnemyState.Idle;
@@ -77,16 +83,25 @@ public class EnemyAI : MonoBehaviour
     private Vector3    _spawnPosition;
     private Quaternion _spawnRotation;
 
-    // ─── 游荡状态内部变量 ────────────────────────────────────
+    // ─── 游荡状态内部変量 ────────────────────────────────────
     private Vector3 _wanderTarget;
     private float   _idleTimer = 0f;
 
     // ─── NavMeshAgent ────────────────────────────────────────
     private NavMeshAgent _agent;
     private bool         _hasAgent;
-    private NavMeshPath  _wanderPath;        // Wander 用経路検証
-    private NavMeshPath  _returnPath;        // ReturnToSpawn 用経路検証
-    private bool         _returningWithAgent; // ReturnToSpawn で Agent を使用中かどうか
+    private NavMeshPath  _wanderPath;              // Wander 用経路検証
+    private NavMeshPath  _returnPath;              // ReturnToSpawn 用経路検証
+    private NavMeshPath  _chasePath;               // Chase 用経路検証
+    private bool         _returningWithAgent;      // ReturnToSpawn で Agent 使用中
+    private bool         _chasingWithAgent;        // Chase で Agent 使用中
+    private float        _nextChaseDestinationUpdateTime; // 次回 destination 更新時刻
+
+    // ─── Chase destination キャッシュ ────────────────────────
+    /// <summary>最後に成功した Chase Agent の目標点。目標が一時的に不可達の場合に使用する。</summary>
+    private Vector3 _lastValidChaseDestination;
+    /// <summary>_lastValidChaseDestination が有効かどうかのフラグ。</summary>
+    private bool    _hasLastValidChaseDestination;
 
     // ─── 生命周期 ────────────────────────────────────────────
     void Awake()
@@ -120,7 +135,8 @@ public class EnemyAI : MonoBehaviour
         {
             _wanderPath      = new NavMeshPath();
             _returnPath      = new NavMeshPath();
-            _agent.isStopped = true;   // 初期状態: Agent は停止
+            _chasePath       = new NavMeshPath();
+            _agent.isStopped = true;
         }
 
         SetupIdleTimer();
@@ -189,9 +205,14 @@ public class EnemyAI : MonoBehaviour
     // ─── 返回出生点 ──────────────────────────────────────────
     private void EnterReturnToSpawn()
     {
-        // Wander 中に Agent が動いていた場合は停止（rb.isKinematic を false に戻す）
+        // Wander または Chase 中に Agent が動いていた場合は停止
         if (currentState == EnemyState.Wander && CanUseAgent())
             StopAgentAndRestoreRigidbody();
+        else if (currentState == EnemyState.Chase && _chasingWithAgent)
+            StopAgentAndRestoreRigidbody();
+
+        _chasingWithAgent             = false;
+        _hasLastValidChaseDestination = false;  // Chase キャッシュをクリア
 
         hateTable.Clear();
         currentTarget       = null;
@@ -200,18 +221,16 @@ public class EnemyAI : MonoBehaviour
         currentState        = EnemyState.ReturnToSpawn;
         animator?.SetBool("IsAttacking", false);
 
-        // ─ Agent で帰還できるか判定 ───────────────────────────
+        // Agent で帰還できるか判定
         _returningWithAgent = false;
         if (CanUseAgent())
         {
-            // 出生点付近の NavMesh 上の点を取得して経路が完全か確認
             if (NavMesh.SamplePosition(_spawnPosition, out NavMeshHit spawnHit,
                                        returnNavMeshSampleDistance, NavMesh.AllAreas))
             {
                 _agent.CalculatePath(spawnHit.position, _returnPath);
                 if (_returnPath.status == NavMeshPathStatus.PathComplete)
                 {
-                    // Agent で帰還開始
                     _returningWithAgent  = true;
                     rb.isKinematic       = true;
                     _agent.speed         = moveSpeed;
@@ -223,7 +242,6 @@ public class EnemyAI : MonoBehaviour
 
         if (!_returningWithAgent)
         {
-            // Rigidbody fallback: Agent が残留している場合は念のため停止
             if (_hasAgent && _agent != null && _agent.enabled)
             {
                 _agent.isStopped = true;
@@ -255,33 +273,25 @@ public class EnemyAI : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// ReturnToSpawn 状态每帧处理（FixedUpdate から呼ばれる）。
-    /// Agent が使用可能なら Agent で帰還。不可なら Rigidbody fallback。
-    /// </summary>
     private void HandleReturnToSpawn()
     {
         if (!enabled) return;
 
-        // ── Agent 使用パス ─────────────────────────────────────
         if (_returningWithAgent)
         {
             if (CanUseAgent())
             {
-                // Agent の velocity を moveDirection に反映（Animator Speed 用）
                 Vector3 vel = _agent.velocity;
                 moveDirection = vel.sqrMagnitude > 0.01f
                     ? new Vector3(vel.x, 0f, vel.z).normalized
                     : Vector3.zero;
 
-                // 到達判定
                 if (!_agent.pathPending && _agent.remainingDistance <= returnToSpawnStopDistance)
                     FinishReturnToSpawn();
                 return;
             }
             else
             {
-                // Agent が途中で失効 → Rigidbody fallback へ切り替え
                 _returningWithAgent = false;
                 if (_hasAgent && _agent != null && _agent.enabled)
                 {
@@ -289,11 +299,9 @@ public class EnemyAI : MonoBehaviour
                     _agent.ResetPath();
                 }
                 if (rb != null) rb.isKinematic = false;
-                // fall through → Rigidbody fallback
             }
         }
 
-        // ── Rigidbody fallback パス ─────────────────────────────
         Vector3 currentFlat    = new Vector3(transform.position.x, 0f, transform.position.z);
         Vector3 spawnFlat      = new Vector3(_spawnPosition.x,     0f, _spawnPosition.z);
         float   horizontalDist = Vector3.Distance(currentFlat, spawnFlat);
@@ -321,24 +329,17 @@ public class EnemyAI : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 出生点への帰還完了処理。Agent / Rigidbody 共通。
-    /// Agent を停止し Rigidbody を復元、満血回復、Idle へ移行する。
-    /// </summary>
     private void FinishReturnToSpawn()
     {
         bool wasUsingAgent  = _returningWithAgent;
         _returningWithAgent = false;
 
-        // Agent を停止
         if (_hasAgent && _agent != null && _agent.enabled)
         {
             _agent.isStopped = true;
             _agent.ResetPath();
         }
 
-        // 位置・朝向を出生点に補正
-        // Agent 到達時: 出生点付近に来ているのでそのまま。Rigidbody 到達時: XZ を正確に合わせる。
         if (!wasUsingAgent)
             transform.position = new Vector3(_spawnPosition.x, transform.position.y, _spawnPosition.z);
         transform.rotation = _spawnRotation;
@@ -438,9 +439,18 @@ public class EnemyAI : MonoBehaviour
     {
         if (currentState == next) return;
 
-        // Wander (Agent 使用中) から他の状態へ移行するとき: Agent を停止して Rigidbody を復元
+        // Wander または Chase で Agent が動いていた場合は停止
         if (currentState == EnemyState.Wander && CanUseAgent())
             StopAgentAndRestoreRigidbody();
+        else if (currentState == EnemyState.Chase && _chasingWithAgent)
+            StopAgentAndRestoreRigidbody();
+
+        // Chase から離れる場合: フラグとキャッシュをクリア
+        if (currentState == EnemyState.Chase)
+        {
+            _chasingWithAgent             = false;
+            _hasLastValidChaseDestination = false;
+        }
 
         currentState = next;
         switch (next)
@@ -449,6 +459,7 @@ public class EnemyAI : MonoBehaviour
                 animator?.SetBool("IsAttacking", false);
                 SetupIdleTimer();
                 break;
+
             case EnemyState.Wander:
                 animator?.SetBool("IsAttacking", false);
                 if (CanUseAgent())
@@ -459,15 +470,75 @@ public class EnemyAI : MonoBehaviour
                     _agent.SetDestination(_wanderTarget);
                 }
                 break;
+
             case EnemyState.Chase:
+                animator?.SetBool("IsAttacking", false);
+                _chasingWithAgent               = false;
+                _nextChaseDestinationUpdateTime = 0f;
+                if (CanUseAgent())
+                {
+                    _chasingWithAgent = true;
+                    rb.isKinematic    = true;
+                    _agent.speed      = moveSpeed;
+                    _agent.isStopped  = false;
+                    _agent.ResetPath();
+                    // 最初の destination 設定を試みる（失敗しても Agent Chase は継続）
+                    TryUpdateAgentChaseDestination();
+                }
+                else
+                {
+                    rb.isKinematic = false;
+                }
+                break;
+
             case EnemyState.ReturnToSpawn:
                 animator?.SetBool("IsAttacking", false);
                 break;
+
             case EnemyState.Attack:
                 attackCooldownTimer = 0f;
                 animator?.SetBool("IsAttacking", false);
+                // Chase Agent を Attack 開始時に停止（敵がスライドしないように）
+                if (_chasingWithAgent)
+                {
+                    _chasingWithAgent             = false;
+                    _hasLastValidChaseDestination = false;
+                    if (_hasAgent && _agent != null && _agent.enabled)
+                    {
+                        _agent.isStopped = true;
+                        _agent.ResetPath();
+                    }
+                    if (rb != null) rb.isKinematic = false;
+                }
                 break;
         }
+    }
+
+    // ─── Chase NavMeshAgent ─────────────────────────────────
+    /// <summary>
+    /// 現在のターゲット位置付近の NavMesh 点を取得し、経路が PathComplete なら destination を設定する。
+    /// 成功時: _lastValidChaseDestination を更新して true を返す。
+    /// 失敗時: false を返す。Agent Chase は継続（Rigidbody fallback はしない）。
+    /// </summary>
+    private bool TryUpdateAgentChaseDestination()
+    {
+        if (currentTarget == null) return false;
+        if (!CanUseAgent()) return false;
+
+        if (NavMesh.SamplePosition(currentTarget.position, out NavMeshHit targetHit,
+                                   chaseNavMeshSampleDistance, NavMesh.AllAreas))
+        {
+            _agent.CalculatePath(targetHit.position, _chasePath);
+            if (_chasePath.status == NavMeshPathStatus.PathComplete)
+            {
+                _agent.SetDestination(targetHit.position);
+                _lastValidChaseDestination    = targetHit.position;
+                _hasLastValidChaseDestination = true;
+                return true;
+            }
+        }
+        // 失敗: Agent Chase は継続。_lastValidChaseDestination は保持する。
+        return false;
     }
 
     // ─── Idle / Wander サイクル ──────────────────────────────
@@ -511,7 +582,6 @@ public class EnemyAI : MonoBehaviour
                 }
                 else
                 {
-                    // Agent が NavMesh から外れた → Rigidbody に戻して Idle へ
                     StopAgentAndRestoreRigidbody();
                     arrived = true;
                 }
@@ -598,7 +668,7 @@ public class EnemyAI : MonoBehaviour
                 HandleWanderMovement();
                 break;
             case EnemyState.Chase:
-                ChaseTarget();
+                HandleChaseMovement();
                 break;
             case EnemyState.Attack:
                 moveDirection = Vector3.zero;
@@ -636,10 +706,7 @@ public class EnemyAI : MonoBehaviour
                     : Vector3.zero;
                 return;
             }
-            else
-            {
-                StopAgentAndRestoreRigidbody();
-            }
+            else { StopAgentAndRestoreRigidbody(); }
         }
 
         Vector3 flatPos    = new Vector3(transform.position.x, 0f, transform.position.z);
@@ -670,13 +737,66 @@ public class EnemyAI : MonoBehaviour
         }
     }
 
-    void ChaseTarget()
+    /// <summary>
+    /// Chase 状態の移動処理。
+    /// Agent が使用可能なら Agent で追跡し続ける。
+    /// 目標位置が一時的に不可達でも Rigidbody fallback はしない。
+    /// Agent 自体が使用不可になった場合のみ Rigidbody fallback。
+    /// </summary>
+    private void HandleChaseMovement()
+    {
+        if (currentTarget == null) return;
+
+        // ── Agent 使用パス ──────────────────────────────────
+        if (_chasingWithAgent)
+        {
+            if (!CanUseAgent())
+            {
+                // Agent 自体が使用不可の場合のみ Rigidbody fallback
+                _chasingWithAgent             = false;
+                _hasLastValidChaseDestination = false;
+                StopAgentAndRestoreRigidbody();
+                ChaseTargetRigidbody();
+                return;
+            }
+
+            // 定期的に destination を更新
+            if (Time.time >= _nextChaseDestinationUpdateTime)
+            {
+                _nextChaseDestinationUpdateTime = Time.time + chaseDestinationUpdateInterval;
+                bool updated = TryUpdateAgentChaseDestination();
+
+                if (!updated)
+                {
+                    // 目標位置が一時的に不可達: Rigidbody fallback しない
+                    // Agent に既存パスがあればそのまま続行。
+                    // パスがない場合は最後の有効 destination を再セット。
+                    if (!_agent.hasPath && _hasLastValidChaseDestination)
+                        _agent.SetDestination(_lastValidChaseDestination);
+                    // パスも last valid もない場合はその場で次の更新を待つ（エラーなし）
+                }
+            }
+
+            // Agent velocity を moveDirection に反映（Animator Speed 用）
+            Vector3 vel = _agent.velocity;
+            moveDirection = vel.sqrMagnitude > 0.01f
+                ? new Vector3(vel.x, 0f, vel.z).normalized
+                : Vector3.zero;
+            return;
+        }
+
+        // ── Rigidbody fallback パス ─────────────────────────
+        ChaseTargetRigidbody();
+    }
+
+    /// <summary>旧来の Rigidbody による直線追跡。Chase fallback として使用。</summary>
+    private void ChaseTargetRigidbody()
     {
         if (currentTarget == null) return;
         float dist = Vector3.Distance(transform.position, currentTarget.position);
         if (dist <= stoppingDistance)
         {
-            moveDirection = Vector3.zero;
+            moveDirection     = Vector3.zero;
             rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
             FaceTarget();
             return;
@@ -705,9 +825,11 @@ public class EnemyAI : MonoBehaviour
     public void ResetToSpawn()
     {
         hateTable.Clear();
-        currentTarget       = null;
-        disengageTimer      = 0f;
-        _returningWithAgent = false;  // 帰還中フラグをリセット
+        currentTarget                 = null;
+        disengageTimer                = 0f;
+        _returningWithAgent           = false;
+        _chasingWithAgent             = false;
+        _hasLastValidChaseDestination = false;
 
         if (_hasAgent && _agent != null && _agent.enabled)
         {
