@@ -22,7 +22,7 @@ public class SkeletonDebugUI : MonoBehaviour
     {
         if (!showUI) return;
 
-        GUILayout.BeginArea(new Rect(20, 20, 300, 1060));
+        GUILayout.BeginArea(new Rect(20, 20, 300, 1120));
 
         GUILayout.Label("Skeleton Spawner", new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold });
         GUILayout.Space(10);
@@ -96,6 +96,10 @@ public class SkeletonDebugUI : MonoBehaviour
         if (GUILayout.Button("\u5378\u4e0b\u6d4b\u8bd5 Core", GUILayout.Height(40))) UnequipTestCore();
         GUI.backgroundColor = Color.white;
 
+        GUI.backgroundColor = new Color(1f, 0.85f, 0.5f);
+        if (GUILayout.Button("\u5378\u4e0b Core \u5230\u80cc\u5305", GUILayout.Height(40))) UnequipCoreToInventory();
+        GUI.backgroundColor = Color.white;
+
         GUI.backgroundColor = new Color(0.7f, 0.9f, 1f);
         if (GUILayout.Button("\u88c5\u5907\u80cc\u5305\u4e2d\u7684\u7b2c\u4e00\u4e2a Core", GUILayout.Height(40)))
             EquipFirstCoreFromInventory();
@@ -127,6 +131,32 @@ public class SkeletonDebugUI : MonoBehaviour
         GUILayout.EndArea();
     }
 
+    // ─── 卸下 Core 到背包 ─────────────────────────────────────
+
+    private void UnequipCoreToInventory()
+    {
+        var inv = ResolvePlayerInventory();
+        var eqp = ResolvePlayerEquipment(warnIfMissing: true);
+        if (inv == null) { Debug.LogWarning("[DebugUI] UnequipCoreToInventory: PlayerInventory not found."); return; }
+        if (eqp == null) return;
+
+        ItemData unequipped = eqp.UnequipCore();
+        if (unequipped == null)
+        {
+            // PlayerEquipment 内部がすでに Warning を出す
+            return;
+        }
+
+        if (inv.AddItem(unequipped))
+        {
+            Debug.Log($"[DebugUI] Core \u300c{unequipped.ItemName}\u300d\u3092\u88c5\u5099\u6307\u304b\u3089\u5916\u3057\u3001\u80cc\u5305\u306b\u623b\u3057\u307e\u3057\u305f\uff08ID: {unequipped.ItemId}\uff09");
+        }
+        else
+        {
+            Debug.LogWarning($"[DebugUI] UnequipCoreToInventory: Core \u300c{unequipped.ItemName}\u300d\u3092\u5916\u3057\u307e\u3057\u305f\u304c\u3001\u80cc\u5305\u3078\u306e\u8ffd\u52a0\u306b\u5931\u6557\u3057\u307e\u3057\u305f\u3002\u72b6\u614b\u304c\u4e0d\u4e00\u81f4\u3057\u3066\u3044\u308b\u53ef\u80fd\u6027\u304c\u3042\u308a\u307e\u3059\u3002");
+        }
+    }
+
     // ─── 从背包装备 Core ──────────────────────────────────────
 
     private void EquipFirstCoreFromInventory()
@@ -146,14 +176,12 @@ public class SkeletonDebugUI : MonoBehaviour
         bool success = eqp.EquipCore(newCore, out ItemData replacedCore);
         if (!success) return;
 
-        // 新 Core を背包から除去
         if (!inv.RemoveItem(newCore))
         {
             Debug.LogError($"[DebugUI] EquipFirstCoreFromInventory: EquipCore \u6210\u529f\u4f46 RemoveItem \u5931\u8d25\uff01\u5e93\u5b58\u53ef\u80fd\u4e0d\u4e00\u81f4\u3002");
             return;
         }
 
-        // 旧 Core を背包に戻す
         if (replacedCore != null)
         {
             inv.AddItem(replacedCore);
