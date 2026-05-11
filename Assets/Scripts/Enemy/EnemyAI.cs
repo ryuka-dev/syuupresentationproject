@@ -1,11 +1,11 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-public enum EnemyState { Idle, Chase, Attack, ReturnToSpawn }
+public enum EnemyState { Idle, Chase, Attack, ReturnToSpawn, Wander }
 
 /// <summary>
-/// 敌人 AI - 有限状态机（Idle / Chase / Attack / ReturnToSpawn）
+/// 敌人 AI - 有限状态机（Idle / Wander / Chase / Attack / ReturnToSpawn）
 /// 攻击触发：attackCooldownTimer 到 0 时设 IsAttacking=true 一帧，动画开始后立刻清除，
 /// 依赖 Animator Controller 的 hasExitTime=0.9 完成动画后自动回 Idle，防止双触发。
 /// </summary>
@@ -43,6 +43,15 @@ public class EnemyAI : MonoBehaviour
     [SerializeField] private float wanderRadius = 6f;
     [SerializeField] private float leashRadius  = 25f;
 
+    [Header("游荡")]
+    [Tooltip("游荡移动速度（建议低于 moveSpeed）")]
+    [SerializeField] private float wanderMoveSpeed          = 2f;
+    [Tooltip("判定到达游荡目标点的距离阈值")]
+    [SerializeField] private float wanderPointReachDistance = 0.8f;
+    [Tooltip("每次待机的最短时间（秒）")]
+    [SerializeField] private float minIdleTime              = 2f;
+    [Tooltip("每次待机的最长时间（秒）")]
+    [SerializeField] private float maxIdleTime              = 5f;
 
     // 状态
     public EnemyState currentState { get; private set; } = EnemyState.Idle;
@@ -63,6 +72,10 @@ public class EnemyAI : MonoBehaviour
     // ─── 出生点 ──────────────────────────────────────────────
     private Vector3    _spawnPosition;
     private Quaternion _spawnRotation;
+
+    // ─── 游荡状态内部变量 ────────────────────────────────────
+    private Vector3 _wanderTarget;
+    private float   _idleTimer = 0f;
 
     // ─── 生命周期 ────────────────────────────────────────────
     void Awake()
@@ -89,9 +102,15 @@ public class EnemyAI : MonoBehaviour
     void Start()
     {
         if (rb == null) rb = GetComponent<Rigidbody>();
+
+        // 初期 Idle タイマーを設定（ゲーム開始直後から Wander サイクルを動かす）
+        SetupIdleTimer();
+
+        if (wanderRadius > 0f && wanderRadius > leashRadius)
+            Debug.LogWarning($"[EnemyAI] {gameObject.name}: wanderRadius({wanderRadius}) が leashRadius({leashRadius}) を超えています。wanderRadius <= leashRadius に設定してください。");
     }
 
-void Update()
+    void Update()
     {
         // ReturnToSpawn 中はスキャン・脱戦・状態更新を行わない
         if (currentState == EnemyState.ReturnToSpawn) return;
@@ -108,6 +127,10 @@ void Update()
         }
         UpdateDisengage();
         UpdateState();
+
+        // Idle / Wander サイクル更新（ターゲットがいない場合）
+        if (currentState == EnemyState.Idle || currentState == EnemyState.Wander)
+            UpdateIdleWanderCycle();
     }
 
     // ─── 脱战计时 ────────────────────────────────────────────
@@ -155,9 +178,9 @@ void Update()
         Debug.Log($"[EnemyAI] {gameObject.name} 开始返回出生点。");
     }
 
-/// <summary>
-    /// 敵と出生中心点のXZ水平距離を返す。
-    /// Y軸の高低差は活動範囲判定に影響させない。
+    /// <summary>
+    /// 敵と出生中心点の XZ 水平距離を返す。
+    /// Y 軸の高低差は活動範囲判定に影響させない。
     /// </summary>
     private float GetHorizontalDistanceFromSpawn()
     {
@@ -184,19 +207,18 @@ void Update()
         }
     }
 
-
     /// <summary>
     /// ReturnToSpawn 状态每帧处理（在 FixedUpdate 中调用）。
     /// 走向出生点，到达后精确归位、恢复满血并进入 Idle。
     /// </summary>
-private void HandleReturnToSpawn()
+    private void HandleReturnToSpawn()
     {
         if (!enabled) return;
 
-        // 水平距離のみで到達判定（Y軸の高さ差は無視）
-        Vector3 currentFlat = new Vector3(transform.position.x, 0f, transform.position.z);
-        Vector3 spawnFlat   = new Vector3(_spawnPosition.x,     0f, _spawnPosition.z);
-        float horizontalDist = Vector3.Distance(currentFlat, spawnFlat);
+        // 水平距離のみで到達判定（Y 軸の高さ差は無視）
+        Vector3 currentFlat  = new Vector3(transform.position.x, 0f, transform.position.z);
+        Vector3 spawnFlat    = new Vector3(_spawnPosition.x,     0f, _spawnPosition.z);
+        float   horizontalDist = Vector3.Distance(currentFlat, spawnFlat);
 
         if (horizontalDist > returnToSpawnStopDistance)
         {
@@ -211,7 +233,6 @@ private void HandleReturnToSpawn()
                 rb.linearVelocity.y,
                 moveDirection.z * moveSpeed);
 
-            // 出生点方向に辞を向ける
             if (moveDirection.sqrMagnitude > 0.001f)
                 transform.rotation = Quaternion.Lerp(
                     transform.rotation,
@@ -239,6 +260,7 @@ private void HandleReturnToSpawn()
             currentState        = EnemyState.Idle;
             attackCooldownTimer = 0f;
             moveDirection       = Vector3.zero;
+            SetupIdleTimer();   // 帰還後に Idle タイマーをリセット
             animator?.SetBool("IsAttacking", false);
             animator?.SetFloat("Speed", 0f);
             Debug.Log($"[EnemyAI] {gameObject.name} 已回到出生点，重置完成。");
@@ -323,16 +345,21 @@ private void HandleReturnToSpawn()
     // ─── 状态机 ────────────────────────────────────────────
     void UpdateState()
     {
-        // ReturnToSpawn 状态由 HandleReturnToSpawn() 自行管理，外部不覆盖
         if (currentState == EnemyState.ReturnToSpawn) return;
 
-        if (currentTarget == null)
+        // 有効なターゲットがいる場合は Chase / Attack へ
+        if (currentTarget != null)
         {
-            TransitionTo(EnemyState.Idle);
+            float dist = Vector3.Distance(transform.position, currentTarget.position);
+            TransitionTo(dist <= attackRange ? EnemyState.Attack : EnemyState.Chase);
             return;
         }
-        float dist = Vector3.Distance(transform.position, currentTarget.position);
-        TransitionTo(dist <= attackRange ? EnemyState.Attack : EnemyState.Chase);
+
+        // ターゲットなし：Idle / Wander サイクルは UpdateIdleWanderCycle() に任せる
+        if (currentState == EnemyState.Idle || currentState == EnemyState.Wander) return;
+
+        // Chase / Attack 中にターゲットを失った → Idle へ戻して Wander サイクルを再開
+        TransitionTo(EnemyState.Idle);
     }
 
     void TransitionTo(EnemyState next)
@@ -342,6 +369,10 @@ private void HandleReturnToSpawn()
         switch (next)
         {
             case EnemyState.Idle:
+                animator?.SetBool("IsAttacking", false);
+                SetupIdleTimer();   // Idle 遷移時に毎回タイマーをリセット
+                break;
+            case EnemyState.Wander:
             case EnemyState.Chase:
             case EnemyState.ReturnToSpawn:
                 animator?.SetBool("IsAttacking", false);
@@ -351,6 +382,88 @@ private void HandleReturnToSpawn()
                 animator?.SetBool("IsAttacking", false);
                 break;
         }
+    }
+
+    // ─── Idle / Wander サイクル ──────────────────────────────
+    /// <summary>Idle タイマーをランダム時間でリセットする。</summary>
+    private void SetupIdleTimer()
+    {
+        _idleTimer = Random.Range(minIdleTime, maxIdleTime);
+    }
+
+    /// <summary>
+    /// Idle / Wander サイクルを管理する。Update() の末尾から毎フレーム呼ばれる。
+    /// ターゲットがいない場合にのみ有効。
+    /// </summary>
+    private void UpdateIdleWanderCycle()
+    {
+        // ターゲットが出現した場合は UpdateState() が遷移させるので何もしない
+        if (currentTarget != null) return;
+
+        if (currentState == EnemyState.Idle)
+        {
+            _idleTimer -= Time.deltaTime;
+            if (_idleTimer <= 0f)
+            {
+                // wanderRadius <= 0 の場合はゲームまま待機（エラーなし）
+                if (wanderRadius <= 0f)
+                {
+                    SetupIdleTimer();
+                    return;
+                }
+
+                // 游荡目标点を選択して Wander へ遷移
+                if (TryPickWanderPoint(out Vector3 point))
+                {
+                    _wanderTarget = point;
+                    TransitionTo(EnemyState.Wander);
+                }
+                else
+                {
+                    // 有効な点が見つからない場合はタイマーをリセットして次回再試行
+                    SetupIdleTimer();
+                }
+            }
+        }
+        else if (currentState == EnemyState.Wander)
+        {
+            // 目标点に到達したら Idle へ戻す
+            Vector3 flatPos    = new Vector3(transform.position.x, 0f, transform.position.z);
+            Vector3 flatTarget = new Vector3(_wanderTarget.x,      0f, _wanderTarget.z);
+            if (Vector3.Distance(flatPos, flatTarget) <= wanderPointReachDistance)
+            {
+                TransitionTo(EnemyState.Idle);
+            }
+        }
+    }
+
+    /// <summary>
+    /// _spawnPosition 周囲の XZ 平面でランダムな游荡目标点を選ぶ。
+    /// leashRadius 内に収まる点を最大 10 回試行する。
+    /// </summary>
+    private bool TryPickWanderPoint(out Vector3 point)
+    {
+        point = Vector3.zero;
+        for (int i = 0; i < 10; i++)
+        {
+            Vector2 circle    = Random.insideUnitCircle * wanderRadius;
+            Vector3 candidate = new Vector3(
+                _spawnPosition.x + circle.x,
+                transform.position.y,   // Y は現在位置を維持（重力に任せる）
+                _spawnPosition.z + circle.y);
+
+            // leashRadius チェック（XZ のみ）
+            float distFromSpawn = Vector3.Distance(
+                new Vector3(candidate.x, 0f, candidate.z),
+                new Vector3(_spawnPosition.x, 0f, _spawnPosition.z));
+
+            if (distFromSpawn <= leashRadius)
+            {
+                point = candidate;
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>由攻击动画第 20 帧的 Animation Event 调用。方法名不可改。</summary>
@@ -374,14 +487,17 @@ private void HandleReturnToSpawn()
         switch (currentState)
         {
             case EnemyState.Idle:
-                moveDirection = Vector3.zero;
+                moveDirection     = Vector3.zero;
                 rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
+                break;
+            case EnemyState.Wander:
+                HandleWanderMovement();
                 break;
             case EnemyState.Chase:
                 ChaseTarget();
                 break;
             case EnemyState.Attack:
-                moveDirection = Vector3.zero;
+                moveDirection     = Vector3.zero;
                 rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
                 FaceTarget();
                 if (animator != null)
@@ -403,13 +519,46 @@ private void HandleReturnToSpawn()
         animator?.SetFloat("Speed", moveDirection.magnitude, 0.1f, Time.fixedDeltaTime);
     }
 
+    /// <summary>Wander 状態の移動処理。XZ のみ制御し Y は重力に任せる。</summary>
+    private void HandleWanderMovement()
+    {
+        Vector3 flatPos    = new Vector3(transform.position.x, 0f, transform.position.z);
+        Vector3 flatTarget = new Vector3(_wanderTarget.x,      0f, _wanderTarget.z);
+        float   dist       = Vector3.Distance(flatPos, flatTarget);
+
+        if (dist > wanderPointReachDistance)
+        {
+            moveDirection = new Vector3(
+                _wanderTarget.x - transform.position.x,
+                0f,
+                _wanderTarget.z - transform.position.z).normalized;
+
+            rb.linearVelocity = new Vector3(
+                moveDirection.x * wanderMoveSpeed,
+                rb.linearVelocity.y,
+                moveDirection.z * wanderMoveSpeed);
+
+            if (moveDirection.sqrMagnitude > 0.001f)
+                transform.rotation = Quaternion.Lerp(
+                    transform.rotation,
+                    Quaternion.LookRotation(moveDirection),
+                    rotationSpeed * Time.fixedDeltaTime);
+        }
+        else
+        {
+            // 到達済み（UpdateIdleWanderCycle が次フレームで Idle へ遷移させる）
+            moveDirection     = Vector3.zero;
+            rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
+        }
+    }
+
     void ChaseTarget()
     {
         if (currentTarget == null) return;
         float dist = Vector3.Distance(transform.position, currentTarget.position);
         if (dist <= stoppingDistance)
         {
-            moveDirection = Vector3.zero;
+            moveDirection     = Vector3.zero;
             rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
             FaceTarget();
             return;
@@ -460,14 +609,15 @@ private void HandleReturnToSpawn()
         currentState        = EnemyState.Idle;
         attackCooldownTimer = 0f;
         moveDirection       = Vector3.zero;
+        SetupIdleTimer();   // リセット後に Idle タイマーを再設定
         animator?.SetBool("IsAttacking", false);
         animator?.SetFloat("Speed", 0f);
     }
 
-/// <summary>
+    /// <summary>
     /// 外部から敌人を強制脱戦させ、出生点へ帰還させる。
     /// プレイヤー死亡時など、EnemyWorldManager から呼び出す想定。
-    /// 値得注意：瘜間移動なし。歩いて歷る正式帰還フローを使用する。
+    /// 瞬間移動なし。歩いて帰る正式帰還フローを使用する。
     /// </summary>
     public void ForceDisengageAndReturnToSpawn()
     {
@@ -478,5 +628,4 @@ private void HandleReturnToSpawn()
         Debug.Log($"[EnemyAI] {gameObject.name} 外部指令により強制脱戦、出生点へ帰還。");
         EnterReturnToSpawn();
     }
-
 }
