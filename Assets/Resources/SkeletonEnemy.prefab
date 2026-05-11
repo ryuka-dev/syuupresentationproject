@@ -791,6 +791,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 308fcefa53b01a94d8e4c56cabb1c7fa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemyDropper
+  drops:
+  - item: {fileID: 11400000, guid: 81f8c2bad2732a24e829bf41d8b7f4f7, type: 2}
+    dropChance: 1
+    offset: {x: 0, y: 0, z: 0}
+  - item: {fileID: 11400000, guid: 8cec06c7c5aeac34dbc4e0f578eaeb53, type: 2}
+    dropChance: 0.2
+    offset: {x: 0.4, y: 0, z: 0.2}
   dropItem: {fileID: 11400000, guid: 81f8c2bad2732a24e829bf41d8b7f4f7, type: 2}
   pickupPrefab: {fileID: 6508404235517748597, guid: e7c39331bf5f8f641a41a154ef4cab77, type: 3}
   dropOffset: {x: 0, y: 0.2, z: 0}
