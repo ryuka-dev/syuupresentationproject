@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System;
 
 /// <summary>
@@ -57,5 +57,33 @@ public class HealthComponent : MonoBehaviour
         Debug.Log($"[Health] RestoreFullHealth() called. currentHealth={currentHealth}");
         OnHealthChanged?.Invoke(currentHealth, maxHealth);
     }
-}
 
+    /// <summary>
+    /// 最大生命值を変更する。
+    /// keepCurrentRatio=true の場合は現在 HP を旧 maxHealth との比率で再計算する。
+    /// keepCurrentRatio=false の場合は現在 HP をそのまま保持し、超過分のみ切り捨てる。
+    /// IsDead 状態・OnDied・復活処理には一切関与しない。
+    /// </summary>
+    public void SetMaxHealth(float newMaxHealth, bool keepCurrentRatio = false)
+    {
+        if (newMaxHealth < 1f) newMaxHealth = 1f;
+
+        float oldMax     = maxHealth;
+        float oldCurrent = currentHealth;
+
+        if (keepCurrentRatio)
+        {
+            float ratio   = oldMax > 0f ? oldCurrent / oldMax : 1f;
+            maxHealth     = newMaxHealth;
+            currentHealth = Mathf.Max(0f, newMaxHealth * ratio);
+        }
+        else
+        {
+            maxHealth     = newMaxHealth;
+            currentHealth = Mathf.Min(oldCurrent, newMaxHealth);
+        }
+
+        OnHealthChanged?.Invoke(currentHealth, maxHealth);
+        Debug.Log($"[Health] SetMaxHealth: oldMax={oldMax}, newMax={maxHealth}, oldCurrent={oldCurrent}, newCurrent={currentHealth}");
+    }
+}

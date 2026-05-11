@@ -4,7 +4,8 @@ using UnityEngine.InputSystem;
 public class SkeletonDebugUI : MonoBehaviour
 {
     public SkeletonSpawner spawner;
-    [SerializeField] private PlayerEquipment playerEquipment;
+    [SerializeField] private PlayerEquipment   playerEquipment;
+    [SerializeField] private PlayerCombatStats playerCombatStats;
     [SerializeField] private ItemData testCoreItem;
 
     private bool showUI = false;
@@ -20,7 +21,7 @@ public class SkeletonDebugUI : MonoBehaviour
     {
         if (!showUI) return;
 
-        GUILayout.BeginArea(new Rect(20, 20, 300, 720));
+        GUILayout.BeginArea(new Rect(20, 20, 300, 1000));
 
         GUILayout.Label("Skeleton Spawner", new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold });
         GUILayout.Space(10);
@@ -57,15 +58,15 @@ public class SkeletonDebugUI : MonoBehaviour
             RespawnPlayerAtSavePointTest();
         GUI.backgroundColor = Color.white;
 
-        // ─── 敌人调试 ───────────────────────────────────────
+        // ─── 敌人调试 ────────────────────────────────────────
         GUILayout.Space(10);
         GUILayout.Label("\u2500\u2500\u2500 \u654c\u4eba\u8c03\u8bd5 \u2500\u2500\u2500");
 
         var player        = FindPlayerGameObject();
-        var targeting     = player       != null ? player.GetComponent<PlayerTargeting>()       : null;
-        var currentTarget = targeting    != null ? targeting.CurrentTarget                       : null;
-        var enemyAI       = currentTarget != null ? currentTarget.GetComponent<EnemyAI>()        : null;
-        var healthComp    = currentTarget != null ? currentTarget.GetComponent<HealthComponent>() : null;
+        var targeting     = player        != null ? player.GetComponent<PlayerTargeting>()        : null;
+        var currentTarget = targeting     != null ? targeting.CurrentTarget                        : null;
+        var enemyAI       = currentTarget != null ? currentTarget.GetComponent<EnemyAI>()         : null;
+        var healthComp    = currentTarget != null ? currentTarget.GetComponent<HealthComponent>()  : null;
 
         bool canReset = enemyAI    != null && enemyAI.enabled
                      && healthComp != null && !healthComp.IsDead;
@@ -88,11 +89,10 @@ public class SkeletonDebugUI : MonoBehaviour
             ResetCurrentTargetEnemy(enemyAI, healthComp);
         GUI.backgroundColor = Color.white;
 
-        // ─── 装备调试 ───────────────────────────────────────
+        // ─── 装备调试 ────────────────────────────────────────
         GUILayout.Space(10);
         GUILayout.Label("\u2500\u2500\u2500 \u88c5\u5907\u8c03\u8bd5 \u2500\u2500\u2500");
 
-        // 状态显示（静默查找，不 Warning）
         var pe = ResolvePlayerEquipment(warnIfMissing: false);
         if (pe != null)
         {
@@ -116,27 +116,82 @@ public class SkeletonDebugUI : MonoBehaviour
             UnequipTestCore();
         GUI.backgroundColor = Color.white;
 
+        // ─── 战斗属性调试 ─────────────────────────────────────
+        GUILayout.Space(10);
+        GUILayout.Label("\u2500\u2500\u2500 \u6218\u6597\u5c5e\u6027\u8c03\u8bd5 \u2500\u2500\u2500");
+
+        var cs = ResolvePlayerCombatStats();
+        if (cs != null)
+        {
+            GUILayout.Label($"Base Normal Attack Damage: {cs.BaseNormalAttackDamage}");
+            GUILayout.Label($"Equipment Attack Bonus: {cs.EquipmentAttackPowerBonus}");
+            GUILayout.Label($"Current Normal Attack Damage: {cs.CurrentNormalAttackDamage}");
+            GUILayout.Label($"Equipment Max Health Bonus: {cs.EquipmentMaxHealthBonus}");
+            GUILayout.Label($"Base Max Health: {cs.BaseMaxHealth}");
+            GUILayout.Label($"Current Max Health: {cs.CurrentMaxHealth}");
+        }
+        else
+        {
+            GUILayout.Label("PlayerCombatStats \u672a\u6302\u8f7d");
+        }
+
+        GUI.backgroundColor = new Color(0.6f, 1f, 0.7f);
+        if (GUILayout.Button("\u5e94\u7528\u5f53\u524d\u6700\u5927\u751f\u547d\u5024", GUILayout.Height(40)))
+            ApplyCurrentMaxHealth();
+        GUI.backgroundColor = Color.white;
+
         GUILayout.Space(10);
         GUILayout.Label("F1: Toggle");
 
         GUILayout.EndArea();
     }
 
+    // ─── 最大生命値適用 ──────────────────────────────────────
+
+    private void ApplyCurrentMaxHealth()
+    {
+        var cs = ResolvePlayerCombatStats();
+        if (cs == null)
+        {
+            Debug.LogWarning("[DebugUI] ApplyCurrentMaxHealth: PlayerCombatStats not found.");
+            return;
+        }
+        var p = FindPlayerGameObject();
+        if (p == null)
+        {
+            Debug.LogWarning("[DebugUI] ApplyCurrentMaxHealth: Player not found.");
+            return;
+        }
+        var health = p.GetComponent<HealthComponent>();
+        if (health == null)
+        {
+            Debug.LogWarning("[DebugUI] ApplyCurrentMaxHealth: Player HealthComponent not found.");
+            return;
+        }
+        float before = health.maxHealth;
+        float beforeCurrent = health.currentHealth;
+        health.SetMaxHealth(cs.CurrentMaxHealth, keepCurrentRatio: false);
+        Debug.Log($"[DebugUI] ApplyCurrentMaxHealth: maxHealth {before}->{health.maxHealth}, currentHealth {beforeCurrent}->{health.currentHealth}");
+    }
+
     // ─── 装备调试ヘルパー ──────────────────────────────────
 
-    /// <summary>
-    /// playerEquipment フィールドが null なら Player から GetComponent を試みる。
-    /// warnIfMissing=true のときのみ Warning を出す（ボタン押下時用）。
-    /// </summary>
     private PlayerEquipment ResolvePlayerEquipment(bool warnIfMissing)
     {
         if (playerEquipment != null) return playerEquipment;
         var p = FindPlayerGameObject();
-        if (p != null)
-            playerEquipment = p.GetComponent<PlayerEquipment>();
+        if (p != null) playerEquipment = p.GetComponent<PlayerEquipment>();
         if (playerEquipment == null && warnIfMissing)
             Debug.LogWarning("[DebugUI] PlayerEquipment not found on Player.");
         return playerEquipment;
+    }
+
+    private PlayerCombatStats ResolvePlayerCombatStats()
+    {
+        if (playerCombatStats != null) return playerCombatStats;
+        var p = FindPlayerGameObject();
+        if (p != null) playerCombatStats = p.GetComponent<PlayerCombatStats>();
+        return playerCombatStats;
     }
 
     private void EquipTestCore()
@@ -164,10 +219,7 @@ public class SkeletonDebugUI : MonoBehaviour
     {
         var factions = FindObjectsByType<FactionComponent>(FindObjectsSortMode.None);
         foreach (var fc in factions)
-        {
-            if (fc.faction == Faction.Player)
-                return fc.gameObject;
-        }
+            if (fc.faction == Faction.Player) return fc.gameObject;
         return null;
     }
 
@@ -175,10 +227,8 @@ public class SkeletonDebugUI : MonoBehaviour
     {
         var player = FindPlayerGameObject();
         if (player == null) { Debug.LogWarning("[DebugUI] Player not found."); return; }
-
         var health = player.GetComponent<HealthComponent>();
         if (health == null) { Debug.LogWarning("[DebugUI] Player HealthComponent not found."); return; }
-
         Debug.Log("[DebugUI] Restore player full health button clicked.");
         health.RestoreFullHealth();
     }
@@ -187,22 +237,15 @@ public class SkeletonDebugUI : MonoBehaviour
     {
         var player = FindPlayerGameObject();
         if (player == null) { Debug.LogWarning("[DebugUI] Player not found."); return; }
-
         var health       = player.GetComponent<HealthComponent>();
         var deathHandler = player.GetComponent<PlayerDeathHandler>();
-
         if (health == null)       { Debug.LogWarning("[DebugUI] Player HealthComponent not found."); return; }
         if (deathHandler == null) { Debug.LogWarning("[DebugUI] PlayerDeathHandler not found.");     return; }
-
         health.RestoreFullHealth();
         deathHandler.ResetForRespawn();
-
         var levelManager = FindFirstObjectByType<LevelObjectiveManager>();
-        if (levelManager != null)
-            levelManager.ClearLevelResultForRespawn();
-        else
-            Debug.LogWarning("[DebugUI] LevelObjectiveManager not found. UI not cleared.");
-
+        if (levelManager != null) levelManager.ClearLevelResultForRespawn();
+        else Debug.LogWarning("[DebugUI] LevelObjectiveManager not found. UI not cleared.");
         Debug.Log("[DebugUI] Player respawn test executed.");
     }
 
@@ -210,41 +253,20 @@ public class SkeletonDebugUI : MonoBehaviour
     {
         var player = FindPlayerGameObject();
         if (player == null) { Debug.LogWarning("[DebugUI] Player not found."); return; }
-
         var health         = player.GetComponent<HealthComponent>();
         var deathHandler   = player.GetComponent<PlayerDeathHandler>();
         var respawnTracker = player.GetComponent<PlayerRespawnPointTracker>();
-
-        if (health == null)
-        {
-            Debug.LogWarning("[DebugUI] Player HealthComponent not found.");
-            return;
-        }
-        if (deathHandler == null)
-        {
-            Debug.LogWarning("[DebugUI] PlayerDeathHandler not found.");
-            return;
-        }
-        if (respawnTracker == null)
-        {
-            Debug.LogWarning("[DebugUI] PlayerRespawnPointTracker not found.");
-            return;
-        }
-
+        if (health == null)         { Debug.LogWarning("[DebugUI] Player HealthComponent not found."); return; }
+        if (deathHandler == null)   { Debug.LogWarning("[DebugUI] PlayerDeathHandler not found."); return; }
+        if (respawnTracker == null) { Debug.LogWarning("[DebugUI] PlayerRespawnPointTracker not found."); return; }
         player.transform.SetPositionAndRotation(
             respawnTracker.CurrentRespawnPosition,
-            respawnTracker.CurrentRespawnRotation
-        );
-
+            respawnTracker.CurrentRespawnRotation);
         health.RestoreFullHealth();
         deathHandler.ResetForRespawn();
-
         var levelManager = FindFirstObjectByType<LevelObjectiveManager>();
-        if (levelManager != null)
-            levelManager.ClearLevelResultForRespawn();
-        else
-            Debug.LogWarning("[DebugUI] LevelObjectiveManager not found. UI not cleared.");
-
+        if (levelManager != null) levelManager.ClearLevelResultForRespawn();
+        else Debug.LogWarning("[DebugUI] LevelObjectiveManager not found. UI not cleared.");
         Debug.Log($"[DebugUI] Player respawned at SavePoint: {respawnTracker.CurrentRespawnPosition}");
     }
 
@@ -265,7 +287,6 @@ public class SkeletonDebugUI : MonoBehaviour
             Debug.LogWarning($"[DebugUI] ResetCurrentTargetEnemy: {enemyAI.gameObject.name} \u5df2\u6b7b\u4ea1\u6216\u65e0 HealthComponent\uff0c\u8df3\u8fc7\u91cd\u7f6e\u3002");
             return;
         }
-
         enemyAI.ResetToSpawn();
         Debug.Log($"[DebugUI] ResetToSpawn() \u5df2\u8c03\u7528: {enemyAI.gameObject.name}");
     }

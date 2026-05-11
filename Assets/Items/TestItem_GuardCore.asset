@@ -20,3 +20,4 @@ MonoBehaviour:
   maxStack: 1
   equipmentSlotType: 1
   attackPowerBonus: 20
+  maxHealthBonus: 50

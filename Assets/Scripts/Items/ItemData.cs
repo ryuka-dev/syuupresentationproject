@@ -1,46 +1,9 @@
 ﻿using UnityEngine;
 
-/// <summary>
-/// アイテムの種別を表す列挙型。
-/// </summary>
-public enum ItemType
-{
-    Material,
-    Equipment,
-    Consumable,
-    Currency,
-    Quest,
-    Cosmetic
-}
+public enum ItemType { Material, Equipment, Consumable, Currency, Quest, Cosmetic }
+public enum ItemRarity { Common, Rare, Epic, Legendary }
+public enum EquipmentSlotType { None, Core, Weapon, Armor, Accessory }
 
-/// <summary>
-/// アイテムの稀有度を表す列挙型。
-/// </summary>
-public enum ItemRarity
-{
-    Common,
-    Rare,
-    Epic,
-    Legendary
-}
-
-/// <summary>
-/// 装備スロットの種別を表す列挙型。
-/// Equipment 以外のアイテムは None のまま維持される。
-/// </summary>
-public enum EquipmentSlotType
-{
-    None,
-    Core,
-    Weapon,
-    Armor,
-    Accessory
-}
-
-/// <summary>
-/// 掉落物（アイテム）の基本データを定義する ScriptableObject。
-/// 将来的なドロップシステム・インベントリシステムの基盤となる。
-/// </summary>
 [CreateAssetMenu(fileName = "New ItemData", menuName = "RPG/Items/Item Data")]
 public class ItemData : ScriptableObject
 {
@@ -68,6 +31,9 @@ public class ItemData : ScriptableObject
     [SerializeField] private float attackPowerBonus = 0f;
     public float AttackPowerBonus => attackPowerBonus;
 
+    [SerializeField] private float maxHealthBonus = 0f;
+    public float MaxHealthBonus => maxHealthBonus;
+
 #if UNITY_EDITOR
     private void OnValidate()
     {
@@ -76,6 +42,8 @@ public class ItemData : ScriptableObject
         if (itemType != ItemType.Equipment) equipmentSlotType = EquipmentSlotType.None;
         if (itemType != ItemType.Equipment) attackPowerBonus = 0f;
         if (attackPowerBonus < 0f) attackPowerBonus = 0f;
+        if (itemType != ItemType.Equipment) maxHealthBonus = 0f;
+        if (maxHealthBonus < 0f) maxHealthBonus = 0f;
     }
 #endif
 }
