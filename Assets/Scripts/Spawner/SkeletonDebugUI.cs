@@ -4,6 +4,9 @@ using UnityEngine.InputSystem;
 public class SkeletonDebugUI : MonoBehaviour
 {
     public SkeletonSpawner spawner;
+    [SerializeField] private PlayerEquipment playerEquipment;
+    [SerializeField] private ItemData testCoreItem;
+
     private bool showUI = false;
 
     void Update()
@@ -17,7 +20,7 @@ public class SkeletonDebugUI : MonoBehaviour
     {
         if (!showUI) return;
 
-        GUILayout.BeginArea(new Rect(20, 20, 300, 560));
+        GUILayout.BeginArea(new Rect(20, 20, 300, 720));
 
         GUILayout.Label("Skeleton Spawner", new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold });
         GUILayout.Space(10);
@@ -54,22 +57,19 @@ public class SkeletonDebugUI : MonoBehaviour
             RespawnPlayerAtSavePointTest();
         GUI.backgroundColor = Color.white;
 
-        // \u2500\u2500\u2500 \u654c\u4eba\u8c03\u8bd5\u533a\u57df \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        // ─── 敌人调试 ───────────────────────────────────────
         GUILayout.Space(10);
         GUILayout.Label("\u2500\u2500\u2500 \u654c\u4eba\u8c03\u8bd5 \u2500\u2500\u2500");
 
-        // \u4ece Player \u53d6\u5f53\u524d\u9501\u5b9a\u76ee\u6807\u53ca\u76f8\u5173\u7ec4\u4ef6
-        var player       = FindPlayerGameObject();
-        var targeting    = player     != null ? player.GetComponent<PlayerTargeting>()    : null;
-        var currentTarget = targeting != null ? targeting.CurrentTarget                   : null;
-        var enemyAI      = currentTarget != null ? currentTarget.GetComponent<EnemyAI>()          : null;
-        var healthComp   = currentTarget != null ? currentTarget.GetComponent<HealthComponent>()  : null;
+        var player        = FindPlayerGameObject();
+        var targeting     = player       != null ? player.GetComponent<PlayerTargeting>()       : null;
+        var currentTarget = targeting    != null ? targeting.CurrentTarget                       : null;
+        var enemyAI       = currentTarget != null ? currentTarget.GetComponent<EnemyAI>()        : null;
+        var healthComp    = currentTarget != null ? currentTarget.GetComponent<HealthComponent>() : null;
 
-        // \u5168\u6761\u4ef6\u5224\u5b9a\uff1a\u76ee\u6807\u4e0d\u4e3a null\u3001EnemyAI \u5b58\u5728\u4e14\u542f\u7528\u3001HealthComponent \u5b58\u5728\u4e14\u672a\u6b7b\u4ea1
-        bool canReset = enemyAI   != null && enemyAI.enabled
+        bool canReset = enemyAI    != null && enemyAI.enabled
                      && healthComp != null && !healthComp.IsDead;
 
-        // \u72b6\u6001\u6807\u7b7e\u663e\u793a
         string targetLabel;
         if (currentTarget == null)
             targetLabel = "\u5f53\u524d\u76ee\u6807\uff1a\u65e0";
@@ -83,10 +83,37 @@ public class SkeletonDebugUI : MonoBehaviour
             targetLabel = $"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}";
         GUILayout.Label(targetLabel);
 
-        // \u6309\u9215\uff1a\u6ee1\u8db3\u6761\u4ef6\u65f6\u663e\u793a\u7ea2\u8272\uff0c\u4e0d\u6ee1\u8db3\u65f6\u663e\u793a\u7070\u8272
         GUI.backgroundColor = canReset ? new Color(1f, 0.5f, 0.5f) : new Color(0.6f, 0.6f, 0.6f);
         if (GUILayout.Button("\u91cd\u7f6e\u5f53\u524d\u76ee\u6807\u654c\u4eba", GUILayout.Height(40)))
             ResetCurrentTargetEnemy(enemyAI, healthComp);
+        GUI.backgroundColor = Color.white;
+
+        // ─── 装备调试 ───────────────────────────────────────
+        GUILayout.Space(10);
+        GUILayout.Label("\u2500\u2500\u2500 \u88c5\u5907\u8c03\u8bd5 \u2500\u2500\u2500");
+
+        // 状态显示（静默查找，不 Warning）
+        var pe = ResolvePlayerEquipment(warnIfMissing: false);
+        if (pe != null)
+        {
+            string coreLabel = pe.HasCoreEquipped
+                ? $"\u5f53\u524d Core\uff1a{pe.EquippedCore.ItemName}\uff08{pe.EquippedCore.ItemId}\uff09"
+                : "\u5f53\u524d Core\uff1a\u65e0";
+            GUILayout.Label(coreLabel);
+        }
+        else
+        {
+            GUILayout.Label("\u5f53\u524d Core\uff1a\uff08PlayerEquipment \u672a\u6302\u8f7d\uff09");
+        }
+
+        GUI.backgroundColor = new Color(0.5f, 0.85f, 1f);
+        if (GUILayout.Button("\u88c5\u5907\u6d4b\u8bd5 Core", GUILayout.Height(40)))
+            EquipTestCore();
+        GUI.backgroundColor = Color.white;
+
+        GUI.backgroundColor = new Color(1f, 0.75f, 0.4f);
+        if (GUILayout.Button("\u5378\u4e0b\u6d4b\u8bd5 Core", GUILayout.Height(40)))
+            UnequipTestCore();
         GUI.backgroundColor = Color.white;
 
         GUILayout.Space(10);
@@ -95,9 +122,44 @@ public class SkeletonDebugUI : MonoBehaviour
         GUILayout.EndArea();
     }
 
-    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    // \u8f85\u52a9: FactionComponent(Player) \u304b\u3089 GameObject \u3092\u53d6\u5f97
-    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    // ─── 装备调试ヘルパー ──────────────────────────────────
+
+    /// <summary>
+    /// playerEquipment フィールドが null なら Player から GetComponent を試みる。
+    /// warnIfMissing=true のときのみ Warning を出す（ボタン押下時用）。
+    /// </summary>
+    private PlayerEquipment ResolvePlayerEquipment(bool warnIfMissing)
+    {
+        if (playerEquipment != null) return playerEquipment;
+        var p = FindPlayerGameObject();
+        if (p != null)
+            playerEquipment = p.GetComponent<PlayerEquipment>();
+        if (playerEquipment == null && warnIfMissing)
+            Debug.LogWarning("[DebugUI] PlayerEquipment not found on Player.");
+        return playerEquipment;
+    }
+
+    private void EquipTestCore()
+    {
+        if (testCoreItem == null)
+        {
+            Debug.LogWarning("[DebugUI] testCoreItem is null. Assign a Core ItemData in the Inspector.");
+            return;
+        }
+        var pe = ResolvePlayerEquipment(warnIfMissing: true);
+        if (pe == null) return;
+        pe.EquipCore(testCoreItem);
+    }
+
+    private void UnequipTestCore()
+    {
+        var pe = ResolvePlayerEquipment(warnIfMissing: true);
+        if (pe == null) return;
+        pe.UnequipCore();
+    }
+
+    // ─── 既存のヘルパー（変更なし）──────────────────────────
+
     private GameObject FindPlayerGameObject()
     {
         var factions = FindObjectsByType<FactionComponent>(FindObjectsSortMode.None);
@@ -109,9 +171,6 @@ public class SkeletonDebugUI : MonoBehaviour
         return null;
     }
 
-    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    // \u6309\u9215 1: \u6062\u590d\u73a9\u5bb6\u6ee1\u8840
-    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     private void RestorePlayerFullHealth()
     {
         var player = FindPlayerGameObject();
@@ -124,9 +183,6 @@ public class SkeletonDebugUI : MonoBehaviour
         health.RestoreFullHealth();
     }
 
-    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    // \u6309\u9215 2: \u539f\u5730\u590d\u6d3b\u73a9\u5bb6\u6d4b\u8bd5
-    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     private void RespawnPlayerTest()
     {
         var player = FindPlayerGameObject();
@@ -150,9 +206,6 @@ public class SkeletonDebugUI : MonoBehaviour
         Debug.Log("[DebugUI] Player respawn test executed.");
     }
 
-    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    // \u6309\u9215 3: \u590d\u6d3b\u5230\u6700\u8fd1\u5b58\u6863\u70b9
-    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     private void RespawnPlayerAtSavePointTest()
     {
         var player = FindPlayerGameObject();
@@ -178,7 +231,6 @@ public class SkeletonDebugUI : MonoBehaviour
             return;
         }
 
-        // \u5148\u4f20\u9001\u5230\u6700\u8fd1\u5b58\u6863\u70b9\uff0c\u518d\u6062\u590d\u7269\u7406/\u63a7\u5236\uff08ResetForRespawn \u4f1a\u6e05\u96f6\u901f\u5ea6\uff09
         player.transform.SetPositionAndRotation(
             respawnTracker.CurrentRespawnPosition,
             respawnTracker.CurrentRespawnRotation
@@ -196,9 +248,6 @@ public class SkeletonDebugUI : MonoBehaviour
         Debug.Log($"[DebugUI] Player respawned at SavePoint: {respawnTracker.CurrentRespawnPosition}");
     }
 
-    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    // \u6309\u9215 4: \u91cd\u7f6e\u5f53\u524d\u76ee\u6807\u654c\u4eba\uff08\u5e26\u6d3b\u4f53\u68c0\u67e5\uff09
-    // \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     private void ResetCurrentTargetEnemy(EnemyAI enemyAI, HealthComponent healthComp)
     {
         if (enemyAI == null)

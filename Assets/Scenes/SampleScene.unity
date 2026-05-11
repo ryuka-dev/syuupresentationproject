@@ -2599,6 +2599,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f944340cd6bba0549ba1db93e93f99c1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerInventory
+--- !u!114 &919417062
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 919417038}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5075f1f3e0b1d1a49a908360675d2e04, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerEquipment
+  equippedCore: {fileID: 0}
 --- !u!1 &971681417
 GameObject:
   m_ObjectHideFlags: 0
@@ -3027,6 +3040,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SkeletonDebugUI
   spawner: {fileID: 1201544137}
+  playerEquipment: {fileID: 0}
+  testCoreItem: {fileID: 11400000, guid: 8cec06c7c5aeac34dbc4e0f578eaeb53, type: 2}
 --- !u!114 &1201544137
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -4808,6 +4823,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
       insertIndex: -1
       addedObject: {fileID: 919417060}
+    - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 919417062}
   m_SourcePrefab: {fileID: 100100000, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
 --- !u!1001 &2088922546
 PrefabInstance:

@@ -10,12 +10,12 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 2586938c3e24c5c498f735f8eb38d9e4, type: 3}
-  m_Name: IronSword_ItemData
+  m_Name: TestItem_GuardCore
   m_EditorClassIdentifier: Assembly-CSharp::ItemData
-  itemId: iron_sword
-  itemName: "\u94C1\u5251"
-  rarity: 0
-  description: "\u4E00\u628A\u666E\u901A\u7684\u94C1\u5251\u3002"
+  itemId: TestItem_GuardCore
+  itemName: "\u5B88\u62A4\u6838\u5FC3"
+  rarity: 2
+  description: "\u662F\u5B88\u62A4\u6838\u5FC3 \u3002Debug \u7528 Core \u88C5\u5907\u3002"
   itemType: 1
   maxStack: 1
-  equipmentSlotType: 2
+  equipmentSlotType: 1
