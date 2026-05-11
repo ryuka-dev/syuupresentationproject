@@ -1,10 +1,11 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 
 /// <summary>
 /// プレイヤーが拾得したアイテムをスタック形式で保持する最小インベントリ。
-/// 同一 itemId のアイテムは ItemStack にまとめて count で管理する。
+/// Equipment は必ず独立した ItemStack として追加する（マージ不可）。
+/// 非 Equipment は同一 itemId かつ未満スタックにマージする。
 /// UI・装備・保存機能はなし。
 /// </summary>
 public class PlayerInventory : MonoBehaviour
@@ -22,7 +23,7 @@ public class PlayerInventory : MonoBehaviour
         }
     }
 
-    /// <summary>異なるアイテム種類数（スタック数）。</summary>
+    /// <summary>現在のスタック総数。</summary>
     public int StackCount => _items.Count;
 
     /// <summary>所持スタックの読み取り専用リスト。</summary>
@@ -30,41 +31,48 @@ public class PlayerInventory : MonoBehaviour
 
     /// <summary>
     /// アイテムをインベントリに追加する。
-    /// 同一 itemId が既に存在する場合は count を +1 するだけ。
+    /// Equipment は常に新規スタックとして追加。
+    /// 非 Equipment は同一 itemId の未満スタックにマージ。
     /// </summary>
-    public void AddItem(ItemData item)
+    public bool AddItem(ItemData item)
     {
         if (item == null)
         {
             Debug.LogWarning("[PlayerInventory] AddItem called with null item.");
-            return;
+            return false;
         }
 
-        if (string.IsNullOrEmpty(item.ItemId))
+        if (item.ItemType == ItemType.Equipment)
         {
-            Debug.LogWarning($"[PlayerInventory] ItemData has empty itemId: {item.ItemName} — itemId を設定してください。");
-        }
-
-        ItemStack existing = FindStack(item);
-        if (existing != null)
-        {
-            existing.AddCount(1);
+            // Equipment は絶対にマージしない。常に新規スタック。
+            _items.Add(new ItemStack(item, 1));
         }
         else
         {
-            _items.Add(new ItemStack(item, 1));
+            // 同一 itemId で未満のスタックを探してマージ
+            ItemStack existing = FindNonFullStack(item);
+            if (existing != null)
+            {
+                existing.AddCount(1);
+            }
+            else
+            {
+                _items.Add(new ItemStack(item, 1));
+            }
         }
 
-        Debug.Log($"获得：{item.ItemName}（ID: {item.ItemId}），当前持有总数：{ItemCount}");
+        Debug.Log($"获得：{item.ItemName}（ID: {item.ItemId}），当前持有总数：{ItemCount}，当前 stack 数：{StackCount}");
         PrintInventorySummary();
+        return true;
     }
 
-    private ItemStack FindStack(ItemData item)
+    private ItemStack FindNonFullStack(ItemData item)
     {
         bool hasId = !string.IsNullOrEmpty(item.ItemId);
         foreach (var stack in _items)
         {
             if (stack.ItemData == null) continue;
+            if (stack.IsFull) continue;
             if (hasId)
             {
                 if (stack.ItemId == item.ItemId) return stack;
@@ -79,11 +87,10 @@ public class PlayerInventory : MonoBehaviour
 
     private void PrintInventorySummary()
     {
-        var sb = new StringBuilder("（当前库存）");
+        var sb = new StringBuilder("[PlayerInventory] 当前库存：\n");
         foreach (var stack in _items)
         {
-            string id = string.IsNullOrEmpty(stack.ItemId) ? "(no id)" : stack.ItemId;
-            sb.Append($" {stack.ItemName}（ID: {id}）数量：{stack.Count}");
+            sb.AppendLine($"  - {stack.ItemName} x {stack.Count}");
         }
         Debug.Log(sb.ToString());
     }

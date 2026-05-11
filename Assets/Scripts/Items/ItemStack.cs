@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 
 /// <summary>
@@ -16,22 +16,45 @@ public class ItemStack
     public string ItemId => itemData != null ? itemData.ItemId : string.Empty;
     public string ItemName => itemData != null ? itemData.ItemName : string.Empty;
 
+    /// <summary>このスタックが最大数に達しているか。</summary>
+    public bool IsFull => itemData != null && count >= itemData.MaxStack;
+
+    /// <summary>あと何個追加できるか。負数にはならない。</summary>
+    public int RemainingCapacity
+    {
+        get
+        {
+            if (itemData == null) return 0;
+            int remaining = itemData.MaxStack - count;
+            return remaining < 0 ? 0 : remaining;
+        }
+    }
+
     public ItemStack(ItemData itemData, int count)
     {
         this.itemData = itemData;
-        this.count = count < 1 ? 1 : count;
+        if (count < 1) count = 1;
+        if (itemData != null && count > itemData.MaxStack) count = itemData.MaxStack;
+        this.count = count;
     }
 
     /// <summary>
-    /// スタック数を加算する。amount が 0 以下の場合は何もしない。
+    /// スタック数を加算する。実際に加算した量を返す。
+    /// amount が 0 以下の場合や既に満タンの場合は 0 を返す。
     /// </summary>
-    public void AddCount(int amount)
+    public int AddCount(int amount)
     {
         if (amount <= 0)
         {
             Debug.LogWarning($"[ItemStack] AddCount called with invalid amount: {amount}");
-            return;
+            return 0;
         }
-        count += amount;
+        if (IsFull)
+        {
+            return 0;
+        }
+        int actualAdd = Mathf.Min(amount, RemainingCapacity);
+        count += actualAdd;
+        return actualAdd;
     }
 }
