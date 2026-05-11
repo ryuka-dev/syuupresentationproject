@@ -1,11 +1,13 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.AI;
 
 public enum EnemyState { Idle, Chase, Attack, ReturnToSpawn, Wander }
 
 /// <summary>
 /// 敌人 AI - 有限状态机（Idle / Wander / Chase / Attack / ReturnToSpawn）
+/// Wander 状态优先使用 NavMeshAgent；无 Agent 或 Agent 不可用时 fallback 到 Rigidbody。
 /// 攻击触发：attackCooldownTimer 到 0 时设 IsAttacking=true 一帧，动画开始后立刻清除，
 /// 依赖 Animator Controller 的 hasExitTime=0.9 完成动画后自动回 Idle，防止双触发。
 /// </summary>
@@ -62,7 +64,7 @@ public class EnemyAI : MonoBehaviour
     private HealthComponent  myHealth;
     private float            attackCooldownTimer = 0f;
 
-    // 仇恨列表：key=目标 Transform，value=仇恨值
+    // 仇恨列表
     private readonly Dictionary<Transform, float> hateTable = new Dictionary<Transform, float>();
 
     // 扫描频率控制
@@ -76,6 +78,11 @@ public class EnemyAI : MonoBehaviour
     // ─── 游荡状态内部变量 ────────────────────────────────────
     private Vector3 _wanderTarget;
     private float   _idleTimer = 0f;
+
+    // ─── NavMeshAgent ────────────────────────────────────────
+    private NavMeshAgent _agent;
+    private bool         _hasAgent;
+    private NavMeshPath  _wanderPath;
 
     // ─── 生命周期 ────────────────────────────────────────────
     void Awake()
@@ -103,19 +110,43 @@ public class EnemyAI : MonoBehaviour
     {
         if (rb == null) rb = GetComponent<Rigidbody>();
 
-        // 初期 Idle タイマーを設定（ゲーム開始直後から Wander サイクルを動かす）
+        _agent    = GetComponent<NavMeshAgent>();
+        _hasAgent = _agent != null;
+        if (_hasAgent)
+        {
+            _wanderPath      = new NavMeshPath();
+            _agent.isStopped = true;   // 初期状態: Agent は停止
+        }
+
         SetupIdleTimer();
 
         if (wanderRadius > 0f && wanderRadius > leashRadius)
-            Debug.LogWarning($"[EnemyAI] {gameObject.name}: wanderRadius({wanderRadius}) が leashRadius({leashRadius}) を超えています。wanderRadius <= leashRadius に設定してください。");
+            Debug.LogWarning($"[EnemyAI] {gameObject.name}: wanderRadius({wanderRadius}) が leashRadius({leashRadius}) を超えています。");
+    }
+
+    // ─── NavMeshAgent ヘルパー ───────────────────────────────
+    /// <summary>NavMeshAgent を Wander の移動に使用できるか判定する。</summary>
+    private bool UseAgentForWander() =>
+        _hasAgent && _agent != null && _agent.enabled && _agent.isOnNavMesh;
+
+    /// <summary>
+    /// Agent の移動を停止し Rigidbody を非 kinematic に戻す。
+    /// Wander 状態から他の状態へ移行するときに呼ぶ。
+    /// </summary>
+    private void StopAgentAndRestoreRigidbody()
+    {
+        if (_hasAgent && _agent != null && _agent.enabled)
+        {
+            _agent.isStopped = true;
+            _agent.ResetPath();
+        }
+        if (rb != null) rb.isKinematic = false;
     }
 
     void Update()
     {
-        // ReturnToSpawn 中はスキャン・脱戦・状態更新を行わない
         if (currentState == EnemyState.ReturnToSpawn) return;
 
-        // leashRadius 超過チェック：超えたら即座に帰還
         CheckLeashRadius();
         if (currentState == EnemyState.ReturnToSpawn) return;
 
@@ -128,23 +159,14 @@ public class EnemyAI : MonoBehaviour
         UpdateDisengage();
         UpdateState();
 
-        // Idle / Wander サイクル更新（ターゲットがいない場合）
         if (currentState == EnemyState.Idle || currentState == EnemyState.Wander)
             UpdateIdleWanderCycle();
     }
 
     // ─── 脱战计时 ────────────────────────────────────────────
-    /// <summary>
-    /// 距离脱战计时：目标持续超出 disengageDistance 超过 disengageDelay 秒后，
-    /// 进入 ReturnToSpawn 状态自行走回出生点。
-    /// </summary>
     void UpdateDisengage()
     {
-        if (currentTarget == null)
-        {
-            disengageTimer = 0f;
-            return;
-        }
+        if (currentTarget == null) { disengageTimer = 0f; return; }
 
         float dist = Vector3.Distance(transform.position, currentTarget.position);
         if (dist > disengageDistance)
@@ -156,19 +178,16 @@ public class EnemyAI : MonoBehaviour
                 EnterReturnToSpawn();
             }
         }
-        else
-        {
-            disengageTimer = 0f;
-        }
+        else { disengageTimer = 0f; }
     }
 
     // ─── 返回出生点 ──────────────────────────────────────────
-    /// <summary>
-    /// 进入返回出生点状态。清空仇恨，停止追击，开始自行走回出生点。
-    /// 不恢复满血，不瞬间传送。
-    /// </summary>
     private void EnterReturnToSpawn()
     {
+        // Wander 中に Agent が動いていた場合は停止して Rigidbody を復元
+        if (currentState == EnemyState.Wander && UseAgentForWander())
+            StopAgentAndRestoreRigidbody();
+
         hateTable.Clear();
         currentTarget       = null;
         disengageTimer      = 0f;
@@ -178,10 +197,6 @@ public class EnemyAI : MonoBehaviour
         Debug.Log($"[EnemyAI] {gameObject.name} 开始返回出生点。");
     }
 
-    /// <summary>
-    /// 敵と出生中心点の XZ 水平距離を返す。
-    /// Y 軸の高低差は活動範囲判定に影響させない。
-    /// </summary>
     private float GetHorizontalDistanceFromSpawn()
     {
         Vector3 currentFlat = new Vector3(transform.position.x, 0f, transform.position.z);
@@ -189,11 +204,6 @@ public class EnemyAI : MonoBehaviour
         return Vector3.Distance(currentFlat, spawnFlat);
     }
 
-    /// <summary>
-    /// leashRadius 超過チェック。
-    /// 出生中心から leashRadius を超えた場合は即座に EnterReturnToSpawn() を呼ぶ。
-    /// ReturnToSpawn 状態中および死亡時は何もしない。
-    /// </summary>
     private void CheckLeashRadius()
     {
         if (currentState == EnemyState.ReturnToSpawn) return;
@@ -207,25 +217,18 @@ public class EnemyAI : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// ReturnToSpawn 状态每帧处理（在 FixedUpdate 中调用）。
-    /// 走向出生点，到达后精确归位、恢复满血并进入 Idle。
-    /// </summary>
     private void HandleReturnToSpawn()
     {
         if (!enabled) return;
 
-        // 水平距離のみで到達判定（Y 軸の高さ差は無視）
-        Vector3 currentFlat  = new Vector3(transform.position.x, 0f, transform.position.z);
-        Vector3 spawnFlat    = new Vector3(_spawnPosition.x,     0f, _spawnPosition.z);
+        Vector3 currentFlat    = new Vector3(transform.position.x, 0f, transform.position.z);
+        Vector3 spawnFlat      = new Vector3(_spawnPosition.x,     0f, _spawnPosition.z);
         float   horizontalDist = Vector3.Distance(currentFlat, spawnFlat);
 
         if (horizontalDist > returnToSpawnStopDistance)
         {
-            // X/Z 方向のみで移動（Y 軸は重力に任せる）
             moveDirection = new Vector3(
-                _spawnPosition.x - transform.position.x,
-                0f,
+                _spawnPosition.x - transform.position.x, 0f,
                 _spawnPosition.z - transform.position.z).normalized;
 
             rb.linearVelocity = new Vector3(
@@ -241,26 +244,16 @@ public class EnemyAI : MonoBehaviour
         }
         else
         {
-            // 到達：X/Z のみ修正、Y は現在値を維持（地形に着地したまま）
-            transform.position = new Vector3(
-                _spawnPosition.x,
-                transform.position.y,
-                _spawnPosition.z);
+            transform.position = new Vector3(_spawnPosition.x, transform.position.y, _spawnPosition.z);
             transform.rotation = _spawnRotation;
 
-            if (rb != null)
-            {
-                rb.linearVelocity  = Vector3.zero;
-                rb.angularVelocity = Vector3.zero;
-            }
-
-            if (myHealth != null)
-                myHealth.RestoreFullHealth();
+            if (rb != null) { rb.linearVelocity = Vector3.zero; rb.angularVelocity = Vector3.zero; }
+            if (myHealth != null) myHealth.RestoreFullHealth();
 
             currentState        = EnemyState.Idle;
             attackCooldownTimer = 0f;
             moveDirection       = Vector3.zero;
-            SetupIdleTimer();   // 帰還後に Idle タイマーをリセット
+            SetupIdleTimer();
             animator?.SetBool("IsAttacking", false);
             animator?.SetFloat("Speed", 0f);
             Debug.Log($"[EnemyAI] {gameObject.name} 已回到出生点，重置完成。");
@@ -268,7 +261,6 @@ public class EnemyAI : MonoBehaviour
     }
 
     // ─── 仇恨系统 ────────────────────────────────────────────
-    /// <summary>目标是否有效：存在、有 HealthComponent、未死亡、阵营敌对。</summary>
     private bool IsValidTarget(Transform t)
     {
         if (t == null) return false;
@@ -280,38 +272,24 @@ public class EnemyAI : MonoBehaviour
         return myFaction.ShouldAttack(fc.faction);
     }
 
-    /// <summary>统一入口：对指定目标增加仇恨值，然后重新选中目标。</summary>
     private void AddHate(Transform target, float amount)
     {
         if (!IsValidTarget(target)) return;
-
-        if (hateTable.ContainsKey(target))
-            hateTable[target] += amount;
-        else
-            hateTable[target] = amount;
-
+        if (hateTable.ContainsKey(target)) hateTable[target] += amount;
+        else hateTable[target] = amount;
         SelectHighestHateTarget();
     }
 
-    /// <summary>清除已无效的仇恨记录。</summary>
     private void RemoveInvalidHateTargets()
     {
         var invalid = hateTable.Keys.Where(t => !IsValidTarget(t)).ToList();
-        foreach (var t in invalid)
-            hateTable.Remove(t);
+        foreach (var t in invalid) hateTable.Remove(t);
     }
 
-    /// <summary>选择仇恨值最高的有效目标作为当前追击目标。</summary>
     private void SelectHighestHateTarget()
     {
         RemoveInvalidHateTargets();
-
-        if (hateTable.Count == 0)
-        {
-            currentTarget = null;
-            return;
-        }
-
+        if (hateTable.Count == 0) { currentTarget = null; return; }
         currentTarget = hateTable.OrderByDescending(kv => kv.Value).First().Key;
     }
 
@@ -319,9 +297,7 @@ public class EnemyAI : MonoBehaviour
     void ScanForTarget()
     {
         SelectHighestHateTarget();
-
         if (currentTarget != null) return;
-
         if (fovDetector == null) return;
         foreach (var fc in FindObjectsOfType<FactionComponent>())
         {
@@ -336,18 +312,16 @@ public class EnemyAI : MonoBehaviour
         }
     }
 
-    /// <summary>自身受击时由 HealthComponent.OnDamaged 回调。</summary>
     void HandleDamaged(float amount, Transform attacker)
     {
         AddHate(attacker, amount * damageHateMultiplier);
     }
 
-    // ─── 状态机 ────────────────────────────────────────────
+    // ─── 状态机 ──────────────────────────────────────────────
     void UpdateState()
     {
         if (currentState == EnemyState.ReturnToSpawn) return;
 
-        // 有効なターゲットがいる場合は Chase / Attack へ
         if (currentTarget != null)
         {
             float dist = Vector3.Distance(transform.position, currentTarget.position);
@@ -355,24 +329,36 @@ public class EnemyAI : MonoBehaviour
             return;
         }
 
-        // ターゲットなし：Idle / Wander サイクルは UpdateIdleWanderCycle() に任せる
         if (currentState == EnemyState.Idle || currentState == EnemyState.Wander) return;
-
-        // Chase / Attack 中にターゲットを失った → Idle へ戻して Wander サイクルを再開
         TransitionTo(EnemyState.Idle);
     }
 
     void TransitionTo(EnemyState next)
     {
         if (currentState == next) return;
+
+        // Wander (Agent 使用中) から他の状態へ移行するとき: Agent を停止して Rigidbody を復元
+        if (currentState == EnemyState.Wander && UseAgentForWander())
+            StopAgentAndRestoreRigidbody();
+
         currentState = next;
         switch (next)
         {
             case EnemyState.Idle:
                 animator?.SetBool("IsAttacking", false);
-                SetupIdleTimer();   // Idle 遷移時に毎回タイマーをリセット
+                SetupIdleTimer();
                 break;
             case EnemyState.Wander:
+                animator?.SetBool("IsAttacking", false);
+                if (UseAgentForWander())
+                {
+                    // Agent に移動を委譲。Rigidbody は kinematic にして干渉を防ぐ
+                    rb.isKinematic   = true;
+                    _agent.speed     = wanderMoveSpeed;
+                    _agent.isStopped = false;
+                    _agent.SetDestination(_wanderTarget);
+                }
+                break;
             case EnemyState.Chase:
             case EnemyState.ReturnToSpawn:
                 animator?.SetBool("IsAttacking", false);
@@ -385,19 +371,13 @@ public class EnemyAI : MonoBehaviour
     }
 
     // ─── Idle / Wander サイクル ──────────────────────────────
-    /// <summary>Idle タイマーをランダム時間でリセットする。</summary>
     private void SetupIdleTimer()
     {
         _idleTimer = Random.Range(minIdleTime, maxIdleTime);
     }
 
-    /// <summary>
-    /// Idle / Wander サイクルを管理する。Update() の末尾から毎フレーム呼ばれる。
-    /// ターゲットがいない場合にのみ有効。
-    /// </summary>
     private void UpdateIdleWanderCycle()
     {
-        // ターゲットが出現した場合は UpdateState() が遷移させるので何もしない
         if (currentTarget != null) return;
 
         if (currentState == EnemyState.Idle)
@@ -405,14 +385,8 @@ public class EnemyAI : MonoBehaviour
             _idleTimer -= Time.deltaTime;
             if (_idleTimer <= 0f)
             {
-                // wanderRadius <= 0 の場合はゲームまま待機（エラーなし）
-                if (wanderRadius <= 0f)
-                {
-                    SetupIdleTimer();
-                    return;
-                }
+                if (wanderRadius <= 0f) { SetupIdleTimer(); return; }
 
-                // 游荡目标点を選択して Wander へ遷移
                 if (TryPickWanderPoint(out Vector3 point))
                 {
                     _wanderTarget = point;
@@ -420,26 +394,44 @@ public class EnemyAI : MonoBehaviour
                 }
                 else
                 {
-                    // 有効な点が見つからない場合はタイマーをリセットして次回再試行
                     SetupIdleTimer();
                 }
             }
         }
         else if (currentState == EnemyState.Wander)
         {
-            // 目标点に到達したら Idle へ戻す
-            Vector3 flatPos    = new Vector3(transform.position.x, 0f, transform.position.z);
-            Vector3 flatTarget = new Vector3(_wanderTarget.x,      0f, _wanderTarget.z);
-            if (Vector3.Distance(flatPos, flatTarget) <= wanderPointReachDistance)
+            bool arrived;
+
+            // Agent 使用中の到達判定
+            if (_hasAgent && _agent != null && _agent.enabled)
             {
-                TransitionTo(EnemyState.Idle);
+                if (_agent.isOnNavMesh)
+                {
+                    arrived = !_agent.pathPending &&
+                              _agent.remainingDistance <= wanderPointReachDistance;
+                }
+                else
+                {
+                    // Agent が NavMesh から外れた → Rigidbody に戻して Idle へ
+                    StopAgentAndRestoreRigidbody();
+                    arrived = true;
+                }
             }
+            else
+            {
+                // Rigidbody Wander の到達判定
+                Vector3 flatPos    = new Vector3(transform.position.x, 0f, transform.position.z);
+                Vector3 flatTarget = new Vector3(_wanderTarget.x,      0f, _wanderTarget.z);
+                arrived = Vector3.Distance(flatPos, flatTarget) <= wanderPointReachDistance;
+            }
+
+            if (arrived) TransitionTo(EnemyState.Idle);
         }
     }
 
     /// <summary>
-    /// _spawnPosition 周囲の XZ 平面でランダムな游荡目标点を選ぶ。
-    /// leashRadius 内に収まる点を最大 10 回試行する。
+    /// NavMeshAgent がある場合は NavMesh.SamplePosition + CalculatePath で検証してから点を選ぶ。
+    /// Agent がない / 不可の場合は XZ 平面でランダムに選ぶ。最大 10 回試行。
     /// </summary>
     private bool TryPickWanderPoint(out Vector3 point)
     {
@@ -449,16 +441,38 @@ public class EnemyAI : MonoBehaviour
             Vector2 circle    = Random.insideUnitCircle * wanderRadius;
             Vector3 candidate = new Vector3(
                 _spawnPosition.x + circle.x,
-                transform.position.y,   // Y は現在位置を維持（重力に任せる）
+                transform.position.y,
                 _spawnPosition.z + circle.y);
 
-            // leashRadius チェック（XZ のみ）
             float distFromSpawn = Vector3.Distance(
                 new Vector3(candidate.x, 0f, candidate.z),
                 new Vector3(_spawnPosition.x, 0f, _spawnPosition.z));
+            if (distFromSpawn > leashRadius) continue;
 
-            if (distFromSpawn <= leashRadius)
+            if (UseAgentForWander())
             {
+                // NavMesh 上の最近接点を取得
+                if (NavMesh.SamplePosition(candidate, out NavMeshHit navHit, 3f, NavMesh.AllAreas))
+                {
+                    // サンプリング後も leashRadius チェック
+                    float sampledDist = Vector3.Distance(
+                        new Vector3(navHit.position.x, 0f, navHit.position.z),
+                        new Vector3(_spawnPosition.x, 0f, _spawnPosition.z));
+                    if (sampledDist > leashRadius) continue;
+
+                    // 経路が完全に到達可能な場合のみ採用
+                    _agent.CalculatePath(navHit.position, _wanderPath);
+                    if (_wanderPath.status == NavMeshPathStatus.PathComplete)
+                    {
+                        point = navHit.position;
+                        return true;
+                    }
+                }
+                // NavMesh サンプリング失敗 → 次の候補へ
+            }
+            else
+            {
+                // Rigidbody fallback: leashRadius チェックのみで採用
                 point = candidate;
                 return true;
             }
@@ -487,8 +501,10 @@ public class EnemyAI : MonoBehaviour
         switch (currentState)
         {
             case EnemyState.Idle:
-                moveDirection     = Vector3.zero;
-                rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
+                moveDirection = Vector3.zero;
+                // Rigidbody が non-kinematic の場合のみ速度をクリア
+                if (!rb.isKinematic)
+                    rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
                 break;
             case EnemyState.Wander:
                 HandleWanderMovement();
@@ -497,8 +513,9 @@ public class EnemyAI : MonoBehaviour
                 ChaseTarget();
                 break;
             case EnemyState.Attack:
-                moveDirection     = Vector3.zero;
-                rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
+                moveDirection = Vector3.zero;
+                if (!rb.isKinematic)
+                    rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
                 FaceTarget();
                 if (animator != null)
                 {
@@ -519,9 +536,33 @@ public class EnemyAI : MonoBehaviour
         animator?.SetFloat("Speed", moveDirection.magnitude, 0.1f, Time.fixedDeltaTime);
     }
 
-    /// <summary>Wander 状態の移動処理。XZ のみ制御し Y は重力に任せる。</summary>
+    /// <summary>
+    /// Wander 状態の移動処理。
+    /// NavMeshAgent が有効なら Agent に委譲。なければ Rigidbody で移動。
+    /// </summary>
     private void HandleWanderMovement()
     {
+        // ── Agent 使用パス ──────────────────────────────────
+        if (_hasAgent && _agent != null && _agent.enabled)
+        {
+            if (_agent.isOnNavMesh)
+            {
+                // Agent の velocity を moveDirection に反映（Animator の Speed 用）
+                Vector3 vel = _agent.velocity;
+                moveDirection = vel.sqrMagnitude > 0.01f
+                    ? new Vector3(vel.x, 0f, vel.z).normalized
+                    : Vector3.zero;
+                // Rigidbody は kinematic のため linearVelocity は不要
+                return;
+            }
+            else
+            {
+                // Agent が NavMesh から外れた → Rigidbody に戻す
+                StopAgentAndRestoreRigidbody();
+            }
+        }
+
+        // ── Rigidbody fallback パス ─────────────────────────
         Vector3 flatPos    = new Vector3(transform.position.x, 0f, transform.position.z);
         Vector3 flatTarget = new Vector3(_wanderTarget.x,      0f, _wanderTarget.z);
         float   dist       = Vector3.Distance(flatPos, flatTarget);
@@ -529,8 +570,7 @@ public class EnemyAI : MonoBehaviour
         if (dist > wanderPointReachDistance)
         {
             moveDirection = new Vector3(
-                _wanderTarget.x - transform.position.x,
-                0f,
+                _wanderTarget.x - transform.position.x, 0f,
                 _wanderTarget.z - transform.position.z).normalized;
 
             rb.linearVelocity = new Vector3(
@@ -546,7 +586,6 @@ public class EnemyAI : MonoBehaviour
         }
         else
         {
-            // 到達済み（UpdateIdleWanderCycle が次フレームで Idle へ遷移させる）
             moveDirection     = Vector3.zero;
             rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
         }
@@ -558,7 +597,7 @@ public class EnemyAI : MonoBehaviour
         float dist = Vector3.Distance(transform.position, currentTarget.position);
         if (dist <= stoppingDistance)
         {
-            moveDirection     = Vector3.zero;
+            moveDirection = Vector3.zero;
             rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
             FaceTarget();
             return;
@@ -584,41 +623,45 @@ public class EnemyAI : MonoBehaviour
     }
 
     // ─── Debug / 强制复位 ────────────────────────────────────
-    /// <summary>
-    /// 强制瞬间重置敌人到出生点。Debug 菜单 / 强制复位专用接口。
-    /// 走回出生点的正式流程请使用 EnterReturnToSpawn()。
-    /// </summary>
     public void ResetToSpawn()
     {
         hateTable.Clear();
         currentTarget  = null;
         disengageTimer = 0f;
 
-        transform.position = _spawnPosition;
+        // Agent が active な場合は Warp で正しく瞬間移動し Rigidbody を復元
+        if (_hasAgent && _agent != null && _agent.enabled)
+        {
+            _agent.isStopped = true;
+            _agent.ResetPath();
+            if (_agent.isOnNavMesh)
+                _agent.Warp(_spawnPosition);
+            else
+                transform.position = _spawnPosition;
+        }
+        else
+        {
+            transform.position = _spawnPosition;
+        }
         transform.rotation = _spawnRotation;
 
         if (rb != null)
         {
+            rb.isKinematic     = false;   // Wander 中 kinematic だった場合に復元
             rb.linearVelocity  = Vector3.zero;
             rb.angularVelocity = Vector3.zero;
         }
 
-        if (myHealth != null)
-            myHealth.RestoreFullHealth();
+        if (myHealth != null) myHealth.RestoreFullHealth();
 
         currentState        = EnemyState.Idle;
         attackCooldownTimer = 0f;
         moveDirection       = Vector3.zero;
-        SetupIdleTimer();   // リセット後に Idle タイマーを再設定
+        SetupIdleTimer();
         animator?.SetBool("IsAttacking", false);
         animator?.SetFloat("Speed", 0f);
     }
 
-    /// <summary>
-    /// 外部から敌人を強制脱戦させ、出生点へ帰還させる。
-    /// プレイヤー死亡時など、EnemyWorldManager から呼び出す想定。
-    /// 瞬間移動なし。歩いて帰る正式帰還フローを使用する。
-    /// </summary>
     public void ForceDisengageAndReturnToSpawn()
     {
         if (!enabled) return;
