@@ -1,5 +1,4 @@
-using UnityEngine;
-
+﻿using UnityEngine;
 
 /// <summary>
 /// アイテムの種別を表す列挙型。
@@ -23,6 +22,19 @@ public enum ItemRarity
     Rare,
     Epic,
     Legendary
+}
+
+/// <summary>
+/// 装備スロットの種別を表す列挙型。
+/// Equipment 以外のアイテムは None のまま維持される。
+/// </summary>
+public enum EquipmentSlotType
+{
+    None,
+    Core,
+    Weapon,
+    Armor,
+    Accessory
 }
 
 /// <summary>
@@ -50,11 +62,15 @@ public class ItemData : ScriptableObject
     [SerializeField] private int maxStack = 99;
     public int MaxStack => maxStack;
 
+    [SerializeField] private EquipmentSlotType equipmentSlotType = EquipmentSlotType.None;
+    public EquipmentSlotType EquipmentSlotType => equipmentSlotType;
+
 #if UNITY_EDITOR
     private void OnValidate()
     {
         if (maxStack < 1) maxStack = 1;
         if (itemType == ItemType.Equipment) maxStack = 1;
+        if (itemType != ItemType.Equipment) equipmentSlotType = EquipmentSlotType.None;
     }
 #endif
 }
