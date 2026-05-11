@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
@@ -6,6 +6,7 @@ using UnityEngine.InputSystem;
 ///   左键拖拽 → 摄像机绕玩家自由旋转，角色方向不变
 ///   右键拖拽 → 摄像机旋转的同时，角色 Y 轴与摄像机 Yaw 保持同步
 ///   滚轮     → 推拉距离
+///   拖拽时隐藏鼠标，松开后恢复显示。
 /// </summary>
 public class RPGCameraController : MonoBehaviour
 {
@@ -30,12 +31,18 @@ public class RPGCameraController : MonoBehaviour
     private float _yaw;
     private float _pitch = 30f;
 
+    // Cursor 管理
+    private bool _isCameraDragging = false;
+
     void Start()
     {
         var angles = transform.eulerAngles;
         _yaw   = angles.y;
         _pitch = angles.x > 180f ? angles.x - 360f : angles.x;
         _pitch = Mathf.Clamp(_pitch, minPitch, maxPitch);
+
+        // 初期状態でカーソルを表示
+        SetCursorVisible(true);
     }
 
     void LateUpdate()
@@ -47,8 +54,22 @@ public class RPGCameraController : MonoBehaviour
 
         bool lmb = mouse.leftButton.isPressed;
         bool rmb = mouse.rightButton.isPressed;
+        bool dragging = lmb || rmb;
 
-        if (lmb || rmb)
+        // ドラッグ開始
+        if (dragging && !_isCameraDragging)
+        {
+            _isCameraDragging = true;
+            SetCursorVisible(false);
+        }
+        // ドラッグ終了
+        else if (!dragging && _isCameraDragging)
+        {
+            _isCameraDragging = false;
+            SetCursorVisible(true);
+        }
+
+        if (dragging)
         {
             Vector2 delta = mouse.delta.ReadValue();
             _yaw   += delta.x * rotationSpeed * Time.deltaTime;
@@ -66,11 +87,30 @@ public class RPGCameraController : MonoBehaviour
             distance = Mathf.Clamp(distance - scroll * zoomSpeed * 0.01f, minDistance, maxDistance);
 
         // 计算并平滑更新摄像机位置
-        Quaternion rotation  = Quaternion.Euler(_pitch, _yaw, 0f);
-        Vector3    lookAt    = target.position + targetOffset;
-        Vector3    desired   = lookAt - rotation * Vector3.forward * distance;
+        Quaternion rotation = Quaternion.Euler(_pitch, _yaw, 0f);
+        Vector3    lookAt   = target.position + targetOffset;
+        Vector3    desired  = lookAt - rotation * Vector3.forward * distance;
 
         transform.position = Vector3.Lerp(transform.position, desired, followSmooth * Time.deltaTime);
         transform.LookAt(lookAt);
+    }
+
+    void OnDisable()
+    {
+        // 無効化時（プレイヤー死亡など）に必ずカーソルを復元する
+        _isCameraDragging = false;
+        SetCursorVisible(true);
+    }
+
+    void OnDestroy()
+    {
+        _isCameraDragging = false;
+        SetCursorVisible(true);
+    }
+
+    private void SetCursorVisible(bool visible)
+    {
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible   = visible;
     }
 }
