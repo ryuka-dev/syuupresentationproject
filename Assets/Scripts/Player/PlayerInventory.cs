@@ -29,6 +29,8 @@ public class PlayerInventory : MonoBehaviour
     /// <summary>所持スタックの読み取り専用リスト。</summary>
     public IReadOnlyList<ItemStack> Items => _items;
 
+    // ─── Add ─────────────────────────────────────────────────────
+
     /// <summary>
     /// アイテムをインベントリに追加する。
     /// Equipment は常に新規スタックとして追加。
@@ -44,27 +46,74 @@ public class PlayerInventory : MonoBehaviour
 
         if (item.ItemType == ItemType.Equipment)
         {
-            // Equipment は絶対にマージしない。常に新規スタック。
             _items.Add(new ItemStack(item, 1));
         }
         else
         {
-            // 同一 itemId で未満のスタックを探してマージ
             ItemStack existing = FindNonFullStack(item);
             if (existing != null)
-            {
                 existing.AddCount(1);
-            }
             else
-            {
                 _items.Add(new ItemStack(item, 1));
-            }
         }
 
         Debug.Log($"获得：{item.ItemName}（ID: {item.ItemId}），当前持有总数：{ItemCount}，当前 stack 数：{StackCount}");
         PrintInventorySummary();
         return true;
     }
+
+    // ─── Remove ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// itemId が一致する最初のスタックから 1 個を減らす。
+    /// Count が 1 の場合はスタック自体を除去する。
+    /// 見つからない場合は false を返す。
+    /// </summary>
+    public bool RemoveItem(ItemData item)
+    {
+        if (item == null)
+        {
+            Debug.LogWarning("[PlayerInventory] RemoveItem called with null item.");
+            return false;
+        }
+
+        ItemStack target = FindFirstStack(item);
+        if (target == null)
+        {
+            Debug.LogWarning($"[PlayerInventory] RemoveItem: {item.ItemName}（ID: {item.ItemId}）not found in inventory.");
+            return false;
+        }
+
+        if (target.Count > 1)
+            target.RemoveCount(1);
+        else
+            _items.Remove(target);
+
+        Debug.Log($"移除：{item.ItemName}（ID: {item.ItemId}），当前持有总数：{ItemCount}，当前 stack 数：{StackCount}");
+        PrintInventorySummary();
+        return true;
+    }
+
+    // ─── Query ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// 指定した EquipmentSlotType を持つ最初の Equipment を返す。
+    /// 見つからない場合は null。バックパックからは除去しない（検索のみ）。
+    /// </summary>
+    public ItemData FindFirstEquipmentBySlot(EquipmentSlotType slotType)
+    {
+        foreach (var stack in _items)
+        {
+            if (stack.ItemData == null) continue;
+            if (stack.Count <= 0) continue;
+            if (stack.ItemData.ItemType != ItemType.Equipment) continue;
+            if (stack.ItemData.EquipmentSlotType != slotType) continue;
+            return stack.ItemData;
+        }
+        return null;
+    }
+
+    // ─── Private ─────────────────────────────────────────────────
 
     private ItemStack FindNonFullStack(ItemData item)
     {
@@ -73,14 +122,20 @@ public class PlayerInventory : MonoBehaviour
         {
             if (stack.ItemData == null) continue;
             if (stack.IsFull) continue;
-            if (hasId)
-            {
-                if (stack.ItemId == item.ItemId) return stack;
-            }
-            else
-            {
-                if (stack.ItemName == item.ItemName) return stack;
-            }
+            if (hasId ? stack.ItemId == item.ItemId : stack.ItemName == item.ItemName)
+                return stack;
+        }
+        return null;
+    }
+
+    private ItemStack FindFirstStack(ItemData item)
+    {
+        bool hasId = !string.IsNullOrEmpty(item.ItemId);
+        foreach (var stack in _items)
+        {
+            if (stack.ItemData == null) continue;
+            if (hasId ? stack.ItemId == item.ItemId : stack.ItemName == item.ItemName)
+                return stack;
         }
         return null;
     }
@@ -89,9 +144,7 @@ public class PlayerInventory : MonoBehaviour
     {
         var sb = new StringBuilder("[PlayerInventory] 当前库存：\n");
         foreach (var stack in _items)
-        {
             sb.AppendLine($"  - {stack.ItemName} x {stack.Count}");
-        }
         Debug.Log(sb.ToString());
     }
 }

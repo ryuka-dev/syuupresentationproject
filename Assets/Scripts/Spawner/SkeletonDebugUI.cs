@@ -6,6 +6,7 @@ public class SkeletonDebugUI : MonoBehaviour
     public SkeletonSpawner spawner;
     [SerializeField] private PlayerEquipment   playerEquipment;
     [SerializeField] private PlayerCombatStats playerCombatStats;
+    [SerializeField] private PlayerInventory   playerInventory;
     [SerializeField] private ItemData testCoreItem;
 
     private bool showUI = false;
@@ -21,41 +22,32 @@ public class SkeletonDebugUI : MonoBehaviour
     {
         if (!showUI) return;
 
-        GUILayout.BeginArea(new Rect(20, 20, 300, 1000));
+        GUILayout.BeginArea(new Rect(20, 20, 300, 1060));
 
         GUILayout.Label("Skeleton Spawner", new GUIStyle(GUI.skin.label) { fontSize = 16, fontStyle = FontStyle.Bold });
         GUILayout.Space(10);
-
         GUILayout.Label($"Count: {spawner.GetCount()} / {spawner.maxCount}");
 
-        if (GUILayout.Button("Spawn 1", GUILayout.Height(40)))
-            spawner.SpawnSkeleton();
-
+        if (GUILayout.Button("Spawn 1", GUILayout.Height(40))) spawner.SpawnSkeleton();
         if (GUILayout.Button("Spawn 5", GUILayout.Height(40)))
             for (int i = 0; i < 5; i++) spawner.SpawnSkeleton();
 
         GUILayout.Space(10);
-
         GUI.backgroundColor = Color.red;
-        if (GUILayout.Button("Clear All", GUILayout.Height(40)))
-            spawner.ClearAll();
+        if (GUILayout.Button("Clear All", GUILayout.Height(40))) spawner.ClearAll();
         GUI.backgroundColor = Color.white;
-
         GUILayout.Space(10);
 
         GUI.backgroundColor = new Color(0.4f, 0.9f, 0.4f);
-        if (GUILayout.Button("\u6062\u590d\u73a9\u5bb6\u6ee1\u8840", GUILayout.Height(40)))
-            RestorePlayerFullHealth();
+        if (GUILayout.Button("\u6062\u590d\u73a9\u5bb6\u6ee1\u8840", GUILayout.Height(40))) RestorePlayerFullHealth();
         GUI.backgroundColor = Color.white;
 
         GUI.backgroundColor = new Color(0.4f, 0.7f, 1f);
-        if (GUILayout.Button("\u590d\u6d3b\u73a9\u5bb6\u6d4b\u8bd5", GUILayout.Height(40)))
-            RespawnPlayerTest();
+        if (GUILayout.Button("\u590d\u6d3b\u73a9\u5bb6\u6d4b\u8bd5", GUILayout.Height(40))) RespawnPlayerTest();
         GUI.backgroundColor = Color.white;
 
         GUI.backgroundColor = new Color(1f, 0.75f, 0.2f);
-        if (GUILayout.Button("\u590d\u6d3b\u5230\u6700\u8fd1\u5b58\u6863\u70b9", GUILayout.Height(40)))
-            RespawnPlayerAtSavePointTest();
+        if (GUILayout.Button("\u590d\u6d3b\u5230\u6700\u8fd1\u5b58\u6863\u70b9", GUILayout.Height(40))) RespawnPlayerAtSavePointTest();
         GUI.backgroundColor = Color.white;
 
         // ─── 敌人调试 ────────────────────────────────────────
@@ -67,21 +59,14 @@ public class SkeletonDebugUI : MonoBehaviour
         var currentTarget = targeting     != null ? targeting.CurrentTarget                        : null;
         var enemyAI       = currentTarget != null ? currentTarget.GetComponent<EnemyAI>()         : null;
         var healthComp    = currentTarget != null ? currentTarget.GetComponent<HealthComponent>()  : null;
-
-        bool canReset = enemyAI    != null && enemyAI.enabled
-                     && healthComp != null && !healthComp.IsDead;
+        bool canReset     = enemyAI != null && enemyAI.enabled && healthComp != null && !healthComp.IsDead;
 
         string targetLabel;
-        if (currentTarget == null)
-            targetLabel = "\u5f53\u524d\u76ee\u6807\uff1a\u65e0";
-        else if (enemyAI == null)
-            targetLabel = $"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}\uff08\u975e\u53ef\u91cd\u7f6e\u654c\u4eba\uff09";
-        else if (!enemyAI.enabled)
-            targetLabel = $"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}\uff08AI\u5df2\u7981\u7528\uff09";
-        else if (healthComp == null || healthComp.IsDead)
-            targetLabel = $"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}\uff08\u5df2\u6b7b\u4ea1\uff09";
-        else
-            targetLabel = $"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}";
+        if (currentTarget == null) targetLabel = "\u5f53\u524d\u76ee\u6807\uff1a\u65e0";
+        else if (enemyAI == null)  targetLabel = $"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}\uff08\u975e\u53ef\u91cd\u7f6e\u654c\u4eba\uff09";
+        else if (!enemyAI.enabled) targetLabel = $"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}\uff08AI\u5df2\u7981\u7528\uff09";
+        else if (healthComp == null || healthComp.IsDead) targetLabel = $"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}\uff08\u5df2\u6b7b\u4ea1\uff09";
+        else targetLabel = $"\u5f53\u524d\u76ee\u6807\uff1a{currentTarget.name}";
         GUILayout.Label(targetLabel);
 
         GUI.backgroundColor = canReset ? new Color(1f, 0.5f, 0.5f) : new Color(0.6f, 0.6f, 0.6f);
@@ -101,19 +86,19 @@ public class SkeletonDebugUI : MonoBehaviour
                 : "\u5f53\u524d Core\uff1a\u65e0";
             GUILayout.Label(coreLabel);
         }
-        else
-        {
-            GUILayout.Label("\u5f53\u524d Core\uff1a\uff08PlayerEquipment \u672a\u6302\u8f7d\uff09");
-        }
+        else GUILayout.Label("\u5f53\u524d Core\uff1a\uff08PlayerEquipment \u672a\u6302\u8f7d\uff09");
 
         GUI.backgroundColor = new Color(0.5f, 0.85f, 1f);
-        if (GUILayout.Button("\u88c5\u5907\u6d4b\u8bd5 Core", GUILayout.Height(40)))
-            EquipTestCore();
+        if (GUILayout.Button("\u88c5\u5907\u6d4b\u8bd5 Core", GUILayout.Height(40))) EquipTestCore();
         GUI.backgroundColor = Color.white;
 
         GUI.backgroundColor = new Color(1f, 0.75f, 0.4f);
-        if (GUILayout.Button("\u5378\u4e0b\u6d4b\u8bd5 Core", GUILayout.Height(40)))
-            UnequipTestCore();
+        if (GUILayout.Button("\u5378\u4e0b\u6d4b\u8bd5 Core", GUILayout.Height(40))) UnequipTestCore();
+        GUI.backgroundColor = Color.white;
+
+        GUI.backgroundColor = new Color(0.7f, 0.9f, 1f);
+        if (GUILayout.Button("\u88c5\u5907\u80cc\u5305\u4e2d\u7684\u7b2c\u4e00\u4e2a Core", GUILayout.Height(40)))
+            EquipFirstCoreFromInventory();
         GUI.backgroundColor = Color.white;
 
         // ─── 战斗属性调试 ─────────────────────────────────────
@@ -130,10 +115,7 @@ public class SkeletonDebugUI : MonoBehaviour
             GUILayout.Label($"Base Max Health: {cs.BaseMaxHealth}");
             GUILayout.Label($"Current Max Health: {cs.CurrentMaxHealth}");
         }
-        else
-        {
-            GUILayout.Label("PlayerCombatStats \u672a\u6302\u8f7d");
-        }
+        else GUILayout.Label("PlayerCombatStats \u672a\u6302\u8f7d");
 
         GUI.backgroundColor = new Color(0.6f, 1f, 0.7f);
         if (GUILayout.Button("\u5e94\u7528\u5f53\u524d\u6700\u5927\u751f\u547d\u5024", GUILayout.Height(40)))
@@ -142,8 +124,43 @@ public class SkeletonDebugUI : MonoBehaviour
 
         GUILayout.Space(10);
         GUILayout.Label("F1: Toggle");
-
         GUILayout.EndArea();
+    }
+
+    // ─── 从背包装备 Core ──────────────────────────────────────
+
+    private void EquipFirstCoreFromInventory()
+    {
+        var inv = ResolvePlayerInventory();
+        var eqp = ResolvePlayerEquipment(warnIfMissing: true);
+        if (inv == null) { Debug.LogWarning("[DebugUI] EquipFirstCoreFromInventory: PlayerInventory not found."); return; }
+        if (eqp == null) return;
+
+        var newCore = inv.FindFirstEquipmentBySlot(EquipmentSlotType.Core);
+        if (newCore == null)
+        {
+            Debug.LogWarning("[DebugUI] EquipFirstCoreFromInventory: \u80cc\u5305\u4e2d\u6ca1\u6709 Core \u88c5\u5907\u3002");
+            return;
+        }
+
+        bool success = eqp.EquipCore(newCore, out ItemData replacedCore);
+        if (!success) return;
+
+        // 新 Core を背包から除去
+        if (!inv.RemoveItem(newCore))
+        {
+            Debug.LogError($"[DebugUI] EquipFirstCoreFromInventory: EquipCore \u6210\u529f\u4f46 RemoveItem \u5931\u8d25\uff01\u5e93\u5b58\u53ef\u80fd\u4e0d\u4e00\u81f4\u3002");
+            return;
+        }
+
+        // 旧 Core を背包に戻す
+        if (replacedCore != null)
+        {
+            inv.AddItem(replacedCore);
+            Debug.Log($"[DebugUI] \u65e7 Core \u300c{replacedCore.ItemName}\u300d\u5df2\u56de\u5230\u80cc\u5305\u3002");
+        }
+
+        Debug.Log($"[DebugUI] \u5df2\u4ece\u80cc\u5305\u88c5\u5907 Core\uff1a{newCore.ItemName}\uff08ID: {newCore.ItemId}\uff09");
     }
 
     // ─── 最大生命値適用 ──────────────────────────────────────
@@ -151,30 +168,11 @@ public class SkeletonDebugUI : MonoBehaviour
     private void ApplyCurrentMaxHealth()
     {
         var cs = ResolvePlayerCombatStats();
-        if (cs == null)
-        {
-            Debug.LogWarning("[DebugUI] ApplyCurrentMaxHealth: PlayerCombatStats not found.");
-            return;
-        }
-        var p = FindPlayerGameObject();
-        if (p == null)
-        {
-            Debug.LogWarning("[DebugUI] ApplyCurrentMaxHealth: Player not found.");
-            return;
-        }
-        var health = p.GetComponent<HealthComponent>();
-        if (health == null)
-        {
-            Debug.LogWarning("[DebugUI] ApplyCurrentMaxHealth: Player HealthComponent not found.");
-            return;
-        }
-        float before = health.maxHealth;
-        float beforeCurrent = health.currentHealth;
-        health.SetMaxHealth(cs.CurrentMaxHealth, keepCurrentRatio: false);
-        Debug.Log($"[DebugUI] ApplyCurrentMaxHealth: maxHealth {before}->{health.maxHealth}, currentHealth {beforeCurrent}->{health.currentHealth}");
+        if (cs == null) { Debug.LogWarning("[DebugUI] ApplyCurrentMaxHealth: PlayerCombatStats not found."); return; }
+        cs.ApplyCurrentMaxHealth(keepCurrentRatio: false);
     }
 
-    // ─── 装备调试ヘルパー ──────────────────────────────────
+    // ─── Resolve ヘルパー ─────────────────────────────────────
 
     private PlayerEquipment ResolvePlayerEquipment(bool warnIfMissing)
     {
@@ -194,13 +192,17 @@ public class SkeletonDebugUI : MonoBehaviour
         return playerCombatStats;
     }
 
+    private PlayerInventory ResolvePlayerInventory()
+    {
+        if (playerInventory != null) return playerInventory;
+        var p = FindPlayerGameObject();
+        if (p != null) playerInventory = p.GetComponent<PlayerInventory>();
+        return playerInventory;
+    }
+
     private void EquipTestCore()
     {
-        if (testCoreItem == null)
-        {
-            Debug.LogWarning("[DebugUI] testCoreItem is null. Assign a Core ItemData in the Inspector.");
-            return;
-        }
+        if (testCoreItem == null) { Debug.LogWarning("[DebugUI] testCoreItem is null. Assign a Core ItemData in the Inspector."); return; }
         var pe = ResolvePlayerEquipment(warnIfMissing: true);
         if (pe == null) return;
         pe.EquipCore(testCoreItem);
@@ -272,21 +274,9 @@ public class SkeletonDebugUI : MonoBehaviour
 
     private void ResetCurrentTargetEnemy(EnemyAI enemyAI, HealthComponent healthComp)
     {
-        if (enemyAI == null)
-        {
-            Debug.LogWarning("[DebugUI] ResetCurrentTargetEnemy: \u5f53\u524d\u76ee\u6807\u4e3a\u7a7a\u6216\u65e0 EnemyAI\u3002");
-            return;
-        }
-        if (!enemyAI.enabled)
-        {
-            Debug.LogWarning($"[DebugUI] ResetCurrentTargetEnemy: {enemyAI.gameObject.name} \u7684 AI \u5df2\u7981\u7528\uff0c\u8df3\u8fc7\u91cd\u7f6e\u3002");
-            return;
-        }
-        if (healthComp == null || healthComp.IsDead)
-        {
-            Debug.LogWarning($"[DebugUI] ResetCurrentTargetEnemy: {enemyAI.gameObject.name} \u5df2\u6b7b\u4ea1\u6216\u65e0 HealthComponent\uff0c\u8df3\u8fc7\u91cd\u7f6e\u3002");
-            return;
-        }
+        if (enemyAI == null) { Debug.LogWarning("[DebugUI] ResetCurrentTargetEnemy: \u5f53\u524d\u76ee\u6807\u4e3a\u7a7a\u6216\u65e0 EnemyAI\u3002"); return; }
+        if (!enemyAI.enabled) { Debug.LogWarning($"[DebugUI] ResetCurrentTargetEnemy: {enemyAI.gameObject.name} \u7684 AI \u5df2\u7981\u7528\uff0c\u8df3\u8fc7\u91cd\u7f6e\u3002"); return; }
+        if (healthComp == null || healthComp.IsDead) { Debug.LogWarning($"[DebugUI] ResetCurrentTargetEnemy: {enemyAI.gameObject.name} \u5df2\u6b7b\u4ea1\u6216\u65e0 HealthComponent\uff0c\u8df3\u8fc7\u91cd\u7f6e\u3002"); return; }
         enemyAI.ResetToSpawn();
         Debug.Log($"[DebugUI] ResetToSpawn() \u5df2\u8c03\u7528: {enemyAI.gameObject.name}");
     }

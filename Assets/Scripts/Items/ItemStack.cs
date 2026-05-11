@@ -49,12 +49,25 @@ public class ItemStack
             Debug.LogWarning($"[ItemStack] AddCount called with invalid amount: {amount}");
             return 0;
         }
-        if (IsFull)
-        {
-            return 0;
-        }
+        if (IsFull) return 0;
         int actualAdd = Mathf.Min(amount, RemainingCapacity);
         count += actualAdd;
         return actualAdd;
+    }
+
+    /// <summary>
+    /// スタック数を減算する。実際に減算した量を返す。
+    /// amount が 0 以下の場合は 0 を返す。count を 0 未満にはしない。
+    /// </summary>
+    public int RemoveCount(int amount)
+    {
+        if (amount <= 0)
+        {
+            Debug.LogWarning($"[ItemStack] RemoveCount called with invalid amount: {amount}");
+            return 0;
+        }
+        int actualRemove = Mathf.Min(amount, count);
+        count -= actualRemove;
+        return actualRemove;
     }
 }
