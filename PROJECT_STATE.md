@@ -1,538 +1,1172 @@
 ﻿# PROJECT_STATE
 
+最后更新：2026-05-11  
+当前主要场景：`Assets/Scenes/SampleScene.unity`  
+Unity 版本：6000.4.3f1 (Unity 6)
+
+---
+
 ## 1. Project Overview
+
 - 项目类型：3D RPG 动作游戏原型
-- Unity 版本：6000.4.3f1 (Unity 6)
+- 当前开发阶段：早期原型 - 野外战斗 / 刷怪 / 掉落 / 背包 / 装备数值闭环验证
 - 使用的主要包：
   - URP (Universal Render Pipeline) 17.4.0
   - New Input System 1.19.0
   - AI Navigation 2.0.12
   - Unity MCP (GitHub)
 - 当前主要场景：`Assets/Scenes/SampleScene.unity`
-- 当前开发阶段：早期原型 - 野外战斗 / 刷怪循环基础开发
+- 当前地图状态：
+  - 原本的主要 `Ground` 实体已不再作为主要地面使用。
+  - 已添加 Unity 默认 `Terrain` 地形对象。
+
+---
 
 ## 2. Game Concept
-- 游戏核心玩法：第三人称动作战斗，玩家对抗 AI 野外敌人。
-- 当前主要循环：玩家移动 → 鼠标左键选中敌人 → 按 1 使用普通攻击 → 敌人死亡 → 任务击杀进度增加 → 敌人掉落 ItemDrop → 玩家靠近按 E 拾取 → PlayerInventory 按 itemId 合并数量 → 刷怪点延迟刷新敌人 → 继续战斗。
-- 长期方向：暗黑破坏神式刷装备循环 + FF14 式野外怪物分布 / 脱战逻辑 + 第三人称 3D RPG 战斗表现。
-- 已确认的设计方向：
-  - 基于 FSM 的敌人 AI（Idle/Chase/Attack/ReturnToSpawn）
-  - 阵营系统（敌我识别）
-  - 仇恨系统（多目标列表 + 仇恨值排序 + 脱战）
-  - 野怪出生中心点 / 游荡内圈 / 活动边界外圈
-  - 攻击冷却机制
-  - 世界空间血条显示
-  - 击杀目标逐步从“关卡 Victory”转向“任务目标 / 刷怪循环”
-  - 掉落物、拾取、最小 PlayerInventory / ItemStack 库存结构已接入
-  - 后续将接入物品类型、最大堆叠、背包 UI / 装备系统
-  
-### Long-term Core Direction / 最终定位
 
-本项目长期定位为「单人 Tank 保护型动作 RPG」。
+### 当前核心循环
 
-玩家扮演一名 Tank 型主角，通过 MMO 式 GCD / oGCD 技能节奏、Boss 时间轴、AoE 机制、减伤技能与装备构筑，在战斗中承受高压攻击，并保护核心治疗角色 Hikari。
+当前已经从单纯战斗测试推进到第一版刷装备闭环：
 
-游戏不是小队指挥游戏，也不是传统护送 NPC 游戏。玩家主要操作主角本人，Hikari 作为治疗搭档与剧情核心存在，未来计划使用「治疗负担 / 光之负荷」系统替代普通 NPC 血条，避免玩家产生保姆式负担。
+```text
+玩家移动
+→ 鼠标左键选中敌人
+→ 按 1 使用普通攻击
+→ 敌人死亡
+→ 任务击杀进度增加
+→ 敌人生成多个 ItemDrop
+→ 玩家靠近按 E 拾取
+→ PlayerInventory 按物品规则加入库存
+→ F1 右侧背包 Debug 面板显示当前库存
+→ 从背包中装备 Core
+→ PlayerEquipment 更新装备槽
+→ PlayerCombatStats 重新计算攻击力 / 最大生命值
+→ HealthComponent 自动应用最大生命值
+→ 玩家变强
+→ 刷怪点延迟刷新敌人
+→ 继续战斗
+```
 
-长期核心体验：
-- 玩家通过正确技能承受原本扛不住的攻击
-- 玩家保护 Hikari，使她不因过度治疗而被消耗
-- 装备掉落不仅提供数值成长，也改变技能派生、防御方式和支援连携
+### 长期方向
+
+- 暗黑破坏神式刷装备循环
+- FF14 式野外怪物分布 / 脱战逻辑
+- 第三人称 3D RPG 战斗表现
+- 长期定位为「单人 Tank 保护型动作 RPG」
+
+玩家扮演 Tank 型主角，通过 MMO 式 GCD / oGCD 技能节奏、Boss 时间轴、AoE 机制、减伤技能与装备构筑，在战斗中承受高压攻击，并保护核心治疗角色 Hikari。
+
+### 长期核心体验
+
+- 玩家通过正确技能承受原本扛不住的攻击。
+- 玩家保护 Hikari，使她不因过度治疗而被消耗。
+- 装备掉落不仅提供数值成长，也改变技能派生、防御方式和支援连携。
+
+---
 
 ## 3. Current Architecture
 
-### Enemy AI 系统
-- `EnemyAI.cs`：敌人有限状态机（Idle/Chase/Attack/ReturnToSpawn）+ 仇恨系统 + 野怪脱战回家逻辑。
-  - 仇恨列表：`Dictionary<Transform, float> hateTable`，key=目标，value=仇恨值
-  - `AddHate(Transform, float)`：统一仇恨入口，添加/累加后重新选目标
-  - `IsValidTarget(Transform)`：有效性检查（非 null、有 HealthComponent、未死亡、阵营敌对）
-  - `RemoveInvalidHateTargets()`：清除死亡/销毁目标
-  - `SelectHighestHateTarget()`：选仇恨值最高有效目标为 currentTarget
-  - `_spawnPosition / _spawnRotation`：在 Awake() 记录敌人出生中心点与出生朝向
-  - `wanderRadius`：预留字段，代表未来 Idle / Wander 状态允许自然游荡的内圈半径；当前暂不参与逻辑
-  - `leashRadius`：活动边界外圈；敌人离出生中心点的 XZ 水平距离超过该值时立即进入 ReturnToSpawn
-  - `UpdateDisengage()`：目标持续超出 disengageDistance + disengageDelay 后，调用 `EnterReturnToSpawn()` 脱战回家
-  - `EnterReturnToSpawn()`：清空仇恨 / currentTarget，停止攻击动画，进入 ReturnToSpawn；不瞬移、不回血
-  - `HandleReturnToSpawn()`：使用 XZ 平面方向让敌人自己走回出生中心点；到达后只修正 X/Z、保留当前 Y，清速度、回满血、恢复 Idle
-  - `ResetToSpawn()`：Debug / 强制复位接口，直接瞬移回出生点、清仇恨、回满血、Idle；不作为正式脱战行为
-  - `ForceDisengageAndReturnToSpawn()`：供外部系统调用；活着且 AI 启用时强制脱战进入 ReturnToSpawn，不调用 ResetToSpawn()
-  - `HandleDamaged(float, Transform)`：订阅 `HealthComponent.OnDamaged`，受击时对攻击来源加仇恨；ReturnToSpawn 中受击后不会立刻中断回家，后续是否无视伤害待定
-  - `OnAttackHit()`：由 Animation Event 调用，首行有 `!enabled` 保护，**方法名不可改**
-  - `OnEnable/OnDisable`：管理 OnDamaged 事件订阅生命周期
-- `FOVDetector.cs`：视野检测（FOV），角度 + 距离判断目标可见性。
-- `FactionSystem.cs` / `FactionComponent`：阵营枚举（Player/Skeleton/Goblin/Dragon），`ShouldAttack(Faction)` 判断敌对关系。
-- `EnemyDeathHandler.cs`：监听 `HealthComponent.OnDied`，禁用 EnemyAI、停止 Rigidbody、禁用 Collider，触发死亡动画，延迟 destroyDelay 秒后 Destroy。
-- `EnemyWorldManager.cs`：场景级敌人管理器第一版。
-  - 挂载在 SampleScene 的 `EnemyWorldManager` 空 GameObject 上
-  - `ForceAllLivingEnemiesReturnToSpawn()`：通过 `FindObjectsByType<EnemyAI>(FindObjectsSortMode.None)` 找到所有 EnemyAI，并逐个调用 `ForceDisengageAndReturnToSpawn()`
-  - 当前仅用于玩家死亡时命令所有活着敌人脱战回出生点；暂不做注册缓存、刷新管理、掉落、任务广播
-- `EnemySpawnPoint.cs`：第一版正式野外刷怪点。
-  - 一个 SpawnPoint 管理一个敌人
-  - 字段：`enemyPrefab`、`respawnDelay`、`spawnOnStart`
-  - `SpawnEnemy()`：在 SpawnPoint 自身位置 / 朝向 Instantiate 敌人，保证 EnemyAI.Awake() 记录到刷怪点位置；订阅敌人 OnDied；调用 `LevelObjectiveManager.RegisterEnemy(health)`
-  - `HandleCurrentEnemyDied()`：敌人死亡时取消订阅、清空当前引用，启动刷新协程
-  - `RespawnAfterDelay()`：等待 respawnDelay 秒后重新生成敌人
-  - Destroy 仍由 `EnemyDeathHandler` 负责，EnemySpawnPoint 不主动 Destroy 敌人
+## 3.1 Enemy AI 系统
 
-### Player 系统
-- `PlayerController.cs`：玩家输入处理、移动控制（New Input System）。`applyRootMotion = false`。
-- `RPGCameraController.cs`：第三人称相机跟随。右键拖拽时同步玩家朝向（`target.rotation`）。
-- `PlayerTargeting.cs`：鼠标左键点击，Physics.Raycast 检测目标，验证 HealthComponent + FactionComponent + 敌对关系后设为 `CurrentTarget`（public Transform，只读）。提供 `ClearTarget()` 方法，用于在玩家死亡等场景主动清空当前目标。
-- `PlayerSkillController.cs`：按数字键 1 读取 `PlayerTargeting.CurrentTarget`，验证目标有效性后调用 `HealthComponent.TakeDamage(damage, transform)`。攻击判定成功后调用 `animator.SetTrigger("Attack")` 触发攻击动画。持有 `_animator`、`_selfHealth` 引用（Awake 中 GetComponent 获取）。
-- `PlayerDeathHandler.cs`：挂载在 Player 上，监听 `HealthComponent.OnDied`，死亡时执行以下操作（通过 `_isDeadHandled` 防止重复）：
-  - 调用 `PlayerTargeting.ClearTarget()` 清除当前锁定目标
-  - 禁用 `PlayerController`、`PlayerSkillController`、`PlayerTargeting`
-  - 禁用 `RPGCameraController`（阻止右键改变玩家朝向）
-  - 清零 Rigidbody 速度并设置 `isKinematic = true`（防止斜面滑动）
-  - 调用 `animator.SetTrigger("IsDead")` 播放死亡动画
-  - 输出 `[PlayerDeathHandler] Player died. Controls disabled.`
-  - 通过 `FindFirstObjectByType<EnemyWorldManager>()` 找到场景敌人管理器，并调用 `ForceAllLivingEnemiesReturnToSpawn()`，让所有活着敌人脱战并自己走回出生点
-  - 玩家复活时暂不额外重置敌人；死亡负责敌人脱战，复活只恢复玩家自身
-  
-### Respawn / SavePoint 基础系统
-- `PlayerRespawnPointTracker.cs`：挂载在 Player 上，记录当前最近复活点的位置和朝向。
-  - `CurrentRespawnPosition`：当前最近复活点位置，只读属性
-  - `CurrentRespawnRotation`：当前最近复活点朝向，只读属性
-  - `Awake()`：默认将玩家初始位置和朝向作为初始复活点
-  - `SetRespawnPoint(Vector3, Quaternion)`：更新最近复活点位置和朝向，并输出 Debug.Log
-- `SavePoint.cs`：挂载在复活点对象上，通过 Trigger 检测玩家进入。
-  - `OnTriggerEnter(Collider other)`：从进入对象上查找 `PlayerRespawnPointTracker`
-  - 找到后调用 `SetRespawnPoint(transform.position, transform.rotation)`
-  - 使用 `_hasActivated` 防止同一个 SavePoint 反复触发日志
+### `EnemyAI.cs`
 
-### Health & Combat
-- `HealthComponent.cs`：通用血量组件。
-  - `TakeDamage(float)`：向后兼容接口，内部调用带来源版本
-  - `TakeDamage(float, Transform attacker)`：带攻击来源接口，attacker 可为 null
-  - `IsDead`（只读属性）
-  - 事件：`OnHealthChanged(float, float)`、`OnDied`（Action，无参数）、`OnDamaged(float, Transform)`
-- `WorldHealthBar.cs`：世界空间血条 UI（头顶）。
-- `PlayerHealthBar.cs`：玩家血条 UI。
+敌人有限状态机（Idle / Chase / Attack / ReturnToSpawn）+ 仇恨系统 + 野怪脱战回家逻辑。
 
-### Items / Drop / Inventory 系统
-- `ItemData.cs`（`Assets/Scripts/Items/`）：物品数据 ScriptableObject。
-  - `itemId`：内部稳定 ID，例如 `bone`、`iron_sword`；用于未来掉落表、背包堆叠、存档、本地化 key，不作为玩家最终显示文本。
-  - `itemName`：当前阶段临时显示名；未来多语言系统接入后应逐步替换 / 扩展为 localization key。
-  - `rarity`：`ItemRarity` enum，当前包含 Common / Rare / Epic / Legendary。
-  - `description`：当前阶段临时描述文本。
-  - `CreateAssetMenu`：可通过 Create → RPG → Items → Item Data 创建物品数据 asset。
-- `ItemStack.cs`（`Assets/Scripts/Items/`）：库存堆叠数据类。
-  - 保存 `ItemData itemData` 与 `int count`。
-  - `ItemData / ItemId / ItemName / Count` 为只读属性。
-  - `AddCount(int amount)`：增加数量；amount ≤ 0 时 warning 并 return。
-  - 构造时 count < 1 会修正为 1。
-- `PickupItem.cs`（`Assets/Scripts/Items/`）：地面拾取物脚本。
-  - 字段：`itemData`、`playerTag = "Player"`。
-  - `SetItemData(ItemData data)`：供 EnemyDropper 在运行时注入物品数据。
-  - 使用 Trigger 检测 Player 进入 / 离开范围，按 E 拾取。
-  - 使用 New Input System：`Keyboard.current.eKey.wasPressedThisFrame`。
-  - 玩家进入范围时缓存 `PlayerInventory`；拾取时调用 `PlayerInventory.AddItem(itemData)`，成功后 Destroy 自身。
-  - 若 `itemData` 或 `PlayerInventory` 缺失，只输出 warning，不崩溃。
-- `EnemyDropper.cs`（`Assets/Scripts/Items/`）：敌人固定掉落第一版。
-  - 挂载在敌人 Prefab 上。
-  - 字段：`dropItem`、`pickupPrefab`、`dropOffset`。
-  - Awake 获取同对象 `HealthComponent`，OnEnable 订阅 `OnDied`，OnDisable 取消订阅。
-  - 敌人死亡时 Instantiate `pickupPrefab`，并调用 `PickupItem.SetItemData(dropItem)` 注入掉落物数据。
-  - 当前是固定 100% 掉落；没有随机掉落表、掉率、稀有度抽取。
-- `PlayerInventory.cs`（`Assets/Scripts/Player/`）：玩家最小库存结构。
-  - 挂载在场景 Player 上。
-  - 内部使用 `List<ItemStack>`，不再使用重复 `List<ItemData>`。
-  - `AddItem(ItemData item)`：按 itemId 查找已有 ItemStack；找到则 count + 1，未找到则新增 ItemStack。
-  - `ItemCount`：所有 stack 的 count 总和。
-  - `StackCount`：不同物品种类数量。
-  - `Items`：`IReadOnlyList<ItemStack>`。
-  - 每次成功拾取后输出本次获得物品、当前总数量，并输出当前库存统计。
-- `ItemDrop.prefab`（`Assets/Resources/ItemDrop.prefab`）：地面掉落物 Prefab。
-  - Sphere 临时外观，scale 约 `(0.4, 0.4, 0.4)`。
-  - 包含 SphereCollider，`isTrigger = true`。
-  - 挂载 `PickupItem`。
-  - `itemData` 保持为空，由 EnemyDropper 运行时注入。
-- `TestItem_Bone.asset`（`Assets/Items/TestItem_Bone.asset`）：测试用 ItemData。
-  - 当前绑定到 `SkeletonEnemy.prefab` 的 EnemyDropper，作为骷髅固定掉落测试物品。
-- 注意：
-  - Player 的 Tag 必须为 `Player`，否则 PickupItem 的 Trigger 判断不会认定玩家。
-  - 当前库存数据只存在运行时内存中，停止 Play Mode 后会消失；正式存档系统未来应保存 `itemId + count`，而不是直接保存 ItemData 引用。
+重要点：
 
-### Level / Quest Objective 系统
-- `LevelObjectiveManager.cs`（`Assets/Scripts/Level/`）：当前已从纯关卡 Victory 控制器转为“临时任务目标管理器 + 旧关卡模式兼容”。
-  - `[SerializeField] HealthComponent playerHealth`：引用玩家 HealthComponent
-  - `[SerializeField] List<HealthComponent> enemyHealthComponents`：已注册的敌人列表
-  - `[SerializeField] int requiredKills = 3`：任务目标击杀数 / 旧关卡胜利所需击杀数
-  - `[SerializeField] bool useQuestObjectiveMode = true`：任务目标模式开关
-    - true：击杀数达到 requiredKills 后显示“任务完成”，不 Victory、不设置 `_isLevelEnded`、不显示 restartHintText，玩家可继续刷怪
-    - false：保持旧关卡模式，击杀数达到 requiredKills 后 Victory，并允许按 R 重载场景
-  - `private bool _isQuestCompleted`：任务完成状态；不阻止继续击杀、不阻止 RegisterEnemy、不监听 R 重开
-  - `[SerializeField] TextMeshProUGUI progressText / resultText / restartHintText`：UI 文本引用（已在场景中绑定）
-  - 玩家死亡时仍走旧 Game Over：`_isLevelEnded = true`、显示 Game Over / “按 R 重新开始”、按 R 重载当前场景；正式死亡 / 复活 UI 尚未接入
-  - `RegisterEnemy(HealthComponent)`：公开接口，供 SkeletonSpawner / EnemySpawnPoint 等运行时生成器注册敌人；任务完成后仍允许继续注册，只有 `_isLevelEnded` 为 true 时拒绝注册
-  - 内部用 `HashSet<HealthComponent> _countedEnemies` 防重复计数
-  - 内部用 `Dictionary<HealthComponent, System.Action> _enemyDiedHandlers` 保存每个敌人 OnDied handler，确保 OnEnable / OnDisable / RegisterEnemy 使用同一委托实例订阅 / 取消订阅
-  - `ShowQuestComplete()`：显示“任务完成”，隐藏 restartHintText，不设置 `_isLevelEnded`
-  - `ClearLevelResultForRespawn()`：Debug 复活测试用接口。
-    - 将 `_isLevelEnded` 重置为 false
-    - 隐藏 `resultText`
-    - 隐藏 `restartHintText`
-    - 不清空 `progressText`
-    - 不重置击杀数
-    - 不重置 `_isQuestCompleted`
-    - 不复活敌人
-    - 不重载场景
+- 仇恨列表：`Dictionary<Transform, float> hateTable`
+- `AddHate(Transform, float)`：统一仇恨入口
+- `IsValidTarget(Transform)`：非 null、有 HealthComponent、未死亡、阵营敌对
+- `RemoveInvalidHateTargets()`：清除死亡 / 销毁目标
+- `SelectHighestHateTarget()`：选择最高仇恨目标
+- `_spawnPosition / _spawnRotation`：Awake 记录出生点与朝向
+- `wanderRadius`：未来游荡内圈预留字段
+- `leashRadius`：活动边界外圈，超过后 ReturnToSpawn
+- `EnterReturnToSpawn()`：清空仇恨、停止攻击动画、进入回家状态
+- `HandleReturnToSpawn()`：XZ 平面自己走回出生点，到达后回满血并恢复 Idle
+- `ResetToSpawn()`：Debug 强制复位，瞬移回出生点
+- `ForceDisengageAndReturnToSpawn()`：外部命令活敌人脱战回家
+- `OnAttackHit()`：Animation Event 绑定，方法名不可改
 
-### Spawner & Debug
-- `SkeletonSpawner.cs`（`Assets/Scripts/Spawner/`）：Debug 敌人生成器。
-  - `SpawnSkeleton()` 末尾自动调用 `FindFirstObjectByType<LevelObjectiveManager>()?.RegisterEnemy(hc)`，动态生成的敌人自动计入任务击杀进度
-  - F1 调试菜单生成的骷髅通过此机制自动注册
-- `EnemySpawnPoint.cs`（`Assets/Scripts/Enemy/`）：正式野外刷怪点第一版。
-  - `enemyPrefab`：生成用敌人 Prefab
-  - `respawnDelay`：死亡后刷新等待时间
-  - `spawnOnStart`：Play Mode 开始时是否自动生成
-  - 当前 SampleScene 中已有 `EnemySpawnPoint_Test`，绑定 `Assets/Resources/SkeletonEnemy.prefab`，respawnDelay=5s，spawnOnStart=true
-- `SkeletonDebugUI.cs`：调试用 UI。
-  - 可生成调试用骷髅
-  - 提供“恢复玩家满血”按钮：调用 `HealthComponent.RestoreFullHealth()`
-  - 提供“原地复活测试”按钮：调用 `RestoreFullHealth()` + `PlayerDeathHandler.ResetForRespawn()`
-  - 提供“复活到最近存档点”按钮：
-    - 读取 Player 上的 `PlayerRespawnPointTracker`
-    - 将 Player 传送到 `CurrentRespawnPosition / CurrentRespawnRotation`
-    - 调用 `HealthComponent.RestoreFullHealth()`
-    - 调用 `PlayerDeathHandler.ResetForRespawn()`
-    - 如已接入，则调用 `LevelObjectiveManager.ClearLevelResultForRespawn()` 清理结算 UI
-  - 显示当前玩家锁定目标：
-    - 无目标：显示“当前目标：无”
-    - 非 EnemyAI：显示“当前目标：{名称}（非可重置敌人）”
-    - EnemyAI disabled：显示“当前目标：{名称}（AI已禁用）”
-    - HealthComponent.IsDead：显示“当前目标：{名称}（已死亡）”
-    - 可重置活敌人：显示“当前目标：{名称}”
-  - 提供“重置当前目标敌人”按钮：仅当当前目标存在、挂有 EnemyAI、EnemyAI.enabled=true、HealthComponent 存在且未死亡时，调用 `EnemyAI.ResetToSpawn()`；用于 Debug 强制复位，不代表正式脱战逻辑
-- `PhysicsLayerSetup.cs`：物理层设置。
+### `EnemyWorldManager.cs`
 
-### Debug Respawn 测试流程
-- 当前已形成最小 Debug 复活测试闭环：
-  1. 玩家进入 SavePoint Trigger
-  2. `SavePoint` 调用 `PlayerRespawnPointTracker.SetRespawnPoint()`
-  3. 玩家死亡
-  4. Debug UI 点击“复活到最近存档点”
-  5. Player 传送到最近记录的复活点位置和朝向
-  6. `HealthComponent.RestoreFullHealth()` 恢复 HP
-  7. `PlayerDeathHandler.ResetForRespawn()` 恢复控制、相机、Rigidbody 和 Animator 状态
-  8. 如已接入，`LevelObjectiveManager.ClearLevelResultForRespawn()` 清理结算 UI
-- 玩家死亡时，`EnemyWorldManager` 已经命令所有活着敌人进入 ReturnToSpawn；复活到 SavePoint 时不额外重置敌人。
-- 注意：该流程仍属于 Debug 测试功能，不是正式游戏 UI / 正式复活系统。
+场景级敌人管理器第一版。
 
+- 挂载在 SampleScene 的 `EnemyWorldManager` 空 GameObject 上。
+- `ForceAllLivingEnemiesReturnToSpawn()` 会查找所有 `EnemyAI`，并调用 `ForceDisengageAndReturnToSpawn()`。
+- 当前主要用于玩家死亡时，让所有活着敌人脱战并自己走回出生点。
+- 后续敌人数量变多后，应改为注册缓存，不应长期依赖 Find 系列 API。
 
-### Stats（未充分使用）
-- `EntityStats.cs`：已创建但未集成。
+### `EnemySpawnPoint.cs`
+
+第一版正式野外刷怪点。
+
+- 一个 SpawnPoint 管理一个敌人。
+- 字段：`enemyPrefab`、`respawnDelay`、`spawnOnStart`
+- `SpawnEnemy()` 在 SpawnPoint 自身位置 / 朝向生成敌人。
+- 死亡后等待 `respawnDelay` 自动刷新。
+- 会注册生成敌人到 `LevelObjectiveManager`。
+- Destroy 仍由 `EnemyDeathHandler` 负责。
+
+---
+
+## 3.2 Player 系统
+
+### `PlayerController.cs`
+
+玩家输入和移动控制。使用 New Input System。`applyRootMotion = false`。
+
+### `RPGCameraController.cs`
+
+第三人称相机跟随。右键拖拽时同步玩家朝向。
+
+本次新增 / 修复：
+
+- 新增 `_isCameraDragging` 状态。
+- 新增 `SetCursorVisible(bool visible)`：
+  - `Cursor.lockState = CursorLockMode.None`
+  - `Cursor.visible = visible`
+- 视角拖拽开始时隐藏鼠标。
+- 视角拖拽结束时显示鼠标。
+- `OnDisable()` / `OnDestroy()` 强制恢复鼠标显示。
+- 不使用 `CursorLockMode.Locked`，避免光标跳到屏幕中心。
+- 修复 Fullscreen Editor Play Mode / F11 全屏下，按右键或左键操作视角后鼠标永久消失的问题。
+
+注意：
+
+- 当前实现优先保证“松手后光标恢复显示”。
+- Unity 原生 API 不擅长精确恢复 OS 鼠标坐标；如果将来需要完全回到按下前的屏幕坐标，需单独设计。
+
+### `PlayerTargeting.cs`
+
+鼠标左键点击，Physics.Raycast 检测目标，验证 HealthComponent + FactionComponent + 敌对关系后设为 `CurrentTarget`。提供 `ClearTarget()`，玩家死亡时会主动清空目标。
+
+### `PlayerSkillController.cs`
+
+按数字键 1 使用普通攻击。
+
+当前职责：
+
+- 读取 `PlayerTargeting.CurrentTarget`
+- 验证目标有效性
+- 读取 `PlayerCombatStats.CurrentNormalAttackDamage` 作为最终普通攻击伤害
+- 调用 `HealthComponent.TakeDamage(finalDamage, transform)`
+- 触发 `Attack` Trigger 播放攻击动画
+
+当前逻辑变化：
+
+- 不再直接读取 `PlayerEquipment.EquippedCore.AttackPowerBonus`。
+- 不再写死 Core 装备 +10 伤害。
+- 若 Player 上没有 `PlayerCombatStats`，回退使用原本 `normalAttackDamage`。
+
+### `PlayerDeathHandler.cs`
+
+玩家死亡处理：
+
+- 清除当前锁定目标
+- 禁用 PlayerController / PlayerSkillController / PlayerTargeting / RPGCameraController
+- 清零 Rigidbody 并设置 `isKinematic = true`
+- 播放死亡动画
+- 调用 `EnemyWorldManager.ForceAllLivingEnemiesReturnToSpawn()`
+- 复活时只恢复玩家自身，不额外重置敌人
+
+---
+
+## 3.3 Health & Combat Stats
+
+### `HealthComponent.cs`
+
+通用血量组件。
+
+当前包含：
+
+- `TakeDamage(float)`：向后兼容接口
+- `TakeDamage(float, Transform attacker)`：带攻击来源接口
+- `RestoreFullHealth()`：恢复满血并触发血条刷新
+- `SetMaxHealth(float newMaxHealth, bool keepCurrentRatio = false)`：动态修改最大生命值
+- `IsDead`
+- 事件：
+  - `OnHealthChanged(float, float)`
+  - `OnDied`
+  - `OnDamaged(float, Transform)`
+
+`SetMaxHealth` 规则：
+
+- `newMaxHealth < 1f` 时修正为 1。
+- `keepCurrentRatio == true`：按旧生命比例换算当前生命值。
+- `keepCurrentRatio == false`：当前生命值保持原值，但超过新上限时裁剪。
+- 最后触发 `OnHealthChanged(currentHealth, maxHealth)`。
+- 不处理死亡 / 复活状态。
+- 不调用 `RestoreFullHealth()`。
+
+### `PlayerCombatStats.cs`
+
+新增的玩家战斗数值组件，挂载在 Player 上。
+
+职责：
+
+- 统一计算当前普通攻击伤害。
+- 统一计算当前最大生命值。
+- 监听装备变化。
+- 装备变化时自动应用当前最大生命值到 `HealthComponent`。
+
+字段 / 属性：
+
+- `[SerializeField] private float baseNormalAttackDamage = 20f`
+- `[SerializeField] private float baseMaxHealth = 100f`
+- `BaseNormalAttackDamage`
+- `EquipmentAttackPowerBonus`
+- `CurrentNormalAttackDamage`
+- `BaseMaxHealth`
+- `EquipmentMaxHealthBonus`
+- `CurrentMaxHealth`
+
+计算规则：
+
+```text
+EquipmentAttackPowerBonus = EquippedCore?.AttackPowerBonus ?? 0
+CurrentNormalAttackDamage = BaseNormalAttackDamage + EquipmentAttackPowerBonus
+EquipmentMaxHealthBonus = EquippedCore?.MaxHealthBonus ?? 0
+CurrentMaxHealth = Max(1, BaseMaxHealth + EquipmentMaxHealthBonus)
+```
+
+装备变化自动刷新：
+
+```text
+PlayerEquipment.OnEquipmentChanged
+→ PlayerCombatStats.HandleEquipmentChanged()
+→ ApplyCurrentMaxHealth(false)
+→ HealthComponent.SetMaxHealth(CurrentMaxHealth, false)
+```
+
+`ApplyCurrentMaxHealth(bool keepCurrentRatio = false)`：
+
+- 若缺少 HealthComponent，Warning 后 return。
+- 调用 `HealthComponent.SetMaxHealth(CurrentMaxHealth, keepCurrentRatio)`。
+- 当前自动流程使用 `keepCurrentRatio: false`。
+- 装备加最大生命值时不会自动补满血。
+- 卸下装备导致上限降低时，当前 HP 超过新上限会被裁剪。
+
+---
+
+## 3.4 Item / Drop / Inventory / Equipment 系统
+
+### `ItemData.cs`
+
+物品数据 ScriptableObject。
+
+当前字段：
+
+- `itemId`：稳定内部 ID，用于掉落表、背包、存档、多语言 key
+- `itemName`：当前阶段临时显示名
+- `rarity`：`ItemRarity`，Common / Rare / Epic / Legendary
+- `description`
+- `itemType`：`ItemType`
+- `maxStack`
+- `equipmentSlotType`：`EquipmentSlotType`
+- `attackPowerBonus`
+- `maxHealthBonus`
+
+枚举：
+
+```csharp
+public enum ItemType
+{
+    Material,
+    Equipment,
+    Consumable,
+    Currency,
+    Quest,
+    Cosmetic
+}
+
+public enum EquipmentSlotType
+{
+    None,
+    Core,
+    Weapon,
+    Armor,
+    Accessory
+}
+```
+
+只读属性：
+
+- `ItemType`
+- `MaxStack`
+- `EquipmentSlotType`
+- `AttackPowerBonus`
+- `MaxHealthBonus`
+
+`OnValidate()` 规则：
+
+- `maxStack < 1` → 修正为 1
+- `itemType == Equipment` → `maxStack = 1`
+- `itemType != Equipment` → `equipmentSlotType = None`
+- `itemType != Equipment` → `attackPowerBonus = 0`
+- `itemType != Equipment` → `maxHealthBonus = 0`
+- `attackPowerBonus < 0` → 修正为 0
+- `maxHealthBonus < 0` → 修正为 0
+
+注意：
+
+- 当前固定装备属性直接存放在 ItemData 上。
+- 这适合第一版固定装备。
+- 将来若要支持随机词条，需要升级到 `ItemInstance`。
+
+### `ItemStack.cs`
+
+库存堆叠数据类。
+
+当前内容：
+
+- 保存 `ItemData itemData` 与 `int count`
+- 只读属性：
+  - `ItemData`
+  - `ItemId`
+  - `ItemName`
+  - `Count`
+  - `IsFull`
+  - `RemainingCapacity`
+- `AddCount(int amount)`：
+  - 返回实际增加数量
+  - 不超过 `ItemData.MaxStack`
+  - `amount <= 0` 时 Warning + return 0
+- `RemoveCount(int amount)`：
+  - 返回实际减少数量
+  - 用于 `PlayerInventory.RemoveItem`
+- 构造函数：
+  - `count < 1` 修正为 1
+  - `count > itemData.MaxStack` 修正为 `MaxStack`
+
+### `PlayerInventory.cs`
+
+玩家运行时背包容器，挂载在 Player 上。
+
+当前内部结构：
+
+- `List<ItemStack> _items`
+- `ItemCount`：所有 stack 的 Count 总和
+- `StackCount`：`_items.Count`
+- `Items`：`IReadOnlyList<ItemStack>`
+
+当前方法：
+
+#### `AddItem(ItemData item)`
+
+规则：
+
+- `item == null` → Warning + false
+- `item.ItemType == Equipment`：
+  - 永远新增独立 `ItemStack(item, 1)`
+  - 不与同 itemId 装备合并
+- 非 Equipment：
+  - 查找相同 itemId 且未满 stack
+  - 找到则 `AddCount(1)`
+  - 找不到则新增 `ItemStack(item, 1)`
+
+#### `RemoveItem(ItemData item)`
+
+规则：
+
+- `item == null` → Warning + false
+- 查找第一个 itemId 相同的 stack
+- 找不到 → Warning + false
+- `Count > 1` → `RemoveCount(1)`
+- `Count == 1` → 移除整个 stack
+- 成功后输出库存统计并 return true
+
+#### `FindFirstEquipmentBySlot(EquipmentSlotType slotType)`
+
+规则：
+
+- 遍历 `_items`
+- 找到第一个：
+  - `ItemData != null`
+  - `Count > 0`
+  - `ItemType == Equipment`
+  - `EquipmentSlotType == slotType`
+- 返回该 `ItemData`
+- 不从背包移除
+- 找不到返回 null
+
+当前限制：
+
+- 没有背包容量。
+- 没有正式背包 UI。
+- 没有删除 / 使用 / 排序 / 卖出。
+- 停止 Play Mode 后库存消失。
+- 装备目前仍以 `ItemData` 表示，不支持同名装备不同词条。
+
+### `PlayerEquipment.cs`
+
+玩家装备容器雏形，当前只支持 Core 槽。
+
+字段 / 属性：
+
+- `[SerializeField] private ItemData equippedCore`
+- `EquippedCore`
+- `HasCoreEquipped`
+
+事件：
+
+```csharp
+public event System.Action OnEquipmentChanged;
+```
+
+方法：
+
+#### `EquipCore(ItemData item, out ItemData replacedItem)`
+
+规则：
+
+- `replacedItem = null`
+- `item == null` → Warning + false
+- `item.ItemType != Equipment` → Warning + false
+- `item.EquipmentSlotType != Core` → Warning + false
+- 通过检查后：
+  - `replacedItem = equippedCore`
+  - `equippedCore = item`
+  - 触发 `OnEquipmentChanged`
+  - return true
+
+保留兼容重载：
+
+```csharp
+public bool EquipCore(ItemData item)
+{
+    return EquipCore(item, out _);
+}
+```
+
+#### `UnequipCore()`
+
+- 当前无装备 → Warning + null
+- 有装备：
+  - 保存当前 Core
+  - `equippedCore = null`
+  - 触发 `OnEquipmentChanged`
+  - 返回被卸下的 `ItemData`
+
+#### `ClearEquipment()`
+
+- 若当前有 Core，则清空并触发 `OnEquipmentChanged`
+- 若已经为空，不触发事件
+
+### 背包容器 ↔ 装备容器 当前流程
+
+#### 从背包装备第一个 Core
+
+由 `SkeletonDebugUI` 的“装备背包中的第一个 Core”按钮触发：
+
+```text
+ResolvePlayerInventory
+ResolvePlayerEquipment
+FindFirstEquipmentBySlot(Core)
+EquipCore(newCore, out replacedCore)
+RemoveItem(newCore)
+如果 replacedCore != null → AddItem(replacedCore)
+OnEquipmentChanged → PlayerCombatStats 自动刷新
+```
+
+#### 卸下 Core 到背包
+
+由 `SkeletonDebugUI` 的“卸下 Core 到背包”按钮触发：
+
+```text
+ResolvePlayerInventory
+ResolvePlayerEquipment
+UnequipCore()
+如果成功 → PlayerInventory.AddItem(unequippedCore)
+OnEquipmentChanged → PlayerCombatStats 自动刷新
+```
+
+#### 强制清空 Core（Debug）
+
+保留直接清空装备中的 Core 的 Debug 用途。该按钮只调用 `UnequipCore()`，不把装备放回背包，适合调试清理，不属于正常装备流程。建议按钮显示名使用“强制清空 Core（Debug）”，避免和正常卸下流程混淆。
+
+---
+
+## 3.5 Drop 系统
+
+### `PickupItem.cs`
+
+地面拾取物脚本。
+
+- `itemData`
+- `playerTag = "Player"`
+- `SetItemData(ItemData data)`：运行时由 EnemyDropper 注入
+- Trigger 检测玩家进入 / 离开范围
+- 按 E 拾取
+- 拾取成功后调用 `PlayerInventory.AddItem(itemData)` 并 Destroy 自身
+- 若缺少 `itemData` 或 `PlayerInventory`，只 Warning，不崩溃
+
+### `EnemyDropper.cs`
+
+敌人死亡掉落入口。
+
+当前已从固定 100% 单物品掉落升级为“小型多物品掉落测试版”。
+
+新增结构：
+
+```csharp
+[System.Serializable]
+public class DropEntry
+{
+    public ItemData item;
+    [Range(0f, 1f)] public float dropChance = 1f;
+    public Vector3 offset;
+}
+```
+
+字段：
+
+- `dropItem`：旧版单物品 fallback，保留兼容
+- `pickupPrefab`
+- `dropOffset`
+- `List<DropEntry> drops`
+
+掉落流程：
+
+```text
+HandleDied()
+→ pickupPrefab == null 时 Warning + return
+→ 如果 drops.Count > 0：
+    遍历每个 DropEntry
+    item == null → Warning + skip
+    Random.value <= dropChance → Instantiate ItemDrop
+    生成位置 = transform.position + dropOffset + entry.offset
+    PickupItem.SetItemData(entry.item)
+    return
+→ 如果 drops.Count == 0：
+    fallback 到旧 dropItem 固定掉落
+```
+
+### `SkeletonEnemy.prefab` 当前掉落配置
+
+`Assets/Resources/SkeletonEnemy.prefab` 的 `EnemyDropper.drops`：
+
+```text
+drops[0]
+- Item: Assets/Items/TestItem_Bone.asset
+- DropChance: 1.00
+- Offset: (0, 0, 0)
+
+drops[1]
+- Item: Assets/Items/TestItem_GuardCore.asset
+- DropChance: 0.20
+- Offset: (0.4, 0, 0.2)
+```
+
+含义：
+
+- 骨头 100% 掉落。
+- 守护核心 20% 概率额外掉落。
+- 可临时将 Core 掉率改为 1.0 来测试拾取 / 背包 / 装备流程，确认后再改回 0.2。
+
+### 测试物品资产
+
+#### `Assets/Items/TestItem_Bone.asset`
+
+- `itemId = bone`
+- `itemName = 骨头`
+- `ItemType = Material`
+- `MaxStack = 99`
+- 用途：骷髅基础材料掉落
+
+#### `Assets/Items/TestItem_GuardCore.asset`
+
+- `itemId = test_guard_core`
+- `itemName = 守护核心`
+- `ItemType = Equipment`
+- `EquipmentSlotType = Core`
+- `MaxStack = 1`
+- `AttackPowerBonus = 20`
+- `MaxHealthBonus = 50`
+- 用途：Debug 用 Core 装备，骷髅低概率掉落
+
+---
+
+## 3.6 Debug UI / Runtime Debug Menu
+
+### `SkeletonDebugUI.cs`
+
+当前已从单纯 Skeleton 生成器 UI，扩展成运行时 Debug 控制台。
+
+实际挂载对象：
+
+- `SkeletonSpawnerManager`
+  - `SkeletonSpawner`
+  - `SkeletonDebugUI`
+  - `PhysicsLayerSetup`
+
+注意：
+
+- F1 Debug UI 使用 `OnGUI()` / IMGUI 绘制。
+- 这些按钮不会出现在 Hierarchy 的 UI 对象列表中。
+- 它不是正式游戏 UI，定位是开发 / Debug / Cheat 面板。
+- 正式背包 UI、装备 UI、死亡复活 UI 不应使用 OnGUI，应该使用 Canvas + TMP + Button 或 UI Toolkit。
+
+### 当前左侧 Debug 面板功能
+
+- F1 显示 / 隐藏
+- Skeleton Spawner：
+  - Spawn 1
+  - Spawn 5
+  - Clear All
+- 玩家：
+  - 恢复玩家满血
+  - 复活玩家测试
+  - 复活到最近存档点
+- 敌人调试：
+  - 显示当前目标
+  - 重置当前目标敌人
+- 装备调试：
+  - 显示当前 Core
+  - 装备测试 Core
+  - 强制清空 Core（Debug）/ 旧名“卸下测试 Core”
+  - 卸下 Core 到背包
+  - 装备背包中的第一个 Core
+- 战斗属性调试：
+  - Base Normal Attack Damage
+  - Equipment Attack Bonus
+  - Current Normal Attack Damage
+  - Equipment Max Health Bonus
+  - Base Max Health
+  - Current Max Health
+  - 应用当前最大生命值
+
+### 当前右侧背包 Debug 窗口
+
+新增独立右侧 OnGUI 区域，不塞进左侧长条。
+
+字段：
+
+- `private Vector2 inventoryScrollPosition`
+
+位置 / 尺寸：
+
+```csharp
+float invPanelWidth  = Mathf.Clamp(Screen.width * 0.28f, 320f, 460f);
+float invPanelHeight = Mathf.Max(300f, Screen.height - margin * 2f);
+float invPanelX      = Screen.width - invPanelWidth - margin;
+float invPanelY      = margin;
+```
+
+显示内容：
+
+- `--- 背包调试 ---`
+- `ItemCount`
+- `StackCount`
+- 每个 `ItemStack`：
+  - 物品名
+  - itemId
+  - Count
+  - ItemType
+  - Equipment 时显示 EquipmentSlotType
+  - AttackPowerBonus > 0 时显示 ATK Bonus
+  - MaxHealthBonus > 0 时显示 Max HP Bonus
+- 空背包时显示“背包为空”
+- 空 Stack / ItemData 缺失时显示错误信息并继续，不崩溃
+
+用途：
+
+- 验证骨头数量是否合并。
+- 验证 Core 是否从背包移除。
+- 验证卸下 Core 后是否回到背包。
+- 验证替换 Core 时旧 Core 是否回到背包。
+
+### OnGUI 是否可留到正式游戏
+
+- 可以作为隐藏 Debug / Cheat / Developer Menu 保留。
+- 不建议作为正式玩家 UI 使用。
+- 正式发布前建议使用 `UNITY_EDITOR || DEVELOPMENT_BUILD` 或特殊开关保护，避免普通玩家误触。
+
+---
+
+## 3.7 Respawn / SavePoint 基础系统
+
+### `PlayerRespawnPointTracker.cs`
+
+记录最近复活点位置和朝向。
+
+- `CurrentRespawnPosition`
+- `CurrentRespawnRotation`
+- `Awake()` 默认使用玩家初始位置和朝向
+- `SetRespawnPoint(Vector3, Quaternion)` 更新最近复活点
+
+### `SavePoint.cs`
+
+Trigger 检测玩家进入后更新玩家最近复活点。
+
+当前只记录复活点，不执行真正复活。正式复活 UI 尚未接入。
+
+### Debug 复活流程
+
+```text
+玩家进入 SavePoint Trigger
+→ SavePoint 更新 PlayerRespawnPointTracker
+→ 玩家死亡
+→ Debug UI 点击“复活到最近存档点”
+→ Player 传送到记录位置 / 朝向
+→ RestoreFullHealth()
+→ PlayerDeathHandler.ResetForRespawn()
+→ LevelObjectiveManager.ClearLevelResultForRespawn()
+```
+
+---
 
 ## 4. Important Unity Objects
 
-### Scene Objects (SampleScene.unity)
-- **Player**
-  - Components: Transform, Animator, CapsuleCollider, Rigidbody, PlayerController, FactionComponent（faction=Player）, HealthComponent, WorldHealthBar, PlayerTargeting, PlayerSkillController, PlayerDeathHandler, PlayerRespawnPointTracker, PlayerInventory
-  - Tag: `Player`（PickupItem 依赖此 Tag 识别玩家）
-  - 骨骼层级：`Armature/Root_M/.../Wrist_R/WeaponHolder_R/TempStaff`
-    - `WeaponHolder_R`：空 GameObject，挂在 Wrist_R（右手骨骼）下，作为武器挂点
-    - `TempStaff`：Cylinder（无 Collider、无 Rigidbody），已调整到右手握持位置，跟随 Wrist_R / WeaponHolder_R 运动。
-- **Skeleton_Enemy**
-  - Components: Transform, Animator, Rigidbody, CapsuleCollider, FactionComponent（faction=Skeleton）, FOVDetector, EnemyAI, HealthComponent, WorldHealthBar, EnemyDeathHandler
-- **Main Camera**
-  - Components: RPGCameraController（target = Player Transform）
-- **LevelObjectiveManager**（空 GameObject）
-  - Components: LevelObjectiveManager
-  - Inspector 绑定：`playerHealth` = Player.HealthComponent、`enemyHealthComponents` = 场景内预置敌人列表、`progressText` / `resultText` / `restartHintText` = LevelUI 下各 TMP 文本
-  - ⚠️ LevelUI 的 TMP 文本字体当前需要手动重新绑定为 `SourceHanSansSC-Medium_TMP`（见 Font Assets）
-- **LevelUI**（Canvas, Screen Space Overlay, sortingOrder=10, ScaleWithScreenSize 1920x1080）
-  - CanvasScaler（matchWidthOrHeight=0.5）、GraphicRaycaster
-  - 子对象：
-    - `ProgressText`（TextMeshProUGUI）：左上，字号 36，常时显示击杀进度
-    - `ResultText`（TextMeshProUGUI）：画面中央，初始隐藏，Victory/Game Over 时显示
-    - `RestartHintText`（TextMeshProUGUI）：中央偏下，初始隐藏，结算后显示「按 R 重新开始」
-- **Ground**、**Directional Light**、**Global Volume**、**DebugManager**、**SkeletonSpawnerManager**
-- **EnemyWorldManager**
-  - Components: EnemyWorldManager
-  - 用途：场景级敌人管理入口；玩家死亡时由 PlayerDeathHandler 调用，使所有活着敌人脱战并 ReturnToSpawn
-- **EnemySpawnPoint_Test**
-  - Components: EnemySpawnPoint
-  - 位置：约 `(0, 0, 5)`
-  - enemyPrefab = `Assets/Resources/SkeletonEnemy.prefab`
-  - respawnDelay = 5 秒
-  - spawnOnStart = true
-  - 用途：第一版正式刷怪点测试；生成一只骷髅，死亡后延迟刷新
-- **SavePoint**
-  - Components: Transform, BoxCollider（Is Trigger=true）, SavePoint
-  - 用途：玩家进入 Trigger 后更新 `PlayerRespawnPointTracker` 中保存的最近复活点位置和朝向
-  - 当前仅记录复活点，不执行真正复活
-  - **SavePoint / SavePoint_Test**
-  - Components: Transform, BoxCollider（Is Trigger=true）, SavePoint
-  - 用途：玩家进入 Trigger 后，将该对象的位置和朝向记录为最近复活点
-  - 当前用于 Debug 复活测试，不是最终正式存档点表现
+### SampleScene.unity 主要对象
+
+#### Player
+
+当前关键组件：
+
+- Transform
+- Animator
+- CapsuleCollider
+- Rigidbody
+- PlayerController
+- FactionComponent（faction=Player）
+- HealthComponent
+- WorldHealthBar
+- PlayerTargeting
+- PlayerSkillController
+- PlayerDeathHandler
+- PlayerRespawnPointTracker
+- PlayerInventory
+- PlayerEquipment
+- PlayerCombatStats
+
+Tag：`Player`  
+PickupItem 依赖该 Tag 判断玩家。
+
+#### Main Camera
+
+- `RPGCameraController`
+- target = Player Transform
+- 当前已负责拖拽时隐藏鼠标、松手 / 禁用 / 销毁时恢复鼠标。
+
+#### SkeletonSpawnerManager
+
+- `SkeletonSpawner`
+- `SkeletonDebugUI`
+- `PhysicsLayerSetup`
+
+F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
+
+#### DebugManager
+
+截图中发现 `DebugManager` 上存在 `Missing (Mono Script)`。
+
+- 这很可能对应 Console 中的：`The referenced script (Unknown) on this Behaviour is missing!`
+- 当前 F1 Debug UI 不依赖 DebugManager，而是挂在 SkeletonSpawnerManager 上。
+- 后续可单独移除该 Missing Script 组件，或删除无用 DebugManager。
+
+#### EnemySpawnPoint_Test
+
+- Components: `EnemySpawnPoint`
+- enemyPrefab = `Assets/Resources/SkeletonEnemy.prefab`
+- respawnDelay = 5 秒
+- spawnOnStart = true
+
+#### Terrain / Ground
+
+- 已添加默认 `Terrain`。
+- 原 `Ground` 不再作为主要地面使用。
+- 需确认旧 Ground 系列对象是否仍有用途。
 
 ### Prefabs
-- `Assets/Resources/SkeletonEnemy.prefab`：含 EnemyDeathHandler / EnemyDropper，掉落测试已绑定 TestItem_Bone 与 ItemDrop.prefab
-- `Assets/Resources/ItemDrop.prefab`：地面掉落物 Prefab，PickupItem 的 itemData 运行时注入
-- `Assets/Items/TestItem_Bone.asset`：测试物品数据，骷髅固定掉落依赖；当前已挂载 EnemyDropper，固定掉落 `Assets/Items/TestItem_Bone.asset`，pickupPrefab 绑定 `Assets/Resources/ItemDrop.prefab`
-- `Assets/Resources/ItemDrop.prefab`：地面掉落物 Prefab，Sphere 临时外观，SphereCollider isTrigger=true，挂载 PickupItem，itemData 运行时注入
-- `Assets/Resources/Skeleton_110.prefab`：骷髅模型资产
-- `Assets/Items/TestItem_Bone.asset`：测试用 ItemData，itemId=`bone`，itemName=`骨头`，rarity=Common，用于骷髅固定掉落测试
 
-### Animator Controllers
-- `Assets/Scripts/SkeletonAnimator.controller`（敌人用）：
-  - 参数：`Speed`（Float）、`IsAttacking`（Bool）、`IsDead`（Trigger）
-  - 状态：Idle、Walk、Attack、Death
-  - Attack → Idle：`hasExitTime=true, exitTime=0.9`（**不可改**）
-  - Any State → Death：`IsDead` Trigger（canTransitionToSelf=false）
-  - Death 状态：clip=`root|death`（1.4s），无出口过渡
-- `Assets/Scripts/PlayerAnimator.controller`（玩家用）：
-  - **参数：** `Speed`（Float）、`Horizontal`（Float）、`IsGrounded`（Bool）、`IsSprinting`（Bool）、`VerticalVelocity`（Float）、`IsJumping`（Bool）、`IsDead`（Trigger）、`Attack`（Trigger）
-  - **Base Layer（移动/全身动画）：**
-    - 状态：Idle、RunForward、RunBackward、StrafeLeft、StrafeRight、Jump、JumpDown、FallingLoop、Sprint、Death
-    - Any State → Death：`IsDead` Trigger（hasExitTime=false）、Death 状态无出口过渡
-  - **UpperBody Layer（上半身攻击覆盖）：**
-    - Blending: Override、Weight: 1、Avatar Mask: `PlayerUpperBody`
-    - 状态：`UpperBodyIdle`（default、motion=`UpperBodyIdle.anim`空clip）、`Attack1H`（motion=`HumanM@Attack1H01_R`）
-    - Any State → Attack1H：`Attack` Trigger、hasExitTime=false、duration=0.05
-    - Attack1H → UpperBodyIdle：hasExitTime=true、exitTime=0.9、duration=0.1
-    - Any State → UpperBodyIdle：`IsDead` Trigger（死亡时清除攻击覆盖，确保全身死亡动画正常）
+#### `Assets/Resources/SkeletonEnemy.prefab`
 
-### Animation Events
-- `Skeleton_slash01.fbx` 第 20 帧：调用 `OnAttackHit()`（**方法名不可改**）
-- 玩家死亡动画：`Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/HumanM@Death01.fbx`
-- 玩家攻击动画：`Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/1H/HumanM@Attack1H01_R.fbx`（无 Animation Event，伤害由 PlayerSkillController 立即判定）
+当前包含：
 
-### Font Assets
-- `Assets/Fonts/09_SourceHanSansSC/OTF/SimplifiedChinese/SourceHanSansSC-Medium.otf`：源字体文件（不可修改）
-- `Assets/Fonts/09_SourceHanSansSC/TMP/SourceHanSansSC-Medium_TMP.asset`：Dynamic TMP Font Asset（samplingPointSize=90、atlas=2048x2048、SDFAA、padding=9、MultiAtlas=true）
-  - ⚠️ 旧的 `SourceHanSansSC-Medium SDF.asset` 已删除。新 asset 需手动绑定到场景中 3 个 TMP 文本组件。
+- EnemyAI
+- HealthComponent
+- WorldHealthBar
+- EnemyDeathHandler
+- EnemyDropper
+- FactionComponent
+- FOVDetector
 
-### Animation Assets（新增）
-- `Assets/Scripts/Animation/PlayerUpperBody.mask`：上半身 Avatar Mask（Head/Body/Arms/Fingers 有效，Legs/Root 无效）
-- `Assets/Scripts/Animation/UpperBodyIdle.anim`：空动画 clip，用于 UpperBody Layer 默认状态
+当前 `EnemyDropper` 多掉落配置：
+
+- 骨头：100%
+- 守护核心：20%
+
+#### `Assets/Resources/ItemDrop.prefab`
+
+- Sphere 临时外观
+- SphereCollider，`isTrigger = true`
+- 挂载 `PickupItem`
+- `itemData` 运行时由 `EnemyDropper` 注入
+
+---
 
 ## 5. Input / Control
+
 - 使用：New Input System 1.19.0
-- 玩家移动：WASD（PlayerController）
-- 目标选择：鼠标左键（Mouse.current.leftButton.wasPressedThisFrame）
-- 技能释放：键盘 1（Keyboard.current.digit1Key.wasPressedThisFrame）
-- 拾取物品：E 键（PickupItem 使用 `Keyboard.current.eKey.wasPressedThisFrame`）
-- 摄像机/玩家朝向：鼠标右键拖拽（RPGCameraController.LateUpdate）。死亡後は RPGCameraController ごと無効化。
-- 关卡重开：R 键（`Keyboard.current.rKey.wasPressedThisFrame`），仅在 Victory/Game Over 后生效
+- 玩家移动：WASD
+- 目标选择：鼠标左键
+- 技能释放：键盘 1
+- 拾取物品：E
+- 摄像机 / 玩家朝向：鼠标右键拖拽
+- Debug UI：F1
+- 关卡重开：R，仅旧 Victory / Game Over 后生效
+
+Cursor 当前规则：
+
+- 视角拖拽开始：隐藏鼠标
+- 视角拖拽结束：显示鼠标
+- RPGCameraController 被禁用 / 销毁：强制显示鼠标
+- 不使用 CursorLockMode.Locked
+
+---
 
 ## 6. Completed Features
+
+### 战斗 / AI
+
 - ✅ 玩家第三人称移动控制
-- ✅ 敌人 FSM AI（Idle、Chase、Attack 状态）
+- ✅ 敌人 FSM AI（Idle / Chase / Attack / ReturnToSpawn）
 - ✅ FOV 视野检测系统
-- ✅ 阵营系统（FactionComponent，ShouldAttack()）
-- ✅ 血量系统（HealthComponent，含 IsDead + OnDied + OnDamaged 事件）
-- ✅ 带攻击来源的伤害接口（TakeDamage(float, Transform)）
-- ✅ 世界空间血条显示（头顶）
-- ✅ 敌人攻击动画 + Animation Event 伤害触发（OnAttackHit）
-- ✅ 攻击冷却机制（attackCooldown 默认 2 秒）
-- ✅ 骷髅敌人生成器（SkeletonSpawner）
-- ✅ 追击时 stoppingDistance 停止移动
-- ✅ 玩家鼠标左键选中敌对目标（PlayerTargeting）
-- ✅ 玩家按 1 使用普通攻击（PlayerSkillController，默认 20 伤害，2m 范围，1s 冷却）
-- ✅ 骷髅死亡动画播放（root|death，1.4s）
-- ✅ 死亡后 AI/物理/Collider 禁用，延迟销毁实体（EnemyDeathHandler）
-- ✅ 敌人仇恨系统：多目标列表 + 仇恨值排序 + 视野/受击两路加仇恨 + 距离脱战
-- ✅ 玩家死亡处理：禁用移动/攻击/目标选择/摄像机控制，物理静止，播放死亡动画（PlayerDeathHandler）
-- ✅ 玩家普通攻击动画：按 1 攻击成功时触发 `Attack` Trigger，UpperBody Layer 播放 `HumanM@Attack1H01_R`，结束后自动回到 UpperBodyIdle
-- ✅ 上半身/下半身动画分离：移动时攻击，下半身继续跑步，上半身播放攻击动画（PlayerUpperBody Avatar Mask）
-- ✅ 玩家右手临时长棍视觉模型（TempStaff，无 Collider/Rigidbody，跟随 Wrist_R 骨骼）
-- ✅ 玩家死亡时主动清除当前锁定目标：`PlayerTargeting.ClearTarget()` 会将 `CurrentTarget` 设为 null，`PlayerDeathHandler` 在死亡流程中先清除目标再禁用 `PlayerTargeting`。
-- ✅ 复活点记录基础功能：玩家进入 SavePoint Trigger 后，会记录最近复活点的位置和朝向。
-- ✅ 复活用恢复满血接口：HealthComponent.RestoreFullHealth() 可将 currentHealth 恢复为 maxHealth 并触发 OnHealthChanged。
-- ✅ 玩家死亡状态恢复接口：PlayerDeathHandler.ResetForRespawn() 可恢复控制/物理/Animator 状态，使玩家重新可操作。
-- ✅ Debug 复活后结算 UI 清理：LevelObjectiveManager.ClearLevelResultForRespawn() 可隐藏 Game Over / Victory UI 并重置 _isLevelEnded。
-- ✅ Debug UI 完整复活测试："复活玩家测试" 按钮依次调用上述三个接口，可在不重载场景的情况下完成 Debug 级别复活。
-- ✅ Debug 复活到最近 SavePoint：Debug UI 新增“复活到最近存档点”按钮，玩家死亡后可传送到 `PlayerRespawnPointTracker.CurrentRespawnPosition / CurrentRespawnRotation`，并执行满血恢复、死亡状态恢复与结算 UI 清理。
+- ✅ 阵营系统
+- ✅ 血量系统
+- ✅ 世界空间血条显示
+- ✅ 敌人攻击动画 + Animation Event 伤害触发
+- ✅ 敌人死亡动画与延迟销毁
+- ✅ 仇恨系统
+- ✅ 敌人脱战回家
+- ✅ 玩家死亡处理
+- ✅ 玩家普通攻击动画
+- ✅ 上半身 / 下半身动画分离
+- ✅ 玩家普通攻击伤害读取 PlayerCombatStats
 
-- ✅ EnemyAI 新增出生点记录：`_spawnPosition / _spawnRotation`，作为野怪出生中心点与回家朝向。
-- ✅ EnemyAI 新增 `ResetToSpawn()`：Debug / 强制复位接口，可瞬间回出生点、清仇恨、回满血、回 Idle。
-- ✅ Debug UI 新增当前目标显示与“重置当前目标敌人”按钮，并加入活体检查，避免重置死亡 / AI 已禁用敌人。
-- ✅ EnemyAI 新增 ReturnToSpawn 状态：正式脱战时不瞬移，而是自己走回出生点。
-- ✅ ReturnToSpawn 使用 XZ 平面距离与方向，避免 Awake 高度 / 落地高度不一致导致无法判定到达。
-- ✅ EnemyAI 新增 `wanderRadius` 预留字段与 `leashRadius` 活动边界；超过 leashRadius 会立即脱战 ReturnToSpawn。
-- ✅ EnemyAI 新增 `ForceDisengageAndReturnToSpawn()`，供外部系统命令敌人脱战回家。
-- ✅ 新增 `EnemyWorldManager`：玩家死亡时统一命令所有活着敌人 ReturnToSpawn；Debug 生成的多个敌人也可被捕捉。
-- ✅ LevelObjectiveManager 改为任务目标模式：`useQuestObjectiveMode=true` 时，击杀 requiredKills 后显示“任务完成”，不 Victory，不按 R 重开，后续仍可继续刷怪和计数。
-- ✅ LevelObjectiveManager 修复敌人 OnDied 事件订阅：使用 `_enemyDiedHandlers` 字典保存委托实例，避免 OnDisable 取消订阅失败 / 重复计数风险。
-- ✅ 新增 `EnemySpawnPoint`：一个刷怪点管理一个敌人，死亡后等待 respawnDelay 自动刷新，并注册到 LevelObjectiveManager。
-- ✅ SampleScene 新增 `EnemyWorldManager` 与 `EnemySpawnPoint_Test`，后者绑定 SkeletonEnemy.prefab，respawnDelay=5 秒，测试循环正常。
+### 复活 / SavePoint
 
-- ✅ 掉落系统第一版：新增 ItemData / PickupItem / EnemyDropper / ItemDrop.prefab，敌人死亡后可生成地面掉落物。
-- ✅ ItemData 增加稳定内部 ID `itemId`，用于未来掉落表、背包、存档与本地化 key。
-- ✅ PickupItem 支持运行时 `SetItemData()` 注入数据，玩家进入 Trigger 后按 E 拾取。
-- ✅ SkeletonEnemy.prefab 已挂载 EnemyDropper，并绑定 TestItem_Bone 与 ItemDrop.prefab，骷髅死亡后可固定掉落骨头。
-- ✅ Player 新增 PlayerInventory，拾取物品后可加入运行时库存。
-- ✅ 库存结构已从 `List<ItemData>` 升级为 `List<ItemStack>`，相同 itemId 的物品会合并数量。
-- ✅ PlayerInventory 可输出当前总持有数量与按 itemId 聚合的库存统计。
-- ✅ 测试确认：击杀骷髅 → 掉落 ItemDrop → 玩家靠近按 E → 输出“获得：骨头（ID: bone）”并统计数量 → ItemDrop 消失 → 刷新后可重复拾取。
+- ✅ 最近复活点记录
+- ✅ RestoreFullHealth
+- ✅ PlayerDeathHandler.ResetForRespawn
+- ✅ Debug 复活到最近 SavePoint
+- ✅ 玩家死亡时所有活敌人 ReturnToSpawn
+
+### 掉落 / 拾取 / 背包
+
+- ✅ ItemData ScriptableObject
+- ✅ ItemType / MaxStack
+- ✅ EquipmentSlotType
+- ✅ AttackPowerBonus / MaxHealthBonus
+- ✅ ItemStack 堆叠结构
+- ✅ ItemStack 支持 AddCount / RemoveCount
+- ✅ PlayerInventory AddItem
+- ✅ PlayerInventory RemoveItem
+- ✅ PlayerInventory FindFirstEquipmentBySlot
+- ✅ PickupItem 按 E 拾取
+- ✅ ItemDrop.prefab
+- ✅ EnemyDropper 多条目概率掉落测试版
+- ✅ SkeletonEnemy.prefab：骨头 100% + 守护核心 20%
+
+### 装备 / 数值
+
+- ✅ PlayerEquipment Core 装备槽
+- ✅ EquipCore 支持替换旧 Core
+- ✅ UnequipCore 返回卸下装备
+- ✅ OnEquipmentChanged 事件
+- ✅ PlayerCombatStats 监听装备变化
+- ✅ Core 装备影响普通攻击伤害
+- ✅ Core 装备影响最大生命值
+- ✅ 最大生命值变化自动应用到 HealthComponent
+- ✅ 背包 → 装备槽
+- ✅ 装备槽 → 背包
+- ✅ 替换 Core 时旧 Core 回背包
+
+### Debug / 工具
+
+- ✅ F1 OnGUI Debug 面板
+- ✅ 当前目标敌人显示与 ResetToSpawn
+- ✅ Core 装备测试按钮
+- ✅ 从背包装备第一个 Core
+- ✅ 卸下 Core 到背包
+- ✅ 战斗属性显示
+- ✅ 右侧背包 Debug 窗口
+- ✅ 鼠标拖拽后永久消失问题修复
+
+---
 
 ## 7. In Progress / Known Issues
-- ⚠️ ItemData 目前只有 itemId / itemName / rarity / description，尚未加入 itemType / maxStack；装备、材料、消耗品等类型区分未完成。
-- ⚠️ 当前库存只存在运行时内存中，停止 Play Mode 后消失；尚未实现存档系统。
-- ⚠️ 当前 PlayerInventory 只支持 AddItem 和 Debug 输出，不支持背包 UI、删除、使用、装备、排序。
-- ⚠️ 当前 EnemyDropper 是固定 100% 掉落，不支持随机掉落表、掉率、稀有度抽取。
-- ⚠️ PickupItem 依赖 Player Tag；如果 Player Tag 不是 `Player`，拾取不会触发。
-- ⚠️ **LevelUI TMP 字体未绑定**：旧字体 asset 已删除，新 `SourceHanSansSC-Medium_TMP.asset` 需手动拖拽绑定到 ProgressText / ResultText / RestartHintText 的 Font Asset 字段，否则中文不显示。
-- ⚠️ EntityStats.cs 未充分使用
-- ⚠️ EnemyDeathHandler 使用固定 destroyDelay 计时，未使用 Animation Event，时机可能受播放速度影响
-- ⚠️ `EnemySpawnPoint.OnDisable()` 当前只解除 OnDied 订阅；刷新协程是否需要 StopAllCoroutines() 后续再决定。
-- ⚠️ `ScanForTarget()` 每 0.2s 调用 `FindObjectsOfType<FactionComponent>()`，敌人数量多时有性能隐患
-- ⚠️ `EnemyWorldManager` 与 `EnemySpawnPoint` 当前使用 Find 系列 API，敌人数量增加后应改为注册缓存 / 场景管理。
-- ⚠️ 玩家死亡后 RPGCameraController 被整体禁用，相机静止在死亡位置（无死亡镜头演出）
-- ⚠️ 当前复活到 SavePoint 仍属于 Debug UI 测试流程，尚未接入正式死亡 / 复活 UI。
-- ⚠️ Victory 已在任务模式下弱化为“任务完成”，但旧 Game Over 仍保留：玩家死亡仍显示 Game Over / 按 R 重新开始；正式死亡 / 复活 UI 尚未接入。
-- ⚠️ Debug 清理结算 UI 不等同于最终关卡流程设计；`ClearLevelResultForRespawn()` 目前会隐藏 resultText，即使任务已完成也可能临时隐藏“任务完成”提示。
-- ⚠️ 玩家死亡时敌人会 ReturnToSpawn；玩家复活到 SavePoint 时不额外处理敌人。若复活点靠近敌人出生点，敌人回 Idle 后重新发现玩家是允许行为。
-- ⚠️ `EnemySpawnPoint` 在玩家死亡 / Game Over 状态下仍可能继续刷新敌人；是否暂停刷新待正式游戏状态管理决定。
+
+### 系统限制
+
+- ⚠️ 当前库存只存在运行时内存中，停止 Play Mode 后会消失。
+- ⚠️ 当前装备仍使用 `ItemData` 表示，不支持同名装备不同随机词条。
+- ⚠️ 尚未实现 `ItemInstance`。
+- ⚠️ 尚未实现正式背包 UI / 正式装备 UI。
+- ⚠️ 尚未实现背包容量。
+- ⚠️ 尚未实现装备拖拽、使用、删除、卖出。
+- ⚠️ 尚未实现正式 DropTable ScriptableObject。
+- ⚠️ 当前 EnemyDropper 是 Prefab 上的简单 drops 列表，不是完整掉落表系统。
+- ⚠️ 当前 Core 掉落概率配置为 20%，需 Play Mode 多次击杀或临时改 1.0 验证。
+
+### 场景 / UI
+
+- ⚠️ LevelUI TMP 字体仍需确认是否绑定 `SourceHanSansSC-Medium_TMP.asset`。
+- ⚠️ DebugManager 上存在 Missing Mono Script，可单独清理。
+- ⚠️ F1 Debug UI 是 OnGUI / IMGUI，不是正式 UI。
+- ⚠️ 正式发布前应隐藏或限制 Debug 菜单。
+- ⚠️ 玩家死亡后 RPGCameraController 被禁用，相机静止在死亡位置，暂无死亡镜头演出。
+- ⚠️ 正式死亡 / 复活 UI 尚未接入，当前仍主要依赖 Debug UI。
+
+### 性能 / 架构
+
+- ⚠️ `ScanForTarget()` 每 0.2s 使用 FindObjectsOfType / FindObjectsByType，敌人数量多时有性能隐患。
+- ⚠️ `EnemyWorldManager` 与 `EnemySpawnPoint` 当前仍有 Find 系列 API，未来应改为注册缓存。
+- ⚠️ `SkeletonDebugUI` 目前职责较多，已接近 Runtime Debug Console，后续可拆分为 InventoryDebugPanel / EquipmentDebugPanel / CombatStatsDebugPanel。
+- ⚠️ `EntityStats.cs` 已创建但未集成。
+
+### 地图 / Terrain
+
+- ⚠️ 添加 Terrain 后，需要重新确认：
+  - Player / Enemy 落地高度
+  - EnemySpawnPoint 位置
+  - SavePoint 位置
+  - ItemDrop 掉落高度
+  - NavMesh / AI 可行走区域
+- ⚠️ 旧 Ground 系列对象需确认是否保留。
+
+---
 
 ## 8. Development Rules
 
 ### 修改前必读
-- ❌ 不要随意重命名 public / SerializedField 字段（Inspector 可能已绑定）
-- ❌ 不要重构无关代码
-- ❌ 不要读取完整 Console、完整 Assets、完整 Scene Hierarchy
-- ✅ 修改前先定位相关文件，只读取必要内容
-- ✅ 优先小步修改，每次改动后确认编译通过
+
+- ❌ 不要随意重命名 public / SerializedField 字段，Inspector 可能已绑定。
+- ❌ 不要重构无关代码。
+- ❌ 不要读取完整 Console、完整 Assets、完整 Scene Hierarchy。
+- ✅ 修改前先定位相关文件，只读取必要内容。
+- ✅ 优先小步修改，每次改动后确认编译通过。
+- ✅ 如果功能较大，先拆分任务，再只执行第一步。
+- ✅ MCP 提示词应包含当前项目情况、本次目标、限制、读取文件、输出要求和验收标准。
+
+### 当前用户偏好
+
+- 功能拆解不要过细，允许每次任务稍微复杂约 30%。
+- 每一步仍应有明确目标。
+- 如果需要扩大范围，需要先说明原因。
+- 尽量避免 AI 扫描整个 Assets、完整 Console、完整 Scene Hierarchy。
+- 不要让 AI 重构无关代码。
+- 不要让 AI 修改 Animator / Prefab / Scene，除非本次目标确实需要。
 
 ### Animator 修改注意
-- **骷髅（SkeletonAnimator.controller）**：
-  - `Attack → Idle` 的 `hasExitTime=true, exitTime=0.9` 不可改
-  - `IsDead` Trigger 由 EnemyDeathHandler 触发，不可回到其他状态
-  - `OnAttackHit()` 方法名不可改（Animation Event 绑定）
-- **玩家（PlayerAnimator.controller）**：
-  - Base Layer 的 Death 状态无出口过渡，不可添加出口
-  - `IsDead` Trigger 由 PlayerDeathHandler 触发
-  - `Attack` Trigger 由 PlayerSkillController 触发，仅在 UpperBody Layer 使用
-  - UpperBody Layer 的 `AnyState → UpperBodyIdle`（IsDead 条件）确保死亡时全身死亡动画不被上半身层覆盖，不可删除
-  - `UpperBodyIdle` 状态必须有 motion（当前为 `UpperBodyIdle.anim` 空 clip），设为 null 会导致 Inspector DoPopup NullReferenceException 报错刷屏
+
+骷髅：
+
+- `Attack → Idle` 的 `hasExitTime=true, exitTime=0.9` 不可改。
+- `IsDead` Trigger 由 EnemyDeathHandler 触发。
+- `OnAttackHit()` 方法名不可改。
+
+玩家：
+
+- Base Layer 的 Death 状态无出口过渡，不可添加出口。
+- `IsDead` Trigger 由 PlayerDeathHandler 触发。
+- `Attack` Trigger 由 PlayerSkillController 触发，仅在 UpperBody Layer 使用。
+- UpperBody Layer 的 `Any State → UpperBodyIdle`（IsDead 条件）不可删除。
+- `UpperBodyIdle.anim` 不可删除。
 
 ### 代码修改原则
-- Rigidbody 使用 `rb.linearVelocity`（Unity 6）
-- 输入系统使用 `Mouse.current` / `Keyboard.current`（New Input System），不得使用 `UnityEngine.Input`
+
+- Rigidbody 使用 `rb.linearVelocity`（Unity 6）。
+- 输入系统使用 `Mouse.current` / `Keyboard.current`，不得使用旧 `UnityEngine.Input`。
+- Debug OnGUI 可以继续用于开发工具，但正式 UI 应使用 Canvas / TMP / Button 或 UI Toolkit。
+
+---
 
 ## 9. Files That Should Be Treated Carefully
 
 ### 核心脚本
-- `Assets/Scripts/Enemy/EnemyAI.cs`：FSM + 仇恨系统 + ReturnToSpawn / leashRadius 核心，`OnAttackHit()` 有 Animation Event 绑定
-- `Assets/Scripts/Enemy/EnemyWorldManager.cs`：场景级敌人全体命令入口，当前用于玩家死亡时全体敌人脱战回家
-- `Assets/Scripts/Enemy/EnemySpawnPoint.cs`：正式野外刷怪点第一版，负责生成、监听死亡、延迟刷新、注册到 LevelObjectiveManager
-- `Assets/Scripts/Enemy/EnemyDeathHandler.cs`：订阅 `HealthComponent.OnDied`，触发死亡流程
-- `Assets/Scripts/Enemy/FactionSystem.cs`：阵营枚举和 `ShouldAttack()` 接口
-- `Assets/Scripts/HealthComponent.cs`：`TakeDamage(float/float+Transform)`、`IsDead`、`OnDied`、`OnDamaged` 事件
-- `Assets/Scripts/Player/PlayerTargeting.cs`：`CurrentTarget`（public Transform, get-only）
-- `Assets/Scripts/Player/PlayerSkillController.cs`：技能判定 + 伤害调用 + `Attack` Trigger 触发
-- `Assets/Scripts/Player/PlayerDeathHandler.cs`：玩家死亡处理，`_isDeadHandled` 防重复，禁用5个组件 + Rigidbody isKinematic + IsDead Trigger
-- `Assets/Scripts/Player/PlayerRespawnPointTracker.cs`：玩家最近复活点记录组件，保存 `CurrentRespawnPosition` / `CurrentRespawnRotation`，由 SavePoint 更新。
-- `Assets/Scripts/Level/SavePoint.cs`：复活点 Trigger，玩家进入后调用 `PlayerRespawnPointTracker.SetRespawnPoint()`。
-- `Assets/Scripts/Player/PlayerDeathHandler.cs`：除死亡处理外，包含 `ResetForRespawn()`，用于 Debug 复活时恢复控制、相机、Rigidbody 和 Animator 状态。
-- `Assets/Scripts/HealthComponent.cs`：包含 `RestoreFullHealth()`，用于复活测试时恢复满血并刷新血条。
-- `Assets/Scripts/Spawner/SkeletonDebugUI.cs`：包含 Debug 复活测试按钮，包括恢复满血、原地复活、复活到最近 SavePoint，以及当前目标敌人 Debug Reset。
-- `Assets/Scripts/Items/ItemData.cs`：物品数据核心，itemId 是未来存档 / 掉落表 / 本地化 key 的稳定标识，避免随意删除或改名。
-- `Assets/Scripts/Items/ItemStack.cs`：库存堆叠数据结构，PlayerInventory 依赖。
-- `Assets/Scripts/Items/PickupItem.cs`：地面拾取逻辑，依赖 Player Tag 与 PlayerInventory。
-- `Assets/Scripts/Items/EnemyDropper.cs`：敌人死亡掉落入口，订阅 HealthComponent.OnDied。
-- `Assets/Scripts/Player/PlayerInventory.cs`：玩家运行时库存，当前使用 List<ItemStack>。
+
+- `Assets/Scripts/Enemy/EnemyAI.cs`
+- `Assets/Scripts/Enemy/EnemyWorldManager.cs`
+- `Assets/Scripts/Enemy/EnemySpawnPoint.cs`
+- `Assets/Scripts/Enemy/EnemyDeathHandler.cs`
+- `Assets/Scripts/Enemy/FactionSystem.cs`
+- `Assets/Scripts/HealthComponent.cs`
+- `Assets/Scripts/RPGCameraController.cs`
+- `Assets/Scripts/Player/PlayerTargeting.cs`
+- `Assets/Scripts/Player/PlayerSkillController.cs`
+- `Assets/Scripts/Player/PlayerDeathHandler.cs`
+- `Assets/Scripts/Player/PlayerRespawnPointTracker.cs`
+- `Assets/Scripts/Player/PlayerInventory.cs`
+- `Assets/Scripts/Player/PlayerEquipment.cs`
+- `Assets/Scripts/Player/PlayerCombatStats.cs`
+- `Assets/Scripts/Items/ItemData.cs`
+- `Assets/Scripts/Items/ItemStack.cs`
+- `Assets/Scripts/Items/PickupItem.cs`
+- `Assets/Scripts/Items/EnemyDropper.cs`
+- `Assets/Scripts/Spawner/SkeletonDebugUI.cs`
+- `Assets/Scripts/Level/SavePoint.cs`
 
 ### 核心资产
-- `Assets/Scripts/SkeletonAnimator.controller`：参数 Speed/IsAttacking/IsDead，状态 Idle/Walk/Attack/Death
-- `Assets/Scripts/PlayerAnimator.controller`：2层结构（Base Layer + UpperBody Layer），参数含 IsDead/Attack Trigger，详见第 4 节
-- `Assets/Scripts/Animation/PlayerUpperBody.mask`：上半身 Avatar Mask，UpperBody Layer 依赖此文件
-- `Assets/Scripts/Animation/UpperBodyIdle.anim`：UpperBody Layer 默认状态 clip，不可删除
-- `Assets/SazenGames/Skeleton/Art/Animations/Skeleton_slash01.fbx`：第 20 帧 Animation Event
-- `Assets/SazenGames/Skeleton/Art/Animations/Skeleton_death.fbx`：clip `root|death`，1.4s
-- `Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/HumanM@Death01.fbx`：玩家死亡动画，clip `HumanM@CombatDamage01`（1.0s）
-- `Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/1H/HumanM@Attack1H01_R.fbx`：玩家普通攻击动画
-- `Assets/Fonts/09_SourceHanSansSC/TMP/SourceHanSansSC-Medium_TMP.asset`：当前唯一中文 TMP Font Asset，需手动绑定到 LevelUI 的 3 个 TMP 文本
-- `Assets/Resources/SkeletonEnemy.prefab`：含 EnemyDeathHandler / EnemyDropper，掉落测试已绑定 TestItem_Bone 与 ItemDrop.prefab
-- `Assets/Resources/ItemDrop.prefab`：地面掉落物 Prefab，PickupItem 的 itemData 运行时注入
-- `Assets/Items/TestItem_Bone.asset`：测试物品数据，骷髅固定掉落依赖
 
+- `Assets/Resources/SkeletonEnemy.prefab`
+- `Assets/Resources/ItemDrop.prefab`
+- `Assets/Items/TestItem_Bone.asset`
+- `Assets/Items/TestItem_GuardCore.asset`
+- `Assets/Scripts/SkeletonAnimator.controller`
+- `Assets/Scripts/PlayerAnimator.controller`
+- `Assets/Scripts/Animation/PlayerUpperBody.mask`
+- `Assets/Scripts/Animation/UpperBodyIdle.anim`
+- `Assets/SazenGames/Skeleton/Art/Animations/Skeleton_slash01.fbx`
+- `Assets/SazenGames/Skeleton/Art/Animations/Skeleton_death.fbx`
+- `Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/HumanM@Death01.fbx`
+- `Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/1H/HumanM@Attack1H01_R.fbx`
+- `Assets/Fonts/09_SourceHanSansSC/TMP/SourceHanSansSC-Medium_TMP.asset`
 
 ### 不应修改的文件
+
 - `Assets/Blink/`：第三方角色资产
-- `Assets/SazenGames/`：第三方骷髅资产（模型/贴图本体）
+- `Assets/SazenGames/`：第三方骷髅资产本体
 - `Assets/Fonts/09_SourceHanSansSC/OTF/SimplifiedChinese/SourceHanSansSC-Medium.otf`：源字体，不可改
-- `Packages/manifest.json`：包配置
-
-## Development Direction Notes / 近期开发原则
-
-当前开发应优先验证核心闭环，而不是一次性实现完整系统。
-
-短期优先级：
-1. 已完成「刷怪 → 掉落 → 拾取 → PlayerInventory 统计 → 继续刷怪」收益闭环第一版
-2. 下一步先补 ItemData 的 itemType / maxStack，让系统区分材料、装备、消耗品等类型
-3. 再实现 1 个装备槽，验证装备能改变战斗
-4. 再推进 Tank 感：敌人读条重击、玩家减伤技能、成功减伤奖励
-5. 最后再接入 Hikari 自动治疗与治疗负担系统
-
-暂不优先实现：
-- 完整背包 UI
-- 完整装备栏
-- 复杂随机词条
-- 完整随机掉落表
-- 完整存档系统
-- 完整 Hikari AI
-- 五人真实同屏战斗
-- 复杂仇恨表
-- Boss 战最终版
-
-## 10. Next Suggested Tasks
-
-### ⭐ 最推荐的下一个小任务
-**ItemData 增加 itemType 与 maxStack。**
-
-当前已经具备掉落 / 拾取 / 运行时库存第一版：
-- `ItemData` 可创建物品数据，已有 itemId / itemName / rarity / description
-- `ItemDrop.prefab` 可作为地面掉落物
-- `EnemyDropper` 可在敌人死亡时生成固定掉落物
-- `PickupItem` 可按 E 拾取并加入 PlayerInventory
-- `PlayerInventory` 已使用 `List<ItemStack>` 按 itemId 合并数量
-- 测试确认骨头 / 铁剑可拾取并输出库存统计
-
-下一步应让系统知道“物品是什么类型、能不能堆叠”：
-- 新增 `ItemType` enum：Material / Equipment / Consumable / Currency / Quest / Cosmetic
-- 给 `ItemData` 增加 `itemType`
-- 给 `ItemData` 增加 `maxStack`
-- `OnValidate()` 中保护 maxStack：小于 1 修正为 1；Equipment 自动修正为 1
-- 暂不修改 PlayerInventory 的堆叠逻辑；先只补数据字段
-
-### 优先级 1：待解决
-1. ItemData 增加 itemType / maxStack，为材料、装备、消耗品、外观等类型区分做准备。
-2. 最小装备槽：先做 1 个饰品 / Core 槽，验证装备能改变战斗或数值。
-3. 正式死亡 / 复活 UI：玩家死亡后显示“复活到最近存档点 / 重新开始”等正式选项，替代 Debug UI 流程。
-4. Game Over / Respawn / Quest Complete 状态分离：当前玩家死亡仍显示 Game Over / 按 R 重新开始。
-5. EnemySpawnPoint 与 EnemyWorldManager 的注册缓存：替换 Find 系列 API。
-6. EnemySpawnPoint 在玩家死亡 / Game Over / 切场景时是否暂停刷新，需要正式 GameState 后决定。
-
-### 优先级 2：系统完善
-1. 背包 Debug UI / 简单 UI：显示 PlayerInventory 中的 ItemStack 列表。
-2. 掉落表第一版：从固定掉落扩展为小型 DropTable，但不要做复杂随机词条。
-3. Wander / 游荡状态：使用 `wanderRadius` 在出生中心点内圈自然移动。
-4. 集成 `EntityStats` 系统，支持攻击力 / 最大血量等属性可配置。
-5. 将 `ScanForTarget()` 的 FindObjectsOfType 替换为注册缓存，减少 EnemyAI 扫描开销。
-6. 将 Debug 复活流程迁移到正式 Respawn 流程，减少对 Debug UI 的依赖。
-7. 存档点正式化：加入激活提示、视觉表现、音效 / 特效，以及是否保存到硬盘的规则。
+- `Packages/manifest.json`
 
 ---
 
-**最后更新**：2026-05-10
-**本次有效变更**：
-1. `EnemyAI.cs` 新增出生点记录、Debug 强制 `ResetToSpawn()`、正式 `ReturnToSpawn` 状态、XZ 平面回家判定、`wanderRadius` 预留、`leashRadius` 活动边界与 `ForceDisengageAndReturnToSpawn()` 外部接口。
-2. `SkeletonDebugUI.cs` 新增当前目标显示与“重置当前目标敌人”按钮，带 EnemyAI.enabled / HealthComponent.IsDead 活体检查。
-3. 新增 `EnemyWorldManager.cs`，并在 SampleScene 中配置 `EnemyWorldManager` GameObject；玩家死亡时所有活着敌人会脱战并自己走回出生点。
-4. `PlayerDeathHandler.cs` 在死亡流程中调用 `EnemyWorldManager.ForceAllLivingEnemiesReturnToSpawn()`；复活时不额外处理敌人。
-5. `LevelObjectiveManager.cs` 改为任务目标模式：`useQuestObjectiveMode=true` 时，击杀 requiredKills 后显示“任务完成”，不 Victory、不进入 `_isLevelEnded`、不阻止继续刷怪。
-6. `LevelObjectiveManager.cs` 修复敌人死亡事件订阅管理，使用 `_enemyDiedHandlers` 字典保存 handler，避免 lambda 取消订阅失败。
-7. 新增 `EnemySpawnPoint.cs`，并在 SampleScene 中配置 `EnemySpawnPoint_Test`，绑定 `SkeletonEnemy.prefab`，respawnDelay=5 秒，spawnOnStart=true。
-8. 测试确认：Debug 生成的多个敌人会在玩家死亡后被 EnemyWorldManager 捕捉并 ReturnToSpawn；EnemySpawnPoint 生成的敌人死亡后可延迟刷新；任务完成后仍可继续计数与刷怪。
-9. 新增 `ItemData.cs` 与 `ItemRarity`，用于创建物品数据 ScriptableObject。
-10. `ItemData` 已增加稳定内部 ID `itemId`，为未来掉落表、背包堆叠、存档与多语言 key 做准备。
-11. 新增 `PickupItem.cs`，支持玩家进入 Trigger 后按 E 拾取地面物品；已确认 Player Tag 必须为 `Player`。
-12. 新增 `Assets/Resources/ItemDrop.prefab`，作为地面掉落物 Prefab；挂载 PickupItem，Collider 已设置为 Trigger。
-13. 新增 `EnemyDropper.cs`，挂载到 `Assets/Resources/SkeletonEnemy.prefab`，骷髅死亡后生成 ItemDrop 并注入固定掉落物数据。
-14. 新增测试物品 `Assets/Items/TestItem_Bone.asset`，当前作为骷髅固定掉落的骨头物品。
-15. 新增 `PlayerInventory.cs`，场景 Player 已挂载 PlayerInventory，拾取物品后可加入运行时库存。
-16. 新增 `ItemStack.cs`，PlayerInventory 已从 `List<ItemData>` 升级为 `List<ItemStack>`，相同 itemId 的物品会合并数量。
-17. PlayerInventory 现在输出本次获得物品、当前持有总数与当前库存统计。
-18. 测试确认：击杀骷髅 → 掉落骨头 → 玩家按 E 拾取 → 库存数量增加；手动测试铁剑也可加入同一库存统计。
+## 10. Development Direction Notes / 近期开发原则
+
+当前开发应继续优先验证核心闭环，而不是一次性实现完整系统。
+
+### 已完成的短期闭环
+
+```text
+刷怪
+→ 战斗
+→ 掉落骨头 / 概率掉落 Core
+→ 拾取
+→ 背包显示
+→ 从背包装备 Core
+→ 攻击力 / 最大生命值变化
+→ 卸下 Core 回背包
+→ 继续刷怪
+```
+
+### 推荐下一阶段方向
+
+#### 优先级 1：继续完善刷装备闭环
+
+1. 实测并调整 SkeletonEnemy 的 Core 掉率。
+2. 增加第二个 Core 测试装备，例如：
+   - 攻击核心：AttackPowerBonus 高，MaxHealthBonus 低
+   - 守护核心：AttackPowerBonus 中，MaxHealthBonus 高
+3. 测试替换 Core：新 Core 从背包进装备槽，旧 Core 回背包。
+4. 让掉落物在 Terrain 上更稳定地贴地生成，避免悬空 / 嵌入地面。
+5. 之后再考虑简单 DropTable ScriptableObject。
+
+#### 优先级 2：装备系统扩展
+
+1. 在继续使用 `ItemData` 的前提下增加 Weapon / Armor / Accessory 槽。
+2. `PlayerEquipment` 从单一 Core 字段扩展到多槽位。
+3. `PlayerCombatStats` 汇总多个装备槽属性。
+4. 暂时不做随机词条。
+
+#### 优先级 3：正式 UI
+
+1. 正式背包 UI。
+2. 正式装备 UI。
+3. 正式死亡 / 复活 UI。
+4. 正式存档点提示。
+
+#### 优先级 4：中长期结构升级
+
+1. 引入 `ItemInstance`，支持同名装备不同词条。
+2. 引入 `StatModifier`。
+3. 引入存档系统。
+4. 引入正式掉落表 / 稀有度抽取。
+5. 集成或替换 `EntityStats`。
+
+### 暂不优先实现
+
+- 完整随机词条
+- 完整存档系统
+- 完整正式背包 UI
+- 完整正式装备栏 UI
+- 五人真实同屏战斗
+- 完整 Hikari AI
+- Boss 战最终版
+- 复杂仇恨表
+
+---
+
+## 11. Next Suggested Tasks
+
+### ⭐ 最推荐的下一个小任务
+
+**增加第二个测试 Core 装备，并验证替换装备流程。**
+
+目的：
+
+```text
+当前只有 TestItem_GuardCore 一个 Core。
+如果要验证“替换装备”是否稳定，需要至少两个不同 Core。
+```
+
+建议新增：
+
+```text
+Assets/Items/TestItem_AttackCore.asset
+- itemId = test_attack_core
+- itemName = 攻击核心
+- ItemType = Equipment
+- EquipmentSlotType = Core
+- MaxStack = 1
+- AttackPowerBonus = 40
+- MaxHealthBonus = 0 或 10
+```
+
+然后把它加入 SkeletonEnemy.prefab 的 drops：
+
+```text
+TestItem_AttackCore
+DropChance = 0.10 或临时 1.0 测试
+Offset = (-0.4, 0, 0.2)
+```
+
+验收目标：
+
+```text
+背包中有守护核心和攻击核心
+点击“装备背包中的第一个 Core”装备其中一个
+再次点击时替换另一个
+旧 Core 回背包
+PlayerCombatStats 数值变化正确
+右侧背包 Debug 窗口显示正确
+```
+
+### 备选任务
+
+1. `EnemyDropper` 掉落物贴合 Terrain。
+2. 清理 `DebugManager` Missing Script。
+3. 左侧 F1 Debug 面板加 ScrollView / 动态尺寸。
+4. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
+5. 将 `SkeletonDebugUI` 拆分为多个 Debug Panel 脚本。
+
+---
+
+## 12. 本次有效变更摘要（2026-05-11）
+
+1. `ItemData.cs` 新增 `ItemType`、`EquipmentSlotType`、`maxStack`、`attackPowerBonus`、`maxHealthBonus`，并通过 `OnValidate()` 保护装备 / 非装备规则。
+2. `ItemStack.cs` 新增 `IsFull`、`RemainingCapacity`，`AddCount()` 改为返回实际增加数量，并新增 `RemoveCount()`。
+3. `PlayerInventory.cs` 支持 Equipment 不合并，非装备按 `itemId + maxStack` 合并；新增 `RemoveItem()` 与 `FindFirstEquipmentBySlot()`。
+4. 新增 `PlayerEquipment.cs`，实现 Core 装备槽、装备 / 卸下 / 清空、替换旧装备、`OnEquipmentChanged` 事件。
+5. 新增 `PlayerCombatStats.cs`，统一计算普通攻击伤害和最大生命值，并监听装备变化自动应用最大生命值。
+6. `HealthComponent.cs` 新增 `SetMaxHealth()`，支持动态修改最大生命值。
+7. `PlayerSkillController.cs` 改为读取 `PlayerCombatStats.CurrentNormalAttackDamage`，不再写死 Core 伤害加成。
+8. `SkeletonDebugUI.cs` 扩展装备 / 背包 / 战斗属性 Debug 功能，支持从背包装备 Core、卸下 Core 到背包、显示右侧背包 Debug 窗口。
+9. `RPGCameraController.cs` 增加 Cursor 管理，修复拖拽视角后鼠标永久消失问题。
+10. `EnemyDropper.cs` 从固定单物品掉落升级为多条目概率掉落测试版，并保留旧 `dropItem` fallback。
+11. `SkeletonEnemy.prefab` 的掉落配置更新为：骨头 100%，守护核心 20%。
+12. 使用已有 `Assets/Items/TestItem_GuardCore.asset` 作为 Core 装备掉落测试物。
+13. 项目地图从旧 Ground 主地面转向默认 Terrain；旧 Ground 系列对象需后续确认。
+14. 已确认 F1 Debug UI 实际挂载在 `SkeletonSpawnerManager`，不是 Hierarchy 中的 Canvas Button。
+15. 发现 `DebugManager` 上有 Missing Mono Script，后续可单独清理。
