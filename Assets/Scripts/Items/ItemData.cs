@@ -2,7 +2,7 @@
 
 public enum ItemType { Material, Equipment, Consumable, Currency, Quest, Cosmetic }
 public enum ItemRarity { Common, Rare, Epic, Legendary }
-public enum EquipmentSlotType { None, Core, Weapon, Armor, Accessory }
+public enum EquipmentSlotType { None, Core, Armor, Accessory }
 
 [CreateAssetMenu(fileName = "New ItemData", menuName = "RPG/Items/Item Data")]
 public class ItemData : ScriptableObject
