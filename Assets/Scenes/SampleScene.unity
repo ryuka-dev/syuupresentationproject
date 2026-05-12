@@ -4587,6 +4587,59 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 35e318cbf76204446ae5bbd2efb2236a, type: 3}
+--- !u!1 &1888087931
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1888087933}
+  - component: {fileID: 1888087932}
+  m_Layer: 0
+  m_Name: EnemySpawnArea_SkeletonForest
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1888087932
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1888087931}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b56fe10633e8344cbf5b3f29c7235cb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemySpawnArea
+  enemyPrefabs:
+  - {fileID: 1593989802227870837, guid: 229ca9ec0a1593848b3efc3eafd3a844, type: 3}
+  maxAliveCount: 6
+  spawnRadius: 20
+  leashRadius: 35
+  respawnInterval: 5
+  spawnOnStart: 1
+  navMeshSampleDistance: 3
+  maxSpawnPositionAttempts: 20
+--- !u!4 &1888087933
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1888087931}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -39.34435, y: 0.00001, z: -10.67651}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!4 &1889742007 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5824913119551717642, guid: 35e318cbf76204446ae5bbd2efb2236a, type: 3}
@@ -5506,3 +5559,4 @@ SceneRoots:
   - {fileID: 163680218}
   - {fileID: 450156093}
   - {fileID: 1762162556}
+  - {fileID: 1888087933}

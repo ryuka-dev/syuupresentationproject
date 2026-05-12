@@ -1,4 +1,4 @@
-﻿# PROJECT_STATE
+# PROJECT_STATE
 
 最后更新：2026-05-12  
 当前主要场景：`Assets/Scenes/SampleScene.unity`  
@@ -1427,3 +1427,24 @@ EnemyDropper 已支持多条目概率掉落 + Terrain / 地面贴合生成。
 SampleScene 已有 Terrain + NavMeshSurface_World。
 NavMeshData 当前嵌入 Scene。
 ```
+
+
+## 14. 本次有效变更摘要（2026-05-12 第二次）
+
+### EnemyAI SpawnArea コンテキスト注入インターフェース
+
+1. `EnemyAI.cs` 新増フィールド：`_spawnAreaCenter`（Vector3）、`_hasSpawnAreaContext`（bool）。
+2. `EnemyAI.cs` 新増プロパティ：`WanderCenter`（Wander 範囲基準中心）、`LeashCenter`（Leash 範囲基準中心）。
+   - `_hasSpawnAreaContext` が false の場合（旧 EnemySpawnPoint）：`_spawnPosition` を返す。
+   - `_hasSpawnAreaContext` が true の場合（EnemySpawnArea）：`_spawnAreaCenter` を返す。
+3. `EnemyAI.Awake()` で `_spawnAreaCenter = _spawnPosition`、`_hasSpawnAreaContext = false` を初期化。
+4. `GetHorizontalDistanceFromSpawn()` の基準点を `_spawnPosition` から `LeashCenter` に変更（Leash 判定をエリア中心基準に）。
+5. `TryPickWanderPoint()` の Wander 中心を `_spawnPosition` から `WanderCenter` に変更（Wander ランダム点選択をエリア中心基準に）。
+6. `EnemyAI.cs` 新增公开方法 `SetSpawnAreaContext(areaCenter, areaWanderRadius, areaLeashRadius, spawnPosition, spawnRotation)`：
+   - EnemySpawnArea が Instantiate 直後に呼び出す想定。
+   - `_hasSpawnAreaContext = true` に設定し、エリア中心と半径を上書き。
+   - `areaLeashRadius < areaWanderRadius` の場合は自動修正（`Mathf.Max(wanderRadius, areaLeashRadius)`）。
+   - `_spawnPosition / _spawnRotation` をこの敵の実際の出生点/朝向に更新。
+7. ReturnToSpawn 帰還先・FinishReturnToSpawn・ResetToSpawn はすべて `_spawnPosition`（実際の出生点）を継続使用。
+8. 旧 EnemySpawnPoint は `SetSpawnAreaContext` を呼び出さないため完全互換。
+9. Prefab / Scene / Animator 未修改。

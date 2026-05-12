@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.AI;
@@ -83,6 +83,15 @@ public class EnemyAI : MonoBehaviour
     private Vector3    _spawnPosition;
     private Quaternion _spawnRotation;
 
+    // ─── SpawnArea コンテキスト ───────────────────────────────
+    private Vector3 _spawnAreaCenter;      // SpawnArea から注入された区域中心
+    private bool    _hasSpawnAreaContext;  // SetSpawnAreaContext() 済みかどうか
+
+    private Vector3 WanderCenter => _hasSpawnAreaContext ? _spawnAreaCenter : _spawnPosition;
+    private Vector3 LeashCenter  => _hasSpawnAreaContext ? _spawnAreaCenter : _spawnPosition;
+
+
+
     // ─── 游荡状态内部変量 ────────────────────────────────────
     private Vector3 _wanderTarget;
     private float   _idleTimer = 0f;
@@ -111,8 +120,10 @@ public class EnemyAI : MonoBehaviour
         myFaction = GetComponent<FactionComponent>();
         myHealth  = GetComponent<HealthComponent>();
 
-        _spawnPosition = transform.position;
-        _spawnRotation = transform.rotation;
+        _spawnPosition      = transform.position;
+        _spawnRotation      = transform.rotation;
+        _spawnAreaCenter    = _spawnPosition;
+        _hasSpawnAreaContext = false;
     }
 
     void OnEnable()
@@ -253,11 +264,11 @@ public class EnemyAI : MonoBehaviour
         Debug.Log($"[EnemyAI] {gameObject.name} 开始返回出生点。(Agent={_returningWithAgent})");
     }
 
-    private float GetHorizontalDistanceFromSpawn()
+private float GetHorizontalDistanceFromSpawn()
     {
         Vector3 currentFlat = new Vector3(transform.position.x, 0f, transform.position.z);
-        Vector3 spawnFlat   = new Vector3(_spawnPosition.x,     0f, _spawnPosition.z);
-        return Vector3.Distance(currentFlat, spawnFlat);
+        Vector3 centerFlat  = new Vector3(LeashCenter.x,         0f, LeashCenter.z);
+        return Vector3.Distance(currentFlat, centerFlat);
     }
 
     private void CheckLeashRadius()
@@ -597,21 +608,21 @@ public class EnemyAI : MonoBehaviour
         }
     }
 
-    private bool TryPickWanderPoint(out Vector3 point)
+private bool TryPickWanderPoint(out Vector3 point)
     {
         point = Vector3.zero;
         for (int i = 0; i < 10; i++)
         {
             Vector2 circle    = Random.insideUnitCircle * wanderRadius;
             Vector3 candidate = new Vector3(
-                _spawnPosition.x + circle.x,
+                WanderCenter.x + circle.x,
                 transform.position.y,
-                _spawnPosition.z + circle.y);
+                WanderCenter.z + circle.y);
 
-            float distFromSpawn = Vector3.Distance(
+            float distFromCenter = Vector3.Distance(
                 new Vector3(candidate.x, 0f, candidate.z),
-                new Vector3(_spawnPosition.x, 0f, _spawnPosition.z));
-            if (distFromSpawn > leashRadius) continue;
+                new Vector3(WanderCenter.x, 0f, WanderCenter.z));
+            if (distFromCenter > leashRadius) continue;
 
             if (CanUseAgent())
             {
@@ -619,7 +630,7 @@ public class EnemyAI : MonoBehaviour
                 {
                     float sampledDist = Vector3.Distance(
                         new Vector3(navHit.position.x, 0f, navHit.position.z),
-                        new Vector3(_spawnPosition.x, 0f, _spawnPosition.z));
+                        new Vector3(WanderCenter.x, 0f, WanderCenter.z));
                     if (sampledDist > leashRadius) continue;
 
                     _agent.CalculatePath(navHit.position, _wanderPath);
@@ -872,4 +883,34 @@ public class EnemyAI : MonoBehaviour
         Debug.Log($"[EnemyAI] {gameObject.name} 外部指令により強制脱戦、出生点へ帰還。");
         EnterReturnToSpawn();
     }
+
+/// <summary>
+    /// EnemySpawnArea が敌人生成直後に呼び出すコンテキスト注入メソッド。
+    /// 呼び出すことで Wander / Leash 判定の基準中心を areaCenter に切り替え、
+    /// wanderRadius / leashRadius を SpawnArea の値で上書きし、
+    /// この敵の実際の出生点 / 朝向を設定する。
+    /// 呼び出さない場合は旧 EnemySpawnPoint との完全な互換性を保つ。
+    /// </summary>
+    /// <param name="areaCenter">SpawnArea の中心座標。Wander ランダム点選択と Leash 距離判定の基準に使用。</param>
+    /// <param name="areaWanderRadius">SpawnArea 内圈半径。怪物の生成範囲 = Wander 範囲。</param>
+    /// <param name="areaLeashRadius">SpawnArea 外圈半径。追跡 / 脱戦範囲。areaWanderRadius より小さい場合は自動修正。</param>
+    /// <param name="spawnPosition">この敵が実際に生成された位置。ReturnToSpawn の帰還先。</param>
+    /// <param name="spawnRotation">この敵が実際に生成された朝向。ReturnToSpawn 完了後に復元。</param>
+    public void SetSpawnAreaContext(
+        Vector3    areaCenter,
+        float      areaWanderRadius,
+        float      areaLeashRadius,
+        Vector3    spawnPosition,
+        Quaternion spawnRotation)
+    {
+        _hasSpawnAreaContext = true;
+        _spawnAreaCenter     = areaCenter;
+
+        wanderRadius = Mathf.Max(0f, areaWanderRadius);
+        leashRadius  = Mathf.Max(wanderRadius, areaLeashRadius);
+
+        _spawnPosition = spawnPosition;
+        _spawnRotation = spawnRotation;
+    }
+
 }
