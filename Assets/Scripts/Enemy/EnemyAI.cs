@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.AI;
@@ -10,6 +10,12 @@ public enum EnemyState { Idle, Chase, Attack, ReturnToSpawn, Wander }
 /// Wander / Chase / ReturnToSpawn は NavMeshAgent を優先使用。不可の場合は Rigidbody fallback。
 /// Chase 中は目標位置が一時的に不可達でも Agent Chase を維持し、最後の有効 destination を追い続ける。
 /// 攻击触发：attackCooldownTimer 到 0 时设 IsAttacking=true 一帧，动画开始后立刻清除。
+///
+/// [移动控制权规则 - 第一版整理]
+/// 正常移动路径：NavMeshAgent 负责（Wander / Chase / ReturnToSpawn）
+/// Rigidbody 职责：碰撞 / 物理辅助 / Agent 不可用时的 fallback
+/// Attack 状态：StopMovementForAttack() 统一停止 Agent + 清除 Rigidbody 残留速度，防止滑动
+/// 移动控制切换：通过 StopAgentMovement / PrepareAgentDrivenMovement / StopMovementForAttack 集中管理
 /// </summary>
 public class EnemyAI : MonoBehaviour
 {
@@ -90,8 +96,6 @@ public class EnemyAI : MonoBehaviour
     private Vector3 WanderCenter => _hasSpawnAreaContext ? _spawnAreaCenter : _spawnPosition;
     private Vector3 LeashCenter  => _hasSpawnAreaContext ? _spawnAreaCenter : _spawnPosition;
 
-
-
     // ─── 游荡状态内部変量 ────────────────────────────────────
     private Vector3 _wanderTarget;
     private float   _idleTimer = 0f;
@@ -156,23 +160,66 @@ public class EnemyAI : MonoBehaviour
             Debug.LogWarning($"[EnemyAI] {gameObject.name}: wanderRadius({wanderRadius}) が leashRadius({leashRadius}) を超えています。");
     }
 
-    // ─── NavMeshAgent ヘルパー ───────────────────────────────
+    // ─── NavMeshAgent 判定 ───────────────────────────────────
     /// <summary>NavMeshAgent が移動に使用できる状態かを判定する。</summary>
     private bool CanUseAgent() =>
         _hasAgent && _agent != null && _agent.enabled && _agent.isOnNavMesh;
 
+    // ─── 移動制御ヘルパー ─────────────────────────────────────
+
     /// <summary>
-    /// Agent の移動を停止し Rigidbody を非 kinematic に戻す。
-    /// Agent 使用中の状態から他の状態へ移行するときに呼ぶ。
+    /// Rigidbody の線速度と角速度をゼロにする。
+    /// 残留速度が後続の移動状態に影響しないようにするための共通クリア処理。
+    /// </summary>
+    private void ClearRigidbodyVelocity()
+    {
+        if (rb == null) return;
+        rb.linearVelocity  = Vector3.zero;
+        rb.angularVelocity = Vector3.zero;
+    }
+
+    /// <summary>
+    /// NavMeshAgent を安全に停止する。
+    /// Agent が null / disabled の場合は何もしない。
+    /// ResetPath は Agent が NavMesh 上にある場合のみ実行する。
+    /// </summary>
+    private void StopAgentMovement(bool resetPath = false)
+    {
+        if (!_hasAgent || _agent == null || !_agent.enabled) return;
+        _agent.isStopped = true;
+        if (resetPath && _agent.isOnNavMesh) _agent.ResetPath();
+    }
+
+    /// <summary>
+    /// Wander / Chase / ReturnToSpawn で Agent 移動に切り替える前の共通準備。
+    /// Rigidbody 残留速度をクリアし、Agent が位置を引き継いでも速度干渉が起きないようにする。
+    /// </summary>
+    private void PrepareAgentDrivenMovement()
+    {
+        ClearRigidbodyVelocity();
+    }
+
+    /// <summary>
+    /// Attack 状態に入る際の移動完全停止処理。
+    /// Agent を停止（ResetPath あり）し、rb.isKinematic を false に戻した上で
+    /// Rigidbody 線速度・角速度をクリアして敵が滑らないようにする。
+    /// </summary>
+    private void StopMovementForAttack()
+    {
+        StopAgentMovement(true);
+        if (rb != null) rb.isKinematic = false;
+        ClearRigidbodyVelocity();
+    }
+
+    /// <summary>
+    /// Agent 使用中の状態から他の状態へ移行する際の共通停止処理。
+    /// Agent を停止し、Rigidbody を非 kinematic に戻し、残留速度をクリアする。
     /// </summary>
     private void StopAgentAndRestoreRigidbody()
     {
-        if (_hasAgent && _agent != null && _agent.enabled)
-        {
-            _agent.isStopped = true;
-            _agent.ResetPath();
-        }
+        StopAgentMovement(true);
         if (rb != null) rb.isKinematic = false;
+        ClearRigidbodyVelocity();
     }
 
     void Update()
@@ -216,7 +263,7 @@ public class EnemyAI : MonoBehaviour
     // ─── 返回出生点 ──────────────────────────────────────────
     private void EnterReturnToSpawn()
     {
-        // Wander または Chase 中に Agent が動いていた場合は停止
+        // Wander または Chase 中に Agent が動いていた場合は停止（速度もクリア）
         if (currentState == EnemyState.Wander && CanUseAgent())
             StopAgentAndRestoreRigidbody();
         else if (currentState == EnemyState.Chase && _chasingWithAgent)
@@ -242,10 +289,11 @@ public class EnemyAI : MonoBehaviour
                 _agent.CalculatePath(spawnHit.position, _returnPath);
                 if (_returnPath.status == NavMeshPathStatus.PathComplete)
                 {
-                    _returningWithAgent  = true;
-                    rb.isKinematic       = true;
-                    _agent.speed         = moveSpeed;
-                    _agent.isStopped     = false;
+                    _returningWithAgent = true;
+                    PrepareAgentDrivenMovement();  // Rigidbody 残留速度クリア
+                    rb.isKinematic      = true;
+                    _agent.speed        = moveSpeed;
+                    _agent.isStopped    = false;
                     _agent.SetDestination(spawnHit.position);
                 }
             }
@@ -253,18 +301,14 @@ public class EnemyAI : MonoBehaviour
 
         if (!_returningWithAgent)
         {
-            if (_hasAgent && _agent != null && _agent.enabled)
-            {
-                _agent.isStopped = true;
-                _agent.ResetPath();
-            }
+            StopAgentMovement(true);
             if (rb != null) rb.isKinematic = false;
         }
 
         Debug.Log($"[EnemyAI] {gameObject.name} 开始返回出生点。(Agent={_returningWithAgent})");
     }
 
-private float GetHorizontalDistanceFromSpawn()
+    private float GetHorizontalDistanceFromSpawn()
     {
         Vector3 currentFlat = new Vector3(transform.position.x, 0f, transform.position.z);
         Vector3 centerFlat  = new Vector3(LeashCenter.x,         0f, LeashCenter.z);
@@ -303,12 +347,9 @@ private float GetHorizontalDistanceFromSpawn()
             }
             else
             {
+                // Agent が使用不可になった場合は Rigidbody fallback に切り替え
                 _returningWithAgent = false;
-                if (_hasAgent && _agent != null && _agent.enabled)
-                {
-                    _agent.isStopped = true;
-                    _agent.ResetPath();
-                }
+                StopAgentMovement(true);
                 if (rb != null) rb.isKinematic = false;
             }
         }
@@ -345,22 +386,14 @@ private float GetHorizontalDistanceFromSpawn()
         bool wasUsingAgent  = _returningWithAgent;
         _returningWithAgent = false;
 
-        if (_hasAgent && _agent != null && _agent.enabled)
-        {
-            _agent.isStopped = true;
-            _agent.ResetPath();
-        }
+        StopAgentMovement(true);
 
         if (!wasUsingAgent)
             transform.position = new Vector3(_spawnPosition.x, transform.position.y, _spawnPosition.z);
         transform.rotation = _spawnRotation;
 
-        if (rb != null)
-        {
-            rb.isKinematic    = false;
-            rb.linearVelocity  = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
-        }
+        if (rb != null) rb.isKinematic = false;
+        ClearRigidbodyVelocity();
 
         if (myHealth != null) myHealth.RestoreFullHealth();
 
@@ -450,7 +483,7 @@ private float GetHorizontalDistanceFromSpawn()
     {
         if (currentState == next) return;
 
-        // Wander または Chase で Agent が動いていた場合は停止
+        // Wander または Chase で Agent が動いていた場合は停止（Rigidbody 速度もクリア）
         if (currentState == EnemyState.Wander && CanUseAgent())
             StopAgentAndRestoreRigidbody();
         else if (currentState == EnemyState.Chase && _chasingWithAgent)
@@ -475,6 +508,7 @@ private float GetHorizontalDistanceFromSpawn()
                 animator?.SetBool("IsAttacking", false);
                 if (CanUseAgent())
                 {
+                    PrepareAgentDrivenMovement();  // Rigidbody 残留速度クリア
                     rb.isKinematic   = true;
                     _agent.speed     = wanderMoveSpeed;
                     _agent.isStopped = false;
@@ -489,6 +523,7 @@ private float GetHorizontalDistanceFromSpawn()
                 if (CanUseAgent())
                 {
                     _chasingWithAgent = true;
+                    PrepareAgentDrivenMovement();  // Rigidbody 残留速度クリア
                     rb.isKinematic    = true;
                     _agent.speed      = moveSpeed;
                     _agent.isStopped  = false;
@@ -509,18 +544,9 @@ private float GetHorizontalDistanceFromSpawn()
             case EnemyState.Attack:
                 attackCooldownTimer = 0f;
                 animator?.SetBool("IsAttacking", false);
-                // Chase Agent を Attack 開始時に停止（敵がスライドしないように）
-                if (_chasingWithAgent)
-                {
-                    _chasingWithAgent             = false;
-                    _hasLastValidChaseDestination = false;
-                    if (_hasAgent && _agent != null && _agent.enabled)
-                    {
-                        _agent.isStopped = true;
-                        _agent.ResetPath();
-                    }
-                    if (rb != null) rb.isKinematic = false;
-                }
+                // 攻撃開始時に Agent 停止 + Rigidbody 残留速度クリア（スライド防止）
+                // ※ _chasingWithAgent / _hasLastValidChaseDestination は上部ですでにクリア済み
+                StopMovementForAttack();
                 break;
         }
     }
@@ -608,7 +634,7 @@ private float GetHorizontalDistanceFromSpawn()
         }
     }
 
-private bool TryPickWanderPoint(out Vector3 point)
+    private bool TryPickWanderPoint(out Vector3 point)
     {
         point = Vector3.zero;
         for (int i = 0; i < 10; i++)
@@ -720,6 +746,7 @@ private bool TryPickWanderPoint(out Vector3 point)
             else { StopAgentAndRestoreRigidbody(); }
         }
 
+        // Rigidbody fallback（Agent 不可用時のみ）
         Vector3 flatPos    = new Vector3(transform.position.x, 0f, transform.position.z);
         Vector3 flatTarget = new Vector3(_wanderTarget.x,      0f, _wanderTarget.z);
         float   dist       = Vector3.Distance(flatPos, flatTarget);
@@ -857,12 +884,8 @@ private bool TryPickWanderPoint(out Vector3 point)
         }
         transform.rotation = _spawnRotation;
 
-        if (rb != null)
-        {
-            rb.isKinematic    = false;
-            rb.linearVelocity  = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
-        }
+        if (rb != null) rb.isKinematic = false;
+        ClearRigidbodyVelocity();
 
         if (myHealth != null) myHealth.RestoreFullHealth();
 
@@ -884,7 +907,7 @@ private bool TryPickWanderPoint(out Vector3 point)
         EnterReturnToSpawn();
     }
 
-/// <summary>
+    /// <summary>
     /// EnemySpawnArea が敌人生成直後に呼び出すコンテキスト注入メソッド。
     /// 呼び出すことで Wander / Leash 判定の基準中心を areaCenter に切り替え、
     /// wanderRadius / leashRadius を SpawnArea の値で上書きし、
@@ -912,5 +935,4 @@ private bool TryPickWanderPoint(out Vector3 point)
         _spawnPosition = spawnPosition;
         _spawnRotation = spawnRotation;
     }
-
 }
