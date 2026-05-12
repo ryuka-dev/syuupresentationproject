@@ -1,4 +1,4 @@
-# PROJECT_STATE
+﻿# PROJECT_STATE
 
 最后更新：2026-05-12  
 当前主要场景：`Assets/Scenes/SampleScene.unity`  
@@ -1448,3 +1448,229 @@ NavMeshData 当前嵌入 Scene。
 7. ReturnToSpawn 帰還先・FinishReturnToSpawn・ResetToSpawn はすべて `_spawnPosition`（実際の出生点）を継続使用。
 8. 旧 EnemySpawnPoint は `SetSpawnAreaContext` を呼び出さないため完全互換。
 9. Prefab / Scene / Animator 未修改。
+
+---
+
+## 15. EnemySpawnArea 区域刷怪系统
+
+### `EnemySpawnArea.cs`
+
+挂载在场景 GameObject 上的区域刷怪组件。
+
+**主要字段：**
+
+| 字段 | 含义 |
+|---|---|
+| `spawnEntries` | SpawnEntry 列表（支持权重 / 单种上限） |
+| `maxAliveCount` | 区域内总存活上限 |
+| `spawnRadius` | 内圈：生成范围 = Wander 游荡范围 |
+| `leashRadius` | 外圈：追逐 / 脱战范围 |
+| `respawnInterval` | 死亡后补怪延迟（秒） |
+| `spawnOnStart` | Play Mode 开始时是否自动刷满 |
+| `navMeshSampleDistance` | NavMesh.SamplePosition 最大采样距离 |
+| `maxSpawnPositionAttempts` | 随机生成点最大尝试次数 |
+
+**SpawnEntry 结构：**
+
+```csharp
+[System.Serializable]
+private class SpawnEntry
+{
+    public GameObject enemyPrefab;
+    [Min(0)] public int weight   = 1;   // 0 = 不参与
+    [Min(0)] public int maxAlive = 999; // 0 = 禁用
+}
+```
+
+**生成流程：**
+
+```text
+Start() → FillToMaxAlive()
+→ CleanupAliveList()
+→ while alive < maxAliveCount：
+    TrySpawnOneEnemy()
+    → TryPickSpawnEntry()（加权随机，跳过达到 maxAlive 的条目）
+    → TryGetRandomSpawnPosition()（NavMesh.SamplePosition）
+    → Instantiate
+    → EnemyAI.SetSpawnAreaContext()
+    → 订阅 HealthComponent.OnDied
+    → 加入 _aliveEnemies 和 _spawnedPrefabByEnemy
+
+死亡回调 → HandleEnemyDied()
+    → 从 _aliveEnemies 和 _spawnedPrefabByEnemy 移除
+    → StartCoroutine(RespawnAfterDelay(respawnInterval))
+    → FillToMaxAlive()
+```
+
+**运行时数据：**
+- `_aliveEnemies`：活着的敌人 GameObject 列表
+- `_spawnedPrefabByEnemy`：记录每个敌人使用的原始 Prefab（用于 CountAliveForPrefab）
+
+**注意：**
+- EnemySpawnArea 第一版暂未接入 LevelObjectiveManager。
+- Gizmos：OnDrawGizmosSelected 画绿色内圈（spawnRadius）和橙色外圈（leashRadius）。
+
+---
+
+## 3.1 Enemy AI 系统 补充
+
+### EnemyAI SpawnArea 支持
+
+EnemyAI 已增加以下字段支持区域刷怪：
+
+| 字段 / 属性 | 含义 |
+|---|---|
+| `_spawnAreaCenter` | SpawnArea 注入的区域中心 |
+| `_hasSpawnAreaContext` | 是否已调用 SetSpawnAreaContext |
+| `WanderCenter`（属性） | Wander 范围基准中心 |
+| `LeashCenter`（属性） | Leash / 脱战范围基准中心 |
+
+**逻辑：**
+- 未调用 SetSpawnAreaContext：`WanderCenter = _spawnPosition`（旧逻辑，EnemySpawnPoint 兼容）
+- 已调用：`WanderCenter = _spawnAreaCenter`（区域中心）
+
+**ReturnToSpawn 不受影响：**
+- 仍回到各怪物自己的 `_spawnPosition`（不是区域中心）
+
+**`SetSpawnAreaContext()` 接口：**
+
+```csharp
+public void SetSpawnAreaContext(
+    Vector3    areaCenter,
+    float      areaWanderRadius,
+    float      areaLeashRadius,
+    Vector3    spawnPosition,
+    Quaternion spawnRotation)
+```
+
+---
+
+## 3.8 EnemyBase Prefab 与 Variant 工作流
+
+### EnemyBase.prefab
+
+路径：`Assets/Resources/EnemyBase.prefab`
+
+EnemyBase 是所有敌人 Prefab Variant 的基础模板，不直接用于生成。
+
+**根对象组件：**
+Transform、Animator、Rigidbody、CapsuleCollider、NavMeshAgent、FactionComponent、FOVDetector、EnemyAI、HealthComponent、WorldHealthBar、EnemyDeathHandler、EnemyDropper
+
+**子对象：**
+- `VisualRoot`（空 GameObject，localPosition=0，scale=1）
+  - 具体敌人模型 / 骨骼放在这里
+
+**设计说明：**
+- EnemyDropper.drops 保持为空（Variant 中覆写）
+- FOVDetector.eyePosition 保持为 null（Variant 中绑定自己骨骼）
+- Animator Controller 当前使用 SkeletonAnimator.controller（Variant 可覆写）
+- 后续新增所有敌人通用脚本时，只加到 EnemyBase.prefab
+
+### Variant 工作流
+
+当前已验证的层级：
+
+```text
+EnemyBase.prefab
+├─ SkeletonEnemy_Variant.prefab  (Prefab Variant)
+└─ SkeletonBossEnemy_Variant.prefab  (Prefab Variant)
+```
+
+**创建 Variant 的规范流程：**
+1. 右键 EnemyBase.prefab → Create → Prefab Variant，命名为 `<EnemyName>_Variant.prefab`
+2. 在 VisualRoot 下放入具体模型和骨骼层级
+3. 覆写 Animator.Controller 为该敌人专用
+4. 将 FOVDetector.eyePosition 绑定到 VisualRoot 内的 head 骨骼
+5. 在 EnemyDropper.drops 中配置掉落
+6. 按需覆写 CapsuleCollider、NavMeshAgent、EnemyAI、HealthComponent 参数
+
+**VisualRoot 缩放规则（重要）：**
+
+```text
+推荐：根对象 scale = 1
+      VisualRoot.scale = 用于控制视觉体型（如 Boss 用 1.5）
+      Collider / NavMeshAgent 单独在 Variant 中调整
+
+原因：根对象缩放会同时影响 Collider / NavMeshAgent / Rigidbody
+      VisualRoot 缩放只影响视觉模型，更安全
+```
+
+### SkeletonEnemy_Variant.prefab
+
+路径：`Assets/Resources/SkeletonEnemy_Variant.prefab`
+
+- Source：EnemyBase.prefab（true Prefab Variant）
+- VisualRoot 下：M_Skeleton.Body / Jaw / Skull / root 骨骼层级
+- FOVDetector.eyePosition = VisualRoot/.../head.x
+- EnemyDropper.drops = 骨头100% + 守护核心20%（同旧 SkeletonEnemy）
+- 其余参数继承 EnemyBase（与旧 SkeletonEnemy 一致）
+
+### SkeletonBossEnemy_Variant.prefab
+
+路径：`Assets/Resources/SkeletonBossEnemy_Variant.prefab`
+
+- Source：EnemyBase.prefab（true Prefab Variant）
+- VisualRoot.localScale = (1.5, 1.5, 1.5)
+- 根对象 scale = (1, 1, 1)
+- Collider / NavMeshAgent 单独调整（匹配 1.5× 体型）
+- EnemyDropper.drops = 守护核心100%（Boss 测试用）
+- 与旧 SkeletonBossEnemy 行为基本一致
+
+**注意：**
+旧 `SkeletonEnemy.prefab` 和 `SkeletonBossEnemy.prefab` 仍然存在并可用，未被删除。
+新 Variant 与旧独立 Prefab 并行存在，可分别挂载到 EnemySpawnArea 使用。
+
+### 推荐长期结构
+
+```text
+当前（敌人种类少）：
+EnemyBase → Variant（直接派生）
+
+未来（同族敌人增多时）：
+EnemyBase
+└─ SkeletonBase（可选中间层）
+   ├─ SkeletonEnemy_Variant
+   ├─ SkeletonBossEnemy_Variant
+   └─ SkeletonArcherEnemy_Variant
+
+当前阶段不建议过早加 SkeletonBase 中间层。
+```
+
+---
+
+## 16. TMP Dynamic Font Asset Git 修改问题
+
+使用 `TMP Dynamic Font Asset`（如 `SourceHanSansSC-Medium_TMP.asset`）时，
+运行中出现新字符会导致字体资产被重新写入（字符图集更新），Git 会检测到 `.asset` 文件被修改。
+当前阶段暂不处理，提交前可选择性地 `git checkout` 字体资产，或使用 `.gitignore` 排除。
+
+---
+
+## 17. 本次有效变更摘要（2026-05-12 第三次）
+
+### EnemySpawnArea / SpawnEntry
+
+1. `EnemySpawnArea.cs` 创建（第一版）：区域刷怪，NavMesh 随机点，死亡后补怪。
+2. `EnemySpawnArea.cs` 升级（第二版）：`enemyPrefabs` → `SpawnEntry` 列表，支持 weight / maxAlive 加权随机与单种存活上限。
+3. 新增 `_spawnedPrefabByEnemy` dictionary，用于统计单种存活数量。
+4. `TryPickSpawnEntry()` 实现加权随机，跳过 weight≤0 / maxAlive≤0 / 已达上限的条目。
+
+### EnemyAI SpawnArea 接口
+
+5. `EnemyAI.cs` 新增 `_spawnAreaCenter`、`_hasSpawnAreaContext` 字段。
+6. 新增 `WanderCenter`、`LeashCenter` 计算属性。
+7. 新增 `SetSpawnAreaContext()` 公开方法。
+8. `GetHorizontalDistanceFromSpawn()` 改为使用 `LeashCenter`。
+9. `TryPickWanderPoint()` 改为使用 `WanderCenter`。
+
+### EnemyBase Prefab
+
+10. `Assets/Resources/EnemyBase.prefab` 创建（从 SkeletonEnemy 复制）。
+11. EnemyBase 清理：移除具体骷髅模型 / 骨骼，新增 VisualRoot 空子对象。
+12. FOVDetector.eyePosition 置 null，EnemyDropper.drops 清空。
+
+### Prefab Variant
+
+13. `Assets/Resources/SkeletonEnemy_Variant.prefab`：EnemyBase 的真正 Prefab Variant，模型 / 骨骼位于 VisualRoot 下，已恢复 eyePosition、drops、完整参数。
+14. `Assets/Resources/SkeletonBossEnemy_Variant.prefab`：EnemyBase 的真正 Prefab Variant，VisualRoot.scale=1.5，根对象 scale=1，已单独调整 Collider / NavMeshAgent。
+15. 旧 `SkeletonEnemy.prefab` / `SkeletonBossEnemy.prefab` 保留，未删除。
