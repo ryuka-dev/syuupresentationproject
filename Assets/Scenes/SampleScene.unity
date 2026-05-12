@@ -4616,8 +4616,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9b56fe10633e8344cbf5b3f29c7235cb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemySpawnArea
-  enemyPrefabs:
-  - {fileID: 1593989802227870837, guid: 229ca9ec0a1593848b3efc3eafd3a844, type: 3}
+  spawnEntries:
+  - enemyPrefab: {fileID: 1593989802227870837, guid: 229ca9ec0a1593848b3efc3eafd3a844, type: 3}
+    weight: 10
+    maxAlive: 6
+  - enemyPrefab: {fileID: 1593989802227870837, guid: 43b92863d3dba3a4f9af4370716fd7b2, type: 3}
+    weight: 10
+    maxAlive: 1
   maxAliveCount: 6
   spawnRadius: 20
   leashRadius: 35

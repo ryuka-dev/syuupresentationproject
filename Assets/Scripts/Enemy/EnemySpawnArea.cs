@@ -1,20 +1,34 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
 
 /// <summary>
-/// 区域刷怪组件 第一版。
+/// 区域刷怪组件 第二版。支持 SpawnEntry 权重随机 / 单种最大存活数量。
 /// 挂载在场景 GameObject 上，在 spawnRadius 内的 NavMesh 随机点生成敌人，
 /// 并通过 EnemyAI.SetSpawnAreaContext 注入区域中心 / 游荡范围 / 追逐脱战范围。
-/// 死亡后经 respawnInterval 延迟补怪，同时存活数量不超过 maxAliveCount。
+/// 死亡后经 respawnInterval 延迟补怪，同时存活总数不超过 maxAliveCount。
 /// </summary>
 public class EnemySpawnArea : MonoBehaviour
 {
+    // ─── SpawnEntry ────────────────────────────────────────────
+    [System.Serializable]
+    private class SpawnEntry
+    {
+        [Tooltip("要生成的敌人 Prefab")]
+        public GameObject enemyPrefab;
+        [Tooltip("加权随机权重（0 = 不参与随机）")]
+        [Min(0)] public int weight   = 1;
+        [Tooltip("此 Prefab 在区域内同时存活上限（0 = 禁用此条目）")]
+        [Min(0)] public int maxAlive = 999;
+    }
+
+    [Header("Spawn Entries")]
+    [Tooltip("怪物生成条目列表，支持权重与单种最大存活数量")]
+    [SerializeField] private List<SpawnEntry> spawnEntries = new List<SpawnEntry>();
+
     [Header("Spawn Area")]
-    [Tooltip("可以生成的敌人 Prefab 列表（第一版随机选取，不支持权重）")]
-    [SerializeField] private List<GameObject> enemyPrefabs = new List<GameObject>();
-    [Tooltip("区域内同时存活敌人上限")]
+    [Tooltip("区域内同时存活敌人总上限")]
     [SerializeField] private int   maxAliveCount   = 6;
     [Tooltip("内圈生成半径，等于 Wander 游荡范围")]
     [SerializeField] private float spawnRadius     = 20f;
@@ -33,6 +47,9 @@ public class EnemySpawnArea : MonoBehaviour
 
     // 运行时活着的敌人列表
     private readonly List<GameObject> _aliveEnemies = new List<GameObject>();
+    // 记录每个活着的敌人使用的原始 Prefab，用于统计单种存活数量
+    private readonly Dictionary<GameObject, GameObject> _spawnedPrefabByEnemy
+        = new Dictionary<GameObject, GameObject>();
 
     // ─── 生命周期 ─────────────────────────────────────────────
     private void Start()
@@ -49,10 +66,18 @@ public class EnemySpawnArea : MonoBehaviour
         respawnInterval          = Mathf.Max(0f, respawnInterval);
         navMeshSampleDistance    = Mathf.Max(0.1f, navMeshSampleDistance);
         maxSpawnPositionAttempts = Mathf.Max(1, maxSpawnPositionAttempts);
+
+        if (spawnEntries == null) return;
+        foreach (SpawnEntry entry in spawnEntries)
+        {
+            if (entry == null) continue;
+            entry.weight   = Mathf.Max(0, entry.weight);
+            entry.maxAlive = Mathf.Max(0, entry.maxAlive);
+        }
     }
 
     // ─── 生成管理 ──────────────────────────────────────────────
-    /// <summary>清理 _aliveEnemies 中已销毁（null）或已死亡的条目。</summary>
+    /// <summary>清理 _aliveEnemies 中已销毁（null）或已死亡的条目，并同步 dictionary。</summary>
     private void CleanupAliveList()
     {
         for (int i = _aliveEnemies.Count - 1; i >= 0; i--)
@@ -60,13 +85,71 @@ public class EnemySpawnArea : MonoBehaviour
             GameObject e = _aliveEnemies[i];
             if (e == null)
             {
+                // null キーは Dictionary で使用不可のためスキップ（HandleEnemyDied で Remove 済み）
                 _aliveEnemies.RemoveAt(i);
                 continue;
             }
             HealthComponent h = e.GetComponent<HealthComponent>();
             if (h != null && h.IsDead)
+            {
                 _aliveEnemies.RemoveAt(i);
+                _spawnedPrefabByEnemy.Remove(e);
+            }
         }
+    }
+
+    /// <summary>统计指定 Prefab 在区域内当前存活数量。</summary>
+    private int CountAliveForPrefab(GameObject prefab)
+    {
+        int count = 0;
+        foreach (KeyValuePair<GameObject, GameObject> kv in _spawnedPrefabByEnemy)
+        {
+            if (kv.Key != null && kv.Value == prefab)
+                count++;
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// 从 spawnEntries 中按权重加权随机选出一个可生成的条目。
+    /// 排除 weight <= 0 / maxAlive <= 0 / 已达单种存活上限的条目。
+    /// 全部条目达到上限时返回 false。
+    /// </summary>
+    private bool TryPickSpawnEntry(out SpawnEntry selectedEntry)
+    {
+        selectedEntry = null;
+
+        if (spawnEntries == null || spawnEntries.Count == 0) return false;
+
+        var candidates  = new List<SpawnEntry>();
+        int totalWeight = 0;
+
+        foreach (SpawnEntry entry in spawnEntries)
+        {
+            if (entry == null)             continue;
+            if (entry.enemyPrefab == null) continue;
+            if (entry.weight  <= 0)        continue;
+            if (entry.maxAlive <= 0)       continue;
+            if (CountAliveForPrefab(entry.enemyPrefab) >= entry.maxAlive) continue;
+
+            candidates.Add(entry);
+            totalWeight += entry.weight;
+        }
+
+        if (totalWeight <= 0) return false;
+
+        int roll       = Random.Range(0, totalWeight);
+        int cumulative = 0;
+        foreach (SpawnEntry entry in candidates)
+        {
+            cumulative += entry.weight;
+            if (roll < cumulative)
+            {
+                selectedEntry = entry;
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>持续生成直到达到 maxAliveCount，或生成失败为止。</summary>
@@ -81,31 +164,21 @@ public class EnemySpawnArea : MonoBehaviour
     }
 
     /// <summary>
-    /// 在区域内随机 NavMesh 点生成一只敌人，注入 SpawnArea 上下文，并订阅死亡事件。
-    /// 成功返回 true，失败返回 false。
+    /// 从 SpawnEntry 加权随机选择 Prefab，在区域内随机 NavMesh 点生成一只敌人，
+    /// 注入 SpawnArea 上下文，并订阅死亡事件。成功返回 true，失败返回 false。
     /// </summary>
     private bool TrySpawnOneEnemy()
     {
         if (_aliveEnemies.Count >= maxAliveCount) return false;
 
-        // ── 选择有效 prefab ────────────────────────────────────
-        if (enemyPrefabs == null || enemyPrefabs.Count == 0)
+        // ── 加权随机选择 SpawnEntry ────────────────────────────
+        if (!TryPickSpawnEntry(out SpawnEntry selectedEntry))
         {
-            Debug.LogWarning($"[EnemySpawnArea] {gameObject.name}: enemyPrefabs が設定されていません。");
+            Debug.LogWarning($"[EnemySpawnArea] {gameObject.name}: 生成可能な SpawnEntry がありません。");
             return false;
         }
 
-        var validPrefabs = new List<GameObject>(enemyPrefabs.Count);
-        foreach (GameObject p in enemyPrefabs)
-            if (p != null) validPrefabs.Add(p);
-
-        if (validPrefabs.Count == 0)
-        {
-            Debug.LogWarning($"[EnemySpawnArea] {gameObject.name}: 有効な enemyPrefab がありません（全て null）。");
-            return false;
-        }
-
-        GameObject prefab = validPrefabs[Random.Range(0, validPrefabs.Count)];
+        GameObject prefab = selectedEntry.enemyPrefab;
 
         // ── 生成位置を NavMesh 上で決定 ────────────────────────
         if (!TryGetRandomSpawnPosition(out Vector3 spawnPosition))
@@ -139,7 +212,6 @@ public class EnemySpawnArea : MonoBehaviour
         HealthComponent health = enemy.GetComponent<HealthComponent>();
         if (health != null)
         {
-            // lambda でキャプチャするためローカル変数に保持
             GameObject capturedEnemy = enemy;
             health.OnDied += () => HandleEnemyDied(capturedEnemy);
         }
@@ -148,8 +220,11 @@ public class EnemySpawnArea : MonoBehaviour
             Debug.LogWarning($"[EnemySpawnArea] {gameObject.name}: {enemy.name} に HealthComponent がありません。死亡を検知できません。");
         }
 
+        // ── alive list と dictionary に登録 ────────────────────
         _aliveEnemies.Add(enemy);
-        Debug.Log($"[EnemySpawnArea] {gameObject.name}: {enemy.name} を {spawnPosition} に生成。(alive={_aliveEnemies.Count}/{maxAliveCount})");
+        _spawnedPrefabByEnemy[enemy] = prefab;
+
+        Debug.Log($"[EnemySpawnArea] {gameObject.name}: {enemy.name} (prefab={prefab.name}, weight={selectedEntry.weight}) を {spawnPosition} に生成。(alive={_aliveEnemies.Count}/{maxAliveCount})");
         return true;
     }
 
@@ -167,19 +242,18 @@ public class EnemySpawnArea : MonoBehaviour
                 return true;
             }
         }
-        // 全試行失敗
         position = transform.position;
         return false;
     }
 
     // ─── 死亡 / 補充 ────────────────────────────────────────────
-    /// <summary>敌人死亡时回调：从 aliveEnemies 移除，并启动补怪协程。</summary>
+    /// <summary>敌人死亡时回调：从 aliveEnemies 与 prefab 统计中移除，并启动补怪协程。</summary>
     private void HandleEnemyDied(GameObject enemy)
     {
         _aliveEnemies.Remove(enemy);
+        _spawnedPrefabByEnemy.Remove(enemy);
         Debug.Log($"[EnemySpawnArea] {gameObject.name}: {enemy.name} が死亡。(alive={_aliveEnemies.Count}/{maxAliveCount})");
 
-        // SpawnArea が有効なら補怪タイマーを開始
         if (gameObject.activeInHierarchy)
             StartCoroutine(RespawnAfterDelay());
     }
