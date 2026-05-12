@@ -2,7 +2,7 @@
 
 /// <summary>
 /// プレイヤーの戦闘ステータスを一元管理するコンポーネント。
-/// 基礎値 + 装備ボーナスを合算して各種ステータスを提供する。
+/// 基礎値 + 装備ボーナス（Core / Armor / Accessory の合計）を合算して各種ステータスを提供する。
 /// PlayerEquipment.OnEquipmentChanged を監視し、装備変化時に
 /// HealthComponent へ自動的に最大生命値を適用する。
 /// </summary>
@@ -20,23 +20,33 @@ public class PlayerCombatStats : MonoBehaviour
     public float BaseNormalAttackDamage => baseNormalAttackDamage;
     public float BaseMaxHealth          => baseMaxHealth;
 
+    /// <summary>
+    /// 全装備スロット（Core / Armor / Accessory）の AttackPowerBonus 合計。
+    /// PlayerEquipment が null の場合は 0 を返す。空スロットは 0 として扱う。
+    /// </summary>
     public float EquipmentAttackPowerBonus
     {
         get
         {
             if (_playerEquipment == null) return 0f;
-            var core = _playerEquipment.EquippedCore;
-            return core != null ? core.AttackPowerBonus : 0f;
+            return GetAttackPowerBonus(_playerEquipment.EquippedCore)
+                 + GetAttackPowerBonus(_playerEquipment.EquippedArmor)
+                 + GetAttackPowerBonus(_playerEquipment.EquippedAccessory);
         }
     }
 
+    /// <summary>
+    /// 全装備スロット（Core / Armor / Accessory）の MaxHealthBonus 合計。
+    /// PlayerEquipment が null の場合は 0 を返す。空スロットは 0 として扱う。
+    /// </summary>
     public float EquipmentMaxHealthBonus
     {
         get
         {
             if (_playerEquipment == null) return 0f;
-            var core = _playerEquipment.EquippedCore;
-            return core != null ? core.MaxHealthBonus : 0f;
+            return GetMaxHealthBonus(_playerEquipment.EquippedCore)
+                 + GetMaxHealthBonus(_playerEquipment.EquippedArmor)
+                 + GetMaxHealthBonus(_playerEquipment.EquippedAccessory);
         }
     }
 
@@ -89,5 +99,17 @@ public class PlayerCombatStats : MonoBehaviour
     private void HandleEquipmentChanged()
     {
         ApplyCurrentMaxHealth(keepCurrentRatio: false);
+    }
+
+    /// <summary>アイテムの AttackPowerBonus を安全に取得する。item が null なら 0 を返す。</summary>
+    private static float GetAttackPowerBonus(ItemData item)
+    {
+        return item != null ? item.AttackPowerBonus : 0f;
+    }
+
+    /// <summary>アイテムの MaxHealthBonus を安全に取得する。item が null なら 0 を返す。</summary>
+    private static float GetMaxHealthBonus(ItemData item)
+    {
+        return item != null ? item.MaxHealthBonus : 0f;
     }
 }

@@ -28,7 +28,7 @@ public class SkeletonDebugUI : MonoBehaviour
         float panelWidth  = Mathf.Clamp(Screen.width * 0.32f, 320f, 420f);
         float panelHeight = Mathf.Max(300f, Screen.height - margin * 2f);
 
-        // ─── 左パネル（既存） ────────────────────────────────
+        // ─── 左パネル ────────────────────────────────────────
         GUILayout.BeginArea(new Rect(margin, margin, panelWidth, panelHeight), GUI.skin.box);
         scrollPosition = GUILayout.BeginScrollView(
             scrollPosition,
@@ -98,6 +98,7 @@ public class SkeletonDebugUI : MonoBehaviour
         }
         else GUILayout.Label("\u5f53\u524d Core\uff1a\uff08PlayerEquipment \u672a\u6302\u8f7d\uff09");
 
+        // ── Core ボタン ──
         GUI.backgroundColor = new Color(0.5f, 0.85f, 1f);
         if (GUILayout.Button("\u88c5\u5907\u6d4b\u8bd5 Core", GUILayout.Height(40))) EquipTestCore();
         GUI.backgroundColor = Color.white;
@@ -113,6 +114,32 @@ public class SkeletonDebugUI : MonoBehaviour
         GUI.backgroundColor = new Color(0.7f, 0.9f, 1f);
         if (GUILayout.Button("\u88c5\u5907\u80cc\u5305\u4e2d\u7684\u7b2c\u4e00\u4e2a Core", GUILayout.Height(40)))
             EquipFirstCoreFromInventory();
+        GUI.backgroundColor = Color.white;
+
+        GUILayout.Space(6);
+
+        // ── Armor ボタン（新規） ──
+        GUI.backgroundColor = new Color(0.7f, 1f, 0.85f);
+        if (GUILayout.Button("\u88c5\u5907\u80cc\u5305\u4e2d\u7684\u7b2c\u4e00\u4e2a Armor", GUILayout.Height(40)))
+            EquipFirstArmorFromInventory();
+        GUI.backgroundColor = Color.white;
+
+        GUI.backgroundColor = new Color(1f, 0.9f, 0.6f);
+        if (GUILayout.Button("\u5378\u4e0b Armor \u5230\u80cc\u5305", GUILayout.Height(40)))
+            UnequipArmorToInventory();
+        GUI.backgroundColor = Color.white;
+
+        GUILayout.Space(6);
+
+        // ── Accessory ボタン（新規） ──
+        GUI.backgroundColor = new Color(0.9f, 0.75f, 1f);
+        if (GUILayout.Button("\u88c5\u5907\u80cc\u5305\u4e2d\u7684\u7b2c\u4e00\u4e2a Accessory", GUILayout.Height(40)))
+            EquipFirstAccessoryFromInventory();
+        GUI.backgroundColor = Color.white;
+
+        GUI.backgroundColor = new Color(1f, 0.85f, 0.75f);
+        if (GUILayout.Button("\u5378\u4e0b Accessory \u5230\u80cc\u5305", GUILayout.Height(40)))
+            UnequipAccessoryToInventory();
         GUI.backgroundColor = Color.white;
 
         GUILayout.Space(10);
@@ -141,6 +168,9 @@ public class SkeletonDebugUI : MonoBehaviour
         GUILayout.EndScrollView();
         GUILayout.EndArea();
 
+        // ─── 装备状態窓口 ────────────────────────────────────
+        DrawEquipmentStatusWindow(margin, panelWidth);
+
         // ─── 右パネル（背包调试） ────────────────────────────
         float invPanelWidth  = Mathf.Clamp(Screen.width * 0.28f, 320f, 460f);
         float invPanelHeight = Mathf.Max(300f, Screen.height - margin * 2f);
@@ -156,6 +186,68 @@ public class SkeletonDebugUI : MonoBehaviour
         DrawInventoryDebugPanel();
         GUILayout.EndScrollView();
         GUILayout.EndArea();
+    }
+
+    // ─── 装备状態 Debug ウィンドウ ────────────────────────────
+
+    private void DrawEquipmentStatusWindow(float margin, float leftPanelWidth)
+    {
+        const float gap         = 12f;
+        const float equipWidth  = 310f;
+        const float equipHeight = 240f;
+
+        float equipX = margin + leftPanelWidth + gap;
+        float equipY = margin;
+
+        GUILayout.BeginArea(new Rect(equipX, equipY, equipWidth, equipHeight), GUI.skin.box);
+
+        var boldStyle = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold };
+        GUILayout.Label("--- \u88c5\u5907\u72b6\u6001 ---", boldStyle);
+        GUILayout.Space(4);
+
+        var eqp = ResolvePlayerEquipment(warnIfMissing: false);
+        if (eqp == null)
+        {
+            GUILayout.Label("PlayerEquipment not found");
+        }
+        else
+        {
+            DrawEquipmentSlotLine("Core",      eqp.EquippedCore);
+            DrawEquipmentSlotLine("Armor",     eqp.EquippedArmor);
+            DrawEquipmentSlotLine("Accessory", eqp.EquippedAccessory);
+        }
+
+        GUILayout.Space(6);
+        GUILayout.Label("--- \u6218\u6597\u5c5e\u6027\u6c47\u603b ---", boldStyle);
+
+        var cs = ResolvePlayerCombatStats();
+        if (cs == null)
+        {
+            GUILayout.Label("PlayerCombatStats not found");
+        }
+        else
+        {
+            GUILayout.Label($"Equipment ATK Bonus: {cs.EquipmentAttackPowerBonus}");
+            GUILayout.Label($"Equipment Max HP Bonus: {cs.EquipmentMaxHealthBonus}");
+            GUILayout.Label($"Current Normal Attack: {cs.CurrentNormalAttackDamage}");
+            GUILayout.Label($"Current Max Health: {cs.CurrentMaxHealth}");
+        }
+
+        GUILayout.EndArea();
+    }
+
+    private void DrawEquipmentSlotLine(string slotName, ItemData item)
+    {
+        if (item == null)
+        {
+            GUILayout.Label($"{slotName}: \u672a\u88c5\u5907");
+            return;
+        }
+        GUILayout.Label($"{slotName}: {item.ItemName}");
+        var sb = new System.Text.StringBuilder("  id: " + item.ItemId);
+        if (item.AttackPowerBonus > 0f) sb.Append($" / ATK +{item.AttackPowerBonus}");
+        if (item.MaxHealthBonus   > 0f) sb.Append($" / HP +{item.MaxHealthBonus}");
+        GUILayout.Label(sb.ToString());
     }
 
     // ─── 背包调试パネル ──────────────────────────────────────
@@ -222,7 +314,7 @@ public class SkeletonDebugUI : MonoBehaviour
         }
     }
 
-    // ─── 卸下 Core 到背包 ─────────────────────────────────────
+    // ─── Core 装備 / 卸下 ────────────────────────────────────
 
     private void UnequipCoreToInventory()
     {
@@ -237,10 +329,8 @@ public class SkeletonDebugUI : MonoBehaviour
         if (inv.AddItem(unequipped))
             Debug.Log($"[DebugUI] Core \u300c{unequipped.ItemName}\u300d\u3092\u88c5\u5099\u6307\u304b\u3089\u5916\u3057\u3001\u80cc\u5305\u306b\u623b\u3057\u307e\u3057\u305f\uff08ID: {unequipped.ItemId}\uff09");
         else
-            Debug.LogWarning($"[DebugUI] UnequipCoreToInventory: Core \u300c{unequipped.ItemName}\u300d\u3092\u5916\u3057\u307e\u3057\u305f\u304c\u3001\u80cc\u5305\u3078\u306e\u8ffd\u52a0\u306b\u5931\u6557\u3002\u72b6\u614b\u304c\u4e0d\u4e00\u81f4\u306e\u53ef\u80fd\u6027\u304c\u3042\u308a\u307e\u3059\u3002");
+            Debug.LogWarning($"[DebugUI] UnequipCoreToInventory: Core \u300c{unequipped.ItemName}\u300d\u3092\u5916\u3057\u307e\u3057\u305f\u304c\u3001\u80cc\u5305\u3078\u306e\u8ffd\u52a0\u306b\u5931\u6557\u3002");
     }
-
-    // ─── 从背包装备 Core ──────────────────────────────────────
 
     private void EquipFirstCoreFromInventory()
     {
@@ -257,7 +347,7 @@ public class SkeletonDebugUI : MonoBehaviour
 
         if (!inv.RemoveItem(newCore))
         {
-            Debug.LogError($"[DebugUI] EquipFirstCoreFromInventory: EquipCore \u6210\u529f\u4f46 RemoveItem \u5931\u8d25\uff01\u5e93\u5b58\u53ef\u80fd\u4e0d\u4e00\u81f4\u3002");
+            Debug.LogError("[DebugUI] EquipFirstCoreFromInventory: EquipCore \u6210\u529f\u4f46 RemoveItem \u5931\u8d25\uff01");
             return;
         }
 
@@ -266,8 +356,97 @@ public class SkeletonDebugUI : MonoBehaviour
             inv.AddItem(replacedCore);
             Debug.Log($"[DebugUI] \u65e7 Core \u300c{replacedCore.ItemName}\u300d\u5df2\u56de\u5230\u80cc\u5305\u3002");
         }
-
         Debug.Log($"[DebugUI] \u5df2\u4ece\u80cc\u5305\u88c5\u5907 Core\uff1a{newCore.ItemName}\uff08ID: {newCore.ItemId}\uff09");
+    }
+
+    // ─── Armor 装備 / 卸下（新規） ───────────────────────────
+
+    private void EquipFirstArmorFromInventory()
+    {
+        var inv = ResolvePlayerInventory();
+        var eqp = ResolvePlayerEquipment(warnIfMissing: true);
+        if (inv == null) { Debug.LogWarning("[DebugUI] EquipFirstArmorFromInventory: PlayerInventory not found."); return; }
+        if (eqp == null) return;
+
+        var newArmor = inv.FindFirstEquipmentBySlot(EquipmentSlotType.Armor);
+        if (newArmor == null) { Debug.LogWarning("[DebugUI] EquipFirstArmorFromInventory: \u80cc\u5305\u4e2d\u6ca1\u6709 Armor \u88c5\u5907\u3002"); return; }
+
+        bool success = eqp.EquipArmor(newArmor, out ItemData replacedArmor);
+        if (!success) return;
+
+        if (!inv.RemoveItem(newArmor))
+        {
+            Debug.LogError("[DebugUI] EquipFirstArmorFromInventory: EquipArmor \u6210\u529f\u4f46 RemoveItem \u5931\u8d25\uff01");
+            return;
+        }
+
+        if (replacedArmor != null)
+        {
+            inv.AddItem(replacedArmor);
+            Debug.Log($"[DebugUI] \u65e7 Armor \u300c{replacedArmor.ItemName}\u300d\u5df2\u56de\u5230\u80cc\u5305\u3002");
+        }
+        Debug.Log($"[DebugUI] \u5df2\u4ece\u80cc\u5305\u88c5\u5907 Armor\uff1a{newArmor.ItemName}\uff08ID: {newArmor.ItemId}\uff09");
+    }
+
+    private void UnequipArmorToInventory()
+    {
+        var inv = ResolvePlayerInventory();
+        var eqp = ResolvePlayerEquipment(warnIfMissing: true);
+        if (inv == null) { Debug.LogWarning("[DebugUI] UnequipArmorToInventory: PlayerInventory not found."); return; }
+        if (eqp == null) return;
+
+        ItemData unequipped = eqp.UnequipArmor();
+        if (unequipped == null) return;
+
+        if (inv.AddItem(unequipped))
+            Debug.Log($"[DebugUI] Armor \u300c{unequipped.ItemName}\u300d\u3092\u88c5\u5099\u6307\u304b\u3089\u5916\u3057\u3001\u80cc\u5305\u306b\u623b\u3057\u307e\u3057\u305f\uff08ID: {unequipped.ItemId}\uff09");
+        else
+            Debug.LogWarning($"[DebugUI] UnequipArmorToInventory: Armor \u300c{unequipped.ItemName}\u300d\u3092\u5916\u3057\u307e\u3057\u305f\u304c\u3001\u80cc\u5305\u3078\u306e\u8ffd\u52a0\u306b\u5931\u6557\u3002");
+    }
+
+    // ─── Accessory 装備 / 卸下（新規） ───────────────────────
+
+    private void EquipFirstAccessoryFromInventory()
+    {
+        var inv = ResolvePlayerInventory();
+        var eqp = ResolvePlayerEquipment(warnIfMissing: true);
+        if (inv == null) { Debug.LogWarning("[DebugUI] EquipFirstAccessoryFromInventory: PlayerInventory not found."); return; }
+        if (eqp == null) return;
+
+        var newAccessory = inv.FindFirstEquipmentBySlot(EquipmentSlotType.Accessory);
+        if (newAccessory == null) { Debug.LogWarning("[DebugUI] EquipFirstAccessoryFromInventory: \u80cc\u5305\u4e2d\u6ca1\u6709 Accessory \u88c5\u5907\u3002"); return; }
+
+        bool success = eqp.EquipAccessory(newAccessory, out ItemData replacedAccessory);
+        if (!success) return;
+
+        if (!inv.RemoveItem(newAccessory))
+        {
+            Debug.LogError("[DebugUI] EquipFirstAccessoryFromInventory: EquipAccessory \u6210\u529f\u4f46 RemoveItem \u5931\u8d25\uff01");
+            return;
+        }
+
+        if (replacedAccessory != null)
+        {
+            inv.AddItem(replacedAccessory);
+            Debug.Log($"[DebugUI] \u65e7 Accessory \u300c{replacedAccessory.ItemName}\u300d\u5df2\u56de\u5230\u80cc\u5305\u3002");
+        }
+        Debug.Log($"[DebugUI] \u5df2\u4ece\u80cc\u5305\u88c5\u5907 Accessory\uff1a{newAccessory.ItemName}\uff08ID: {newAccessory.ItemId}\uff09");
+    }
+
+    private void UnequipAccessoryToInventory()
+    {
+        var inv = ResolvePlayerInventory();
+        var eqp = ResolvePlayerEquipment(warnIfMissing: true);
+        if (inv == null) { Debug.LogWarning("[DebugUI] UnequipAccessoryToInventory: PlayerInventory not found."); return; }
+        if (eqp == null) return;
+
+        ItemData unequipped = eqp.UnequipAccessory();
+        if (unequipped == null) return;
+
+        if (inv.AddItem(unequipped))
+            Debug.Log($"[DebugUI] Accessory \u300c{unequipped.ItemName}\u300d\u3092\u88c5\u5099\u6307\u304b\u3089\u5916\u3057\u3001\u80cc\u5305\u306b\u623b\u3057\u307e\u3057\u305f\uff08ID: {unequipped.ItemId}\uff09");
+        else
+            Debug.LogWarning($"[DebugUI] UnequipAccessoryToInventory: Accessory \u300c{unequipped.ItemName}\u300d\u3092\u5916\u3057\u307e\u3057\u305f\u304c\u3001\u80cc\u5305\u3078\u306e\u8ffd\u52a0\u306b\u5931\u6557\u3002");
     }
 
     // ─── 最大生命値適用 ──────────────────────────────────────
@@ -322,7 +501,7 @@ public class SkeletonDebugUI : MonoBehaviour
         pe.UnequipCore();
     }
 
-    // ─── 既存のヘルパー（変更なし）──────────────────────────
+    // ─── 既存ヘルパー ────────────────────────────────────────
 
     private GameObject FindPlayerGameObject()
     {
@@ -349,7 +528,7 @@ public class SkeletonDebugUI : MonoBehaviour
         var health       = player.GetComponent<HealthComponent>();
         var deathHandler = player.GetComponent<PlayerDeathHandler>();
         if (health == null)       { Debug.LogWarning("[DebugUI] Player HealthComponent not found."); return; }
-        if (deathHandler == null) { Debug.LogWarning("[DebugUI] PlayerDeathHandler not found.");     return; }
+        if (deathHandler == null) { Debug.LogWarning("[DebugUI] PlayerDeathHandler not found."); return; }
         health.RestoreFullHealth();
         deathHandler.ResetForRespawn();
         var levelManager = FindFirstObjectByType<LevelObjectiveManager>();
