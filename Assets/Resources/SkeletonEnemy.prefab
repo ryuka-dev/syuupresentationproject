@@ -733,12 +733,15 @@ MonoBehaviour:
   disengageDistance: 15
   disengageDelay: 3
   returnToSpawnStopDistance: 0.5
+  returnNavMeshSampleDistance: 3
   wanderRadius: 6
   leashRadius: 25
   wanderMoveSpeed: 2
   wanderPointReachDistance: 0.8
   minIdleTime: 2
   maxIdleTime: 5
+  chaseDestinationUpdateInterval: 0.2
+  chaseNavMeshSampleDistance: 2
 --- !u!114 &7182466527157778218
 MonoBehaviour:
   m_ObjectHideFlags: 0
