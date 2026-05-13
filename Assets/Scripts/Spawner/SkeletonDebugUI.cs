@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.InputSystem;
 
 public class SkeletonDebugUI : MonoBehaviour
@@ -190,14 +190,14 @@ public class SkeletonDebugUI : MonoBehaviour
 
     // ─── 装备状態 Debug ウィンドウ ────────────────────────────
 
-    private void DrawEquipmentStatusWindow(float margin, float leftPanelWidth)
+private void DrawEquipmentStatusWindow(float margin, float leftPanelWidth)
     {
-        const float gap         = 12f;
-        const float equipWidth  = 310f;
-        const float equipHeight = 240f;
+        const float gap        = 12f;
+        const float equipWidth = 310f;
 
-        float equipX = margin + leftPanelWidth + gap;
-        float equipY = margin;
+        float equipX      = margin + leftPanelWidth + gap;
+        float equipY      = margin;
+        float equipHeight = CalculateEquipmentStatusWindowHeight(equipWidth);
 
         GUILayout.BeginArea(new Rect(equipX, equipY, equipWidth, equipHeight), GUI.skin.box);
 
@@ -236,19 +236,71 @@ public class SkeletonDebugUI : MonoBehaviour
         GUILayout.EndArea();
     }
 
-    private void DrawEquipmentSlotLine(string slotName, ItemData item)
+private void DrawEquipmentSlotLine(string slotName, ItemData item)
+    {
+        var lines = BuildEquipmentSlotLines(slotName, item);
+        foreach (var line in lines)
+            GUILayout.Label(line);
+    }
+
+private string[] BuildEquipmentSlotLines(string slotName, ItemData item)
     {
         if (item == null)
-        {
-            GUILayout.Label($"{slotName}: \u672a\u88c5\u5907");
-            return;
-        }
-        GUILayout.Label($"{slotName}: {item.ItemName}");
+            return new[] { $"{slotName}: \u672a\u88c5\u5907" };
+
         var sb = new System.Text.StringBuilder("  id: " + item.ItemId);
         if (item.AttackPowerBonus > 0f) sb.Append($" / ATK +{item.AttackPowerBonus}");
         if (item.MaxHealthBonus   > 0f) sb.Append($" / HP +{item.MaxHealthBonus}");
-        GUILayout.Label(sb.ToString());
+
+        return new[] { $"{slotName}: {item.ItemName}", sb.ToString() };
     }
+
+
+
+private float CalculateEquipmentStatusWindowHeight(float width)
+    {
+        // lineHeight は 24f を下限にすることで、未装備状態（9行）でも
+        // 計算値が 240f を超え、1件装備するたびに確実に高さが増加する。
+        float lineHeight = Mathf.Max(24f, GUI.skin.label.lineHeight + 4f);
+        int lineCount = 0;
+
+        lineCount += 1; // --- 装备状态 ---
+
+        var eqp = ResolvePlayerEquipment(warnIfMissing: false);
+        if (eqp == null)
+        {
+            lineCount += 1; // "PlayerEquipment not found"
+        }
+        else
+        {
+            lineCount += BuildEquipmentSlotLines("Core",      eqp.EquippedCore).Length;
+            lineCount += BuildEquipmentSlotLines("Armor",     eqp.EquippedArmor).Length;
+            lineCount += BuildEquipmentSlotLines("Accessory", eqp.EquippedAccessory).Length;
+        }
+
+        lineCount += 1; // --- 战斗属性汇总 ---
+
+        var cs = ResolvePlayerCombatStats();
+        if (cs == null)
+        {
+            lineCount += 1; // "PlayerCombatStats not found"
+        }
+        else
+        {
+            lineCount += 4; // ATK Bonus, Max HP Bonus, Normal Attack, Max Health
+        }
+
+        float height = 8f                  // top padding
+                     + lineCount * lineHeight
+                     + 4f                  // Space(4) after title
+                     + 6f                  // Space(6) between sections
+                     + 20f;               // bottom safety margin
+
+        return Mathf.Max(240f, height);
+    }
+
+
+
 
     // ─── 背包调试パネル ──────────────────────────────────────
 
