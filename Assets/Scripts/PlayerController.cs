@@ -70,12 +70,15 @@ void FixedUpdate()
         if (keyboard.sKey.isPressed) v -= 1f;
         if (keyboard.wKey.isPressed) v += 1f;
 
-        // hasMoveInput を先に決定してから isSprinting を判定（Legacy-like: 全方向で Shift 走山）
+        // LMB + RMB = move toward camera forward (MMO dual-button forward)
+        var mouse = Mouse.current;
+        if (mouse != null && mouse.leftButton.isPressed && mouse.rightButton.isPressed)
+            v = Mathf.Max(v, 1f);
+
         bool  hasMoveInput = (h != 0f || v != 0f);
         bool  isSprinting  = hasMoveInput && keyboard.leftShiftKey.isPressed;
         float currentSpeed = isSprinting ? sprintSpeed : moveSpeed;
 
-        // Legacy-like: camera-relative movement direction
         Vector3 dir = Vector3.zero;
         if (hasMoveInput)
         {
@@ -102,7 +105,6 @@ void FixedUpdate()
             transform.rotation   = Quaternion.Slerp(transform.rotation, targetRot, rotationSpeed * Time.fixedDeltaTime);
         }
 
-        // Legacy-like anim: always forward blend, never left/right/back
         if (anim != null)
         {
             float targetAnimSpeed = hasMoveInput ? (isSprinting ? 1f : 0.5f) : 0f;
