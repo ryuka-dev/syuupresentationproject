@@ -52,7 +52,7 @@ void LateUpdate()
         var mouse = Mouse.current;
         if (mouse == null) return;
 
-        // 右键のみドラッグ対象（左键は鏡頭回転に参加しない）
+        // 右键のみドラッグ対象（左键は鏡头に触れない）
         bool rmb = mouse.rightButton.isPressed;
 
         if (rmb && !_isCameraDragging)

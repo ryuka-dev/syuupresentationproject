@@ -974,7 +974,7 @@ MonoBehaviour:
   minDistance: 2
   maxDistance: 14
   zoomSpeed: 3
-  rotationSpeed: 200
+  rotationSpeed: 0.5
   minPitch: 10
   maxPitch: 75
   followSmooth: 10
@@ -2643,6 +2643,7 @@ MonoBehaviour:
   moveSpeed: 5
   sprintSpeed: 10
   jumpForce: 6
+  rotationSpeed: 12
   cameraTransform: {fileID: 330585546}
 --- !u!114 &919417046
 MonoBehaviour:
