@@ -1,6 +1,6 @@
 ﻿# PROJECT_STATE
 
-最后更新：2026-05-12  
+最后更新：2026-05-13  
 当前主要场景：`Assets/Scenes/SampleScene.unity`  
 Unity 版本：6000.4.3f1 (Unity 6)
 
@@ -41,9 +41,9 @@ Unity 版本：6000.4.3f1 (Unity 6)
 → 玩家靠近按 E 拾取
 → PlayerInventory 按物品规则加入库存
 → F1 右侧背包 Debug 面板显示当前库存
-→ 从背包中装备 Core
-→ PlayerEquipment 更新装备槽
-→ PlayerCombatStats 重新计算攻击力 / 最大生命值
+→ 从背包中装备 Core / Armor / Accessory
+→ PlayerEquipment 更新对应装备槽
+→ PlayerCombatStats 汇总多装备槽攻击力 / 最大生命值
 → HealthComponent 自动应用最大生命值
 → 玩家变强
 → 刷怪点延迟刷新敌人
@@ -75,7 +75,7 @@ Unity 版本：6000.4.3f1 (Unity 6)
 
 敌人有限状态机（Idle / Wander / Chase / Attack / ReturnToSpawn）+ 仇恨系统 + NavMeshAgent 优先移动 + 野怪脱战回家逻辑。
 
-当前 EnemyAI 已从纯 Rigidbody 直线移动，推进到“NavMeshAgent 优先，Rigidbody fallback”的过渡架构。
+当前 EnemyAI 已从纯 Rigidbody 直线移动，推进到“NavMeshAgent 主导移动，Rigidbody 主要用于碰撞 / 物理辅助，并保留必要旧 fallback 兼容”的过渡架构。
 
 重要点：
 
@@ -352,11 +352,28 @@ EnterReturnToSpawn()
 计算规则：
 
 ```text
-EquipmentAttackPowerBonus = EquippedCore?.AttackPowerBonus ?? 0
-CurrentNormalAttackDamage = BaseNormalAttackDamage + EquipmentAttackPowerBonus
-EquipmentMaxHealthBonus = EquippedCore?.MaxHealthBonus ?? 0
-CurrentMaxHealth = Max(1, BaseMaxHealth + EquipmentMaxHealthBonus)
+EquipmentAttackPowerBonus
+= EquippedCore.AttackPowerBonus
++ EquippedArmor.AttackPowerBonus
++ EquippedAccessory.AttackPowerBonus
+
+CurrentNormalAttackDamage
+= BaseNormalAttackDamage + EquipmentAttackPowerBonus
+
+EquipmentMaxHealthBonus
+= EquippedCore.MaxHealthBonus
++ EquippedArmor.MaxHealthBonus
++ EquippedAccessory.MaxHealthBonus
+
+CurrentMaxHealth
+= Max(1, BaseMaxHealth + EquipmentMaxHealthBonus)
 ```
+
+安全规则：
+
+- `PlayerEquipment == null` 时装备加成按 0 处理，不崩溃。
+- 任意空装备槽按 0 处理。
+- 当前不汇总 Weapon，因为主角武器固定，不进入装备系统。
 
 装备变化自动刷新：
 
@@ -412,7 +429,6 @@ public enum EquipmentSlotType
 {
     None,
     Core,
-    Weapon,
     Armor,
     Accessory
 }
@@ -528,21 +544,38 @@ public enum EquipmentSlotType
 
 ### `PlayerEquipment.cs`
 
-玩家装备容器雏形，当前只支持 Core 槽。
+玩家装备容器，当前支持三个装备槽：
+
+```text
+Core
+Armor
+Accessory
+```
+
+设计说明：
+
+- 主角武器固定，不进入装备系统。
+- 当前没有 Weapon 装备槽。
+- 当前装备仍以 `ItemData` 表示，不支持同名装备不同词条。
+- `OnEquipmentChanged` 会在任意装备槽变化时触发。
 
 字段 / 属性：
 
 - `[SerializeField] private ItemData equippedCore`
+- `[SerializeField] private ItemData equippedArmor`
+- `[SerializeField] private ItemData equippedAccessory`
 - `EquippedCore`
+- `EquippedArmor`
+- `EquippedAccessory`
 - `HasCoreEquipped`
+- `HasArmorEquipped`
+- `HasAccessoryEquipped`
 
 事件：
 
 ```csharp
 public event System.Action OnEquipmentChanged;
 ```
-
-方法：
 
 #### `EquipCore(ItemData item, out ItemData replacedItem)`
 
@@ -567,19 +600,57 @@ public bool EquipCore(ItemData item)
 }
 ```
 
-#### `UnequipCore()`
+#### `EquipArmor(ItemData item, out ItemData replacedItem)`
 
-- 当前无装备 → Warning + null
+规则与 Core 相同，但要求：
+
+```text
+item.EquipmentSlotType == Armor
+```
+
+保留重载：
+
+```csharp
+public bool EquipArmor(ItemData item)
+{
+    return EquipArmor(item, out _);
+}
+```
+
+#### `EquipAccessory(ItemData item, out ItemData replacedItem)`
+
+规则与 Core 相同，但要求：
+
+```text
+item.EquipmentSlotType == Accessory
+```
+
+保留重载：
+
+```csharp
+public bool EquipAccessory(ItemData item)
+{
+    return EquipAccessory(item, out _);
+}
+```
+
+#### `UnequipCore()` / `UnequipArmor()` / `UnequipAccessory()`
+
+规则：
+
+- 当前槽位无装备 → Warning + null
 - 有装备：
-  - 保存当前 Core
-  - `equippedCore = null`
+  - 保存当前装备
+  - 对应槽位置 null
   - 触发 `OnEquipmentChanged`
   - 返回被卸下的 `ItemData`
 
 #### `ClearEquipment()`
 
-- 若当前有 Core，则清空并触发 `OnEquipmentChanged`
-- 若已经为空，不触发事件
+- 当前任意槽位有装备时：
+  - 一次性清空 `equippedCore / equippedArmor / equippedAccessory`
+  - 只触发一次 `OnEquipmentChanged`
+- 若三个槽位本来都为空，不触发事件。
 
 ### 背包容器 ↔ 装备容器 当前流程
 
@@ -787,6 +858,10 @@ drops[1]
   - 强制清空 Core（Debug）/ 旧名“卸下测试 Core”
   - 卸下 Core 到背包
   - 装备背包中的第一个 Core
+  - 装备背包中的第一个 Armor
+  - 卸下 Armor 到背包
+  - 装备背包中的第一个 Accessory
+  - 卸下 Accessory 到背包
 - 战斗属性调试：
   - Base Normal Attack Damage
   - Equipment Attack Bonus
@@ -795,6 +870,53 @@ drops[1]
   - Base Max Health
   - Current Max Health
   - 应用当前最大生命值
+
+### 当前装备状态 Debug 窗口
+
+新增独立装备状态窗口，不塞进左侧按钮长条，也不放进右侧背包窗口。
+
+绘制方法：
+
+- `DrawEquipmentStatusWindow(float margin, float leftPanelWidth)`
+- `DrawEquipmentSlotLine(string slotName, ItemData item)`
+
+位置 / 尺寸：
+
+```csharp
+float equipX = margin + leftPanelWidth + 12f;
+float equipY = margin;
+float width  = 310f;
+float height = 240f;
+```
+
+说明：
+
+- `margin` 当前为 `20f`。
+- 左侧主面板宽度为 `Mathf.Clamp(Screen.width * 0.32f, 320f, 420f)`。
+- 装备窗口跟随左侧主面板宽度变化，显示在主 Debug 按钮面板右侧。
+- 窗口位于屏幕左上区域，不延伸到屏幕下方。
+- 第一版只显示信息，不提供装备 / 卸下按钮。
+
+显示内容：
+
+```text
+--- 装备状态 ---
+Core: 当前装备 / 未装备
+Armor: 当前装备 / 未装备
+Accessory: 当前装备 / 未装备
+
+--- 战斗属性汇总 ---
+Equipment ATK Bonus
+Equipment Max HP Bonus
+Current Normal Attack
+Current Max Health
+```
+
+安全规则：
+
+- 缺少 `PlayerEquipment` 时显示 `PlayerEquipment not found`，不崩溃。
+- 缺少 `PlayerCombatStats` 时显示 `PlayerCombatStats not found`，不崩溃。
+- 空槽位显示“未装备”。
 
 ### 当前右侧背包 Debug 窗口
 
@@ -1066,16 +1188,21 @@ Cursor 当前规则：
 ### 装备 / 数值
 
 - ✅ PlayerEquipment Core 装备槽
+- ✅ PlayerEquipment Armor 装备槽
+- ✅ PlayerEquipment Accessory 装备槽
+- ✅ 主角武器固定，不进入装备系统
 - ✅ EquipCore 支持替换旧 Core
-- ✅ UnequipCore 返回卸下装备
+- ✅ EquipArmor 支持替换旧 Armor
+- ✅ EquipAccessory 支持替换旧 Accessory
+- ✅ UnequipCore / UnequipArmor / UnequipAccessory 返回卸下装备
 - ✅ OnEquipmentChanged 事件
 - ✅ PlayerCombatStats 监听装备变化
-- ✅ Core 装备影响普通攻击伤害
-- ✅ Core 装备影响最大生命值
+- ✅ PlayerCombatStats 汇总 Core / Armor / Accessory 的攻击力加成
+- ✅ PlayerCombatStats 汇总 Core / Armor / Accessory 的最大生命值加成
 - ✅ 最大生命值变化自动应用到 HealthComponent
 - ✅ 背包 → 装备槽
 - ✅ 装备槽 → 背包
-- ✅ 替换 Core 时旧 Core 回背包
+- ✅ 替换装备时旧装备回背包
 
 ### Debug / 工具
 
@@ -1084,7 +1211,12 @@ Cursor 当前规则：
 - ✅ Core 装备测试按钮
 - ✅ 从背包装备第一个 Core
 - ✅ 卸下 Core 到背包
+- ✅ 从背包装备第一个 Armor
+- ✅ 卸下 Armor 到背包
+- ✅ 从背包装备第一个 Accessory
+- ✅ 卸下 Accessory 到背包
 - ✅ 战斗属性显示
+- ✅ 独立装备状态 Debug 窗口
 - ✅ 右侧背包 Debug 窗口
 - ✅ 鼠标拖拽后永久消失问题修复
 
@@ -1102,12 +1234,12 @@ Cursor 当前规则：
 - ⚠️ 尚未实现装备拖拽、使用、删除、卖出。
 - ⚠️ 尚未实现正式 DropTable ScriptableObject。
 - ⚠️ 当前 EnemyDropper 是 Prefab 上的简单 drops 列表，不是完整掉落表系统。
-- ⚠️ 当前 Core 掉落概率配置为 20%，需 Play Mode 多次击杀或临时改 1.0 验证。
+- ⚠️ 当前部分测试装备资产 / 掉落配置仍是调试用途，正式掉落表尚未实现。
 
 ### 场景 / UI
 
 - ⚠️ LevelUI TMP 字体仍需确认是否绑定 `SourceHanSansSC-Medium_TMP.asset`。
-- ⚠️ DebugManager 上存在 Missing Mono Script，可单独清理。
+- ✅ DebugManager 上的 Missing Mono Script 已清理。
 - ⚠️ F1 Debug UI 是 OnGUI / IMGUI，不是正式 UI。
 - ⚠️ 正式发布前应隐藏或限制 Debug 菜单。
 - ⚠️ 玩家死亡后 RPGCameraController 被禁用，相机静止在死亡位置，暂无死亡镜头演出。
@@ -1119,7 +1251,7 @@ Cursor 当前规则：
 - ⚠️ `EnemyWorldManager` 与 `EnemySpawnPoint` 当前仍有 Find 系列 API，未来应改为注册缓存。
 - ⚠️ `SkeletonDebugUI` 目前职责较多，已接近 Runtime Debug Console，后续可拆分为 InventoryDebugPanel / EquipmentDebugPanel / CombatStatsDebugPanel。
 - ⚠️ `EntityStats.cs` 已创建但未集成。
-- ⚠️ EnemyAI 目前处于 NavMeshAgent / Rigidbody 过渡架构，`rb.isKinematic` 会在 Agent 状态与 fallback 状态间切换；后续建议整理驱动权，减少物理抖动风险。
+- ⚠️ EnemyAI 已整理移动控制权第一版，正常移动由 NavMeshAgent 主导；Rigidbody fallback 仍保留必要兼容，后续可继续收敛到“Rigidbody 只做碰撞”。
 - ⚠️ Chase 目标不可达时会保持 Chase 并持续重试，不会因寻路失败主动放弃；如果玩家长期站在敌人永远到不了的位置，敌人可能停在最后可达点附近持续追击，后续可考虑 Evade / Unreachable 规则。
 
 ### 地图 / Terrain
@@ -1130,7 +1262,7 @@ Cursor 当前规则：
   - SavePoint 位置
   - NavMesh / AI 可行走区域
 - ✅ ItemDrop 掉落高度已通过 EnemyDropper 贴地 Raycast 第一版改善。
-- ⚠️ 旧 Ground 系列对象需确认是否保留，避免参与 NavMesh Bake 或影响碰撞 / 射线检测。
+- ✅ 旧 Ground 系列对象已删除，当前主地面以 Terrain 为准。
 - ⚠️ 当前 NavMeshSurface 使用 `layerMask = ~0` 与 `collectObjects = All`，后续建议整理 Ground / Terrain / Environment Layer，避免临时对象或旧测试地块影响 NavMesh。
 - ⚠️ Terrain 或障碍物变化后需要重新 Bake NavMesh。
 
@@ -1178,8 +1310,9 @@ Cursor 当前规则：
 - Rigidbody 使用 `rb.linearVelocity`（Unity 6）。
 - 输入系统使用 `Mouse.current` / `Keyboard.current`，不得使用旧 `UnityEngine.Input`。
 - Debug OnGUI 可以继续用于开发工具，但正式 UI 应使用 Canvas / TMP / Button 或 UI Toolkit。
-- EnemyAI 当前优先使用 NavMeshAgent 处理 Wander / Chase / ReturnToSpawn，但必须保留 Agent 不可用时的 Rigidbody fallback。
+- EnemyAI 当前正常移动由 NavMeshAgent 主导；Rigidbody 主要用于碰撞 / 物理辅助，并保留必要旧 fallback 兼容。
 - Chase 中“目标点暂时不可达”不应被视为 Agent 失效；不要因此切 Rigidbody，应该继续追最后有效 destination 并持续重试。
+- 主角武器固定，不进入装备系统；当前装备槽为 Core / Armor / Accessory。
 
 ---
 
@@ -1242,12 +1375,13 @@ Cursor 当前规则：
 ```text
 刷怪
 → 战斗
-→ 掉落骨头 / 概率掉落 Core
+→ 掉落骨头 / 装备
 → 拾取
 → 背包显示
-→ 从背包装备 Core
-→ 攻击力 / 最大生命值变化
-→ 卸下 Core 回背包
+→ 从背包装备 Core / Armor / Accessory
+→ 攻击力 / 最大生命值汇总变化
+→ 卸下装备回背包
+→ 替换装备时旧装备回背包
 → 继续刷怪
 ```
 
@@ -1274,10 +1408,11 @@ Cursor 当前规则：
 
 #### 优先级 3：装备系统扩展
 
-1. 在继续使用 `ItemData` 的前提下增加 Weapon / Armor / Accessory 槽。
-2. `PlayerEquipment` 从单一 Core 字段扩展到多槽位。
-3. `PlayerCombatStats` 汇总多个装备槽属性。
-4. 暂时不做随机词条。
+1. 当前已完成 Core / Armor / Accessory 三槽结构。
+2. 当前已完成 PlayerCombatStats 多槽属性汇总。
+3. 后续可增加正式装备 UI、装备说明显示、装备来源整理。
+4. 主角武器固定，不进入装备系统。
+5. 暂时不做随机词条。
 
 #### 优先级 4：正式 UI
 
@@ -1311,53 +1446,47 @@ Cursor 当前规则：
 
 ### ⭐ 最推荐的下一个小任务
 
-**EnemyAI Agent / Rigidbody 驱动权整理第一版。**
+**整理 / 验证 Armor 与 Accessory 测试装备来源。**
 
 目的：
 
 ```text
-当前 Wander / Chase / ReturnToSpawn 都已经优先使用 NavMeshAgent。
-但 EnemyAI 仍处于过渡结构：
-Agent 状态下会切 rb.isKinematic = true，
-Attack / fallback 时又恢复 rb.isKinematic = false。
-
-下一步应减少 NavMeshAgent 与 Rigidbody 在不同状态之间争夺移动控制权，
-降低攻击时滑动、斜坡抖动、状态切换瞬间弹动的风险。
+PlayerEquipment 已支持 Core / Armor / Accessory。
+PlayerCombatStats 已汇总三槽属性。
+SkeletonDebugUI 已支持三槽显示与从背包装备 / 卸下。
+下一步应确认 Armor / Accessory 测试装备的获取方式，方便完整验证多槽装备闭环。
 ```
 
 建议目标：
 
 ```text
-只整理 EnemyAI.cs。
-不改 Animator / Prefab / Scene。
-不改攻击伤害判定。
-不改仇恨系统。
-确认 Agent 驱动状态与 Rigidbody fallback 状态的进入 / 退出规则。
-确保 Attack 状态停止 Agent 且不会继续滑动。
-确保 ResetToSpawn / ForceDisengageAndReturnToSpawn 清理 Agent 状态。
+只处理测试装备资产与必要的掉落配置。
+不改 PlayerEquipment / PlayerCombatStats / PlayerInventory。
+不做正式 DropTable。
+不做正式 UI。
+不做随机词条。
 ```
 
 验收目标：
 
 ```text
-Wander / Chase / ReturnToSpawn 正常使用 Agent。
-Attack 时敌人不滑动。
-Agent 不可用时 fallback 仍正常。
-Chase 目标点不可达时不切 Rigidbody。
-死亡、掉落、刷新流程不受影响。
+Armor / Accessory 能进入背包。
+能从 Debug UI 装备到对应槽位。
+装备后从背包移除。
+卸下后回背包。
+替换时旧装备回背包。
+装备状态窗口与战斗属性汇总实时变化。
 ```
 
 ### 备选任务
 
-1. 增加第二个测试 Core 装备，并验证替换装备流程。
-2. 整理 NavMeshSurface LayerMask，只让 Terrain / Ground / Environment 参与 Bake。
-3. 将 SampleScene 的 NavMeshData 独立保存为 `.asset`。
-4. 给 Attack 增加距离 hysteresis，减少 Chase / Attack 边缘抖动。
+1. 整理 NavMeshSurface LayerMask，只让 Terrain / Ground / Environment 参与 Bake。
+2. 将 SampleScene 的 NavMeshData 独立保存为 `.asset`。
+3. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
+4. 将 `SkeletonDebugUI` 拆分为多个 Debug Panel 脚本。
 5. 设计敌人长期不可达时的 Evade / ReturnToSpawn 规则。
-6. 清理 `DebugManager` Missing Script。
-7. 左侧 F1 Debug 面板加 ScrollView / 动态尺寸。
-8. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
-9. 将 `SkeletonDebugUI` 拆分为多个 Debug Panel 脚本。
+6. 若实际发现 Chase / Attack 边缘抖动，再给 Attack 增加距离 hysteresis。
+7. 正式背包 UI / 正式装备 UI 第一版。
 
 ## 12. 本次有效变更摘要（2026-05-11）
 
@@ -1674,3 +1803,107 @@ EnemyBase
 13. `Assets/Resources/SkeletonEnemy_Variant.prefab`：EnemyBase 的真正 Prefab Variant，模型 / 骨骼位于 VisualRoot 下，已恢复 eyePosition、drops、完整参数。
 14. `Assets/Resources/SkeletonBossEnemy_Variant.prefab`：EnemyBase 的真正 Prefab Variant，VisualRoot.scale=1.5，根对象 scale=1，已单独调整 Collider / NavMeshAgent。
 15. 旧 `SkeletonEnemy.prefab` / `SkeletonBossEnemy.prefab` 保留，未删除。
+
+---
+
+## 18. 本次有效变更摘要（2026-05-13）
+
+### EnemyAI 移动控制权整理第一版
+
+1. `EnemyAI.cs` 只做移动控制权整理，未修改 Animator / Prefab / Scene。
+2. 新增 / 整理 `ClearRigidbodyVelocity()`，统一清理 `rb.linearVelocity` 与 `rb.angularVelocity`。
+3. 新增 / 整理 `StopAgentMovement(bool resetPath)`，安全停止 NavMeshAgent，并按需 ResetPath。
+4. 新增 / 整理 `PrepareAgentDrivenMovement()`，Wander / Chase / ReturnToSpawn 进入 Agent 驱动前清理 Rigidbody 残留速度。
+5. 新增 / 整理 `StopMovementForAttack()`，Attack 进入时停止 Agent 并清理 Rigidbody 残留速度，避免攻击时滑动。
+6. `StopAgentAndRestoreRigidbody()` 整理为停止 Agent、恢复 Rigidbody 并清理残留速度。
+7. 正常移动路径继续由 NavMeshAgent 主导。
+8. Rigidbody 不再作为常规移动目标扩展方向，只保留碰撞 / 物理辅助 / 旧 fallback 兼容。
+9. Chase 目标点暂时不可达时仍不切 Rigidbody，继续追旧 path / last valid destination。
+10. `OnAttackHit()`、攻击伤害、仇恨系统、`SetSpawnAreaContext()` 均未修改。
+11. 用户实测未发现明显 Chase / Attack 抖动，因此暂不做 Attack 距离 hysteresis。
+
+### 清理项状态确认
+
+1. `DebugManager` 上的 Missing Mono Script 已清理。
+2. 旧 `Ground / Ground(1) ...` 系列对象已删除。
+3. 当前主地面以 Terrain 为准。
+4. EnemySpawnArea 区域刷怪系统经用户确认目前没有明显问题。
+5. Core 替换闭环已验证：背包多个 Core、装备新 Core、旧 Core 回背包、数值变化、卸下回背包均正常。
+
+### 装备系统扩展：Core / Armor / Accessory
+
+1. 项目设计确认：主角武器固定，不进入装备系统。
+2. 当前装备槽为 `Core / Armor / Accessory`，不包含 Weapon。
+3. `PlayerEquipment.cs` 从单 Core 槽扩展为三槽：`equippedCore / equippedArmor / equippedAccessory`。
+4. 新增属性：`EquippedArmor`、`EquippedAccessory`、`HasArmorEquipped`、`HasAccessoryEquipped`。
+5. 新增方法：`EquipArmor()`、`EquipArmor(item, out replacedItem)`、`UnequipArmor()`。
+6. 新增方法：`EquipAccessory()`、`EquipAccessory(item, out replacedItem)`、`UnequipAccessory()`。
+7. 保留所有既有 Core API：`EquippedCore`、`HasCoreEquipped`、`EquipCore()`、`UnequipCore()`、`ClearEquipment()`、`OnEquipmentChanged`。
+8. `ClearEquipment()` 现在一次性清空 Core / Armor / Accessory；任意槽位有装备时只触发一次 `OnEquipmentChanged`。
+
+### PlayerCombatStats 多装备槽属性汇总
+
+1. `PlayerCombatStats.cs` 只修改属性汇总逻辑。
+2. 新增私有 helper：`GetAttackPowerBonus(ItemData item)` 与 `GetMaxHealthBonus(ItemData item)`。
+3. `EquipmentAttackPowerBonus` 现在汇总 Core + Armor + Accessory。
+4. `EquipmentMaxHealthBonus` 现在汇总 Core + Armor + Accessory。
+5. `CurrentNormalAttackDamage = BaseNormalAttackDamage + EquipmentAttackPowerBonus` 保持不变。
+6. `CurrentMaxHealth = Mathf.Max(1f, BaseMaxHealth + EquipmentMaxHealthBonus)` 保持不变。
+7. `ApplyCurrentMaxHealth(false)` 行为保持不变：装备加最大生命值不会自动补满血，卸下导致上限降低时由 `HealthComponent.SetMaxHealth()` 裁剪当前 HP。
+8. `PlayerEquipment == null` 或空槽位时按 0 加成处理，不崩溃。
+9. 未新增 Weapon 汇总逻辑。
+
+### SkeletonDebugUI 装备状态窗口
+
+1. `SkeletonDebugUI.cs` 新增独立装备状态 Debug 窗口。
+2. 新窗口显示在左侧 Debug 按钮面板右侧，整体仍在屏幕左上区域。
+3. 新窗口高度固定较小，不延伸到屏幕下方。
+4. 新增方法：`DrawEquipmentStatusWindow(float margin, float leftPanelWidth)`。
+5. 新增方法：`DrawEquipmentSlotLine(string slotName, ItemData item)`。
+6. 窗口显示 Core / Armor / Accessory 当前装备状态。
+7. 窗口显示 `EquipmentAttackPowerBonus`、`EquipmentMaxHealthBonus`、`CurrentNormalAttackDamage`、`CurrentMaxHealth`。
+8. 缺少 `PlayerEquipment` 或 `PlayerCombatStats` 时只显示提示，不崩溃。
+9. 未影响右侧背包 Debug 窗口。
+10. 未新增 Weapon 显示。
+
+### SkeletonDebugUI 多装备槽操作按钮
+
+1. `SkeletonDebugUI.cs` 新增 Armor / Accessory Debug 操作按钮。
+2. 新增按钮：装备背包中的第一个 Armor。
+3. 新增按钮：卸下 Armor 到背包。
+4. 新增按钮：装备背包中的第一个 Accessory。
+5. 新增按钮：卸下 Accessory 到背包。
+6. 新增方法：`EquipFirstArmorFromInventory()`。
+7. 新增方法：`UnequipArmorToInventory()`。
+8. 新增方法：`EquipFirstAccessoryFromInventory()`。
+9. 新增方法：`UnequipAccessoryToInventory()`。
+10. 装备流程与 Core 保持一致：`FindFirstEquipmentBySlot()` → `EquipX(out replacedItem)` → `RemoveItem(newItem)` → 旧装备回背包。
+11. 卸下流程与 Core 保持一致：`UnequipX()` → `AddItem(unequippedItem)`。
+12. 未修改 PlayerEquipment / PlayerInventory / PlayerCombatStats / ItemData。
+13. 未修改 Animator / Prefab / Scene。
+14. 未新增 Weapon 按钮或 Weapon 逻辑。
+
+### 当前有效状态总结
+
+```text
+EnemyAI：
+正常移动由 NavMeshAgent 主导。
+Rigidbody 主要承担碰撞 / 物理辅助，并保留必要旧 fallback 兼容。
+Attack 进入时会停止 Agent 并清理 Rigidbody 残留速度。
+
+装备：
+当前装备槽为 Core / Armor / Accessory。
+主角武器固定，不进入装备系统。
+PlayerEquipment 已支持三槽装备 / 卸下 / 替换。
+PlayerCombatStats 已汇总三槽攻击力与最大生命值。
+
+Debug：
+F1 Debug UI 左侧按钮区支持 Core / Armor / Accessory 装备操作。
+左上区域有独立装备状态窗口。
+右侧仍为背包 Debug 窗口。
+
+场景清理：
+DebugManager Missing Script 已清理。
+旧 Ground 系列对象已删除。
+EnemySpawnArea 与装备替换闭环已由用户确认没有明显问题。
+```
