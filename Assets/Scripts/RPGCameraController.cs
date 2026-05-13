@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
@@ -45,40 +45,34 @@ public class RPGCameraController : MonoBehaviour
         SetCursorVisible(true);
     }
 
-    void LateUpdate()
+void LateUpdate()
     {
         if (target == null) return;
 
         var mouse = Mouse.current;
         if (mouse == null) return;
 
-        bool lmb = mouse.leftButton.isPressed;
+        // 右键のみドラッグ対象（左键は鏡頭回転に参加しない）
         bool rmb = mouse.rightButton.isPressed;
-        bool dragging = lmb || rmb;
 
-        // ドラッグ開始
-        if (dragging && !_isCameraDragging)
+        if (rmb && !_isCameraDragging)
         {
             _isCameraDragging = true;
             SetCursorVisible(false);
         }
-        // ドラッグ終了
-        else if (!dragging && _isCameraDragging)
+        else if (!rmb && _isCameraDragging)
         {
             _isCameraDragging = false;
             SetCursorVisible(true);
         }
 
-        if (dragging)
+        if (rmb)
         {
             Vector2 delta = mouse.delta.ReadValue();
             _yaw   += delta.x * rotationSpeed * Time.deltaTime;
             _pitch -= delta.y * rotationSpeed * Time.deltaTime;
             _pitch  = Mathf.Clamp(_pitch, minPitch, maxPitch);
-
-            // 右键：角色朝向与摄像机 Yaw 同步
-            if (rmb)
-                target.rotation = Quaternion.Euler(0f, _yaw, 0f);
+            // Player 朝向は PlayerController が移动方向に合わせて制御する
         }
 
         // 滚轮缩放

@@ -10,6 +10,9 @@ public class PlayerController : MonoBehaviour
 
     [Header("跳跃")]
     public float jumpForce = 6f;
+    [Header("旋转")]
+    [SerializeField] private float rotationSpeed = 12f;
+
 
     [Header("摄像机参考")]
     public Transform cameraTransform;
@@ -56,7 +59,7 @@ void Update()
         }
     }
 
-    void FixedUpdate()
+void FixedUpdate()
     {
         var keyboard = Keyboard.current;
         if (keyboard == null) return;
@@ -67,16 +70,44 @@ void Update()
         if (keyboard.sKey.isPressed) v -= 1f;
         if (keyboard.wKey.isPressed) v += 1f;
 
-        bool  isSprinting  = keyboard.leftShiftKey.isPressed && v > 0f;
+        // hasMoveInput を先に決定してから isSprinting を判定（Legacy-like: 全方向で Shift 走山）
+        bool  hasMoveInput = (h != 0f || v != 0f);
+        bool  isSprinting  = hasMoveInput && keyboard.leftShiftKey.isPressed;
         float currentSpeed = isSprinting ? sprintSpeed : moveSpeed;
 
-        Vector3 dir = (transform.forward * v + transform.right * h).normalized;
+        // Legacy-like: camera-relative movement direction
+        Vector3 dir = Vector3.zero;
+        if (hasMoveInput)
+        {
+            if (cameraTransform == null && Camera.main != null)
+                cameraTransform = Camera.main.transform;
+            if (cameraTransform != null)
+            {
+                Vector3 camForward = Vector3.ProjectOnPlane(cameraTransform.forward, Vector3.up).normalized;
+                Vector3 camRight   = Vector3.ProjectOnPlane(cameraTransform.right,   Vector3.up).normalized;
+                dir = (camForward * v + camRight * h).normalized;
+            }
+            else
+            {
+                Debug.LogWarning("[PlayerController] cameraTransform not set.");
+                dir = (transform.forward * v + transform.right * h).normalized;
+            }
+        }
+
         rb.linearVelocity = new Vector3(dir.x * currentSpeed, rb.linearVelocity.y, dir.z * currentSpeed);
 
+        if (dir.sqrMagnitude > 0.001f)
+        {
+            Quaternion targetRot = Quaternion.LookRotation(dir, Vector3.up);
+            transform.rotation   = Quaternion.Slerp(transform.rotation, targetRot, rotationSpeed * Time.fixedDeltaTime);
+        }
+
+        // Legacy-like anim: always forward blend, never left/right/back
         if (anim != null)
         {
-            anim.SetFloat("Speed",       v,           0.1f, Time.deltaTime);
-            anim.SetFloat("Horizontal",  h,           0.1f, Time.deltaTime);
+            float targetAnimSpeed = hasMoveInput ? (isSprinting ? 1f : 0.5f) : 0f;
+            anim.SetFloat("Speed",      targetAnimSpeed, 0.1f, Time.fixedDeltaTime);
+            anim.SetFloat("Horizontal", 0f,              0.1f, Time.fixedDeltaTime);
             anim.SetBool ("IsSprinting", isSprinting);
         }
     }
