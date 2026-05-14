@@ -974,7 +974,7 @@ MonoBehaviour:
   minDistance: 2
   maxDistance: 14
   zoomSpeed: 3
-  rotationSpeed: 0.5
+  rotationSpeed: 20
   minPitch: 10
   maxPitch: 75
   followSmooth: 10
