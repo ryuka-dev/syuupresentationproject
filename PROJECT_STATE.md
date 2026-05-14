@@ -35,6 +35,7 @@ Unity 版本：6000.4.3f1 (Unity 6)
 玩家移动
 → 鼠标左键选中敌人
 → 按 1 使用普通攻击
+→ 敌人普通攻击 / 指定敌人释放读条技能
 → 敌人死亡
 → 任务击杀进度增加
 → 敌人生成多个 ItemDrop
@@ -88,6 +89,7 @@ Unity 版本：6000.4.3f1 (Unity 6)
 - `wanderRadius`：游荡内圈半径，以 `_spawnPosition` 为中心
 - `leashRadius`：活动边界外圈，超过后 ReturnToSpawn
 - `OnAttackHit()`：Animation Event 绑定，方法名不可改
+- `EnemySkillController`：可选敌人技能控制器；skills 为空时不影响普通攻击
 
 #### 当前 FSM 状态
 
@@ -108,8 +110,10 @@ Chase
 → 只有 Agent 本身不可用时 fallback 到 Rigidbody Chase
 
 Attack
-→ 进入攻击距离后停止 Agent，保留旧攻击逻辑
-→ 不修改攻击伤害判定与 OnAttackHit()
+→ 进入攻击距离后停止 Agent，保留旧普通攻击逻辑
+→ 若挂载 EnemySkillController 且存在可用技能，会优先尝试释放敌人技能
+→ 无技能 / 技能不可用时回落到普通攻击
+→ 普通攻击伤害仍通过 OnAttackHit() Animation Event 结算，方法名不可改
 
 ReturnToSpawn
 → 脱战 / 玩家死亡 / 外部命令时回出生点
@@ -1119,6 +1123,27 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 
 ### Prefabs
 
+#### `Assets/Resources/EnemyBase.prefab`
+
+敌人通用基础模板，不直接用于生成。当前已统一挂载 `EnemySkillController` 与 `EnemyCastBarUI`。
+
+- `EnemySkillController.skills` 默认为空，表示普通敌人默认无技能。
+- `EnemyCastBarUI` 默认可保留；没有读条时不显示。
+- 具体敌人通过 Prefab Variant 覆写模型、掉落、视野绑定、体型、技能等配置。
+
+#### `Assets/Resources/SkeletonEnemy_Variant.prefab`
+
+- Source：`EnemyBase.prefab`。
+- 当前不覆写技能列表，继承空 skills，作为无技能普通小怪。
+- 掉落配置：骨头100% + 守护核心20%。
+
+#### `Assets/Resources/SkeletonBossEnemy_Variant.prefab`
+
+- Source：`EnemyBase.prefab`。
+- VisualRoot 1.5 倍视觉缩放，Collider / NavMeshAgent 单独调整。
+- EnemySkillController.skills 覆写配置读条重击（CastAttack）。
+- 掉落配置：守护核心100%（Boss 测试用）。
+
 #### `Assets/Resources/SkeletonEnemy.prefab`
 
 当前包含：
@@ -1231,6 +1256,12 @@ Cursor 当前规则：
 - ✅ 玩家普通攻击动画
 - ✅ 上半身 / 下半身动画分离
 - ✅ 玩家普通攻击伤害读取 PlayerCombatStats
+- ✅ 敌人技能系统第一版（EnemySkillData / EnemySkillController）
+- ✅ CastAttack / 读条重击第一版
+- ✅ EnemyAI Attack 状态接入技能调用：有技能时尝试释放，无技能时普通攻击
+- ✅ EnemyCastBarUI 读条提示第一版（OnGUI 显示技能名 / 进度 / 时间）
+- ✅ EnemyBase 可统一挂载 EnemySkillController / EnemyCastBarUI，skills 为空时无影响
+- ✅ SkeletonBossEnemy_Variant 可通过 skills 覆写配置读条重击
 
 ### 复活 / SavePoint
 
@@ -1343,6 +1374,7 @@ Cursor 当前规则：
 - ✅ 旧 Ground 系列对象已删除，当前主地面以 Terrain 为准。
 - ⚠️ 当前 NavMeshSurface 使用 `layerMask = ~0` 与 `collectObjects = All`，后续建议整理 Ground / Terrain / Environment Layer，避免临时对象或旧测试地块影响 NavMesh。
 - ⚠️ Terrain 或障碍物变化后需要重新 Bake NavMesh。
+- ⚠️ 当前主要测试地形仍接近纯平面，尚未在复杂地形上充分验证 NavMeshAgent 寻路、Wander / Chase / ReturnToSpawn 稳定性、Attack / 读条技能高低差判定、移动动画坡面表现、ItemDrop 贴地 Raycast 在复杂地形上的可靠性；当前暂不处理，后续基础战斗稳定后再验证。
 
 ---
 
@@ -1395,6 +1427,9 @@ Cursor 当前规则：
 - EnemyAI 当前正常移动由 NavMeshAgent 主导；Rigidbody 主要用于碰撞 / 物理辅助，并保留必要旧 fallback 兼容。
 - Chase 中“目标点暂时不可达”不应被视为 Agent 失效；不要因此切 Rigidbody，应该继续追最后有效 destination 并持续重试。
 - 主角武器固定，不进入装备系统；当前装备槽为 Core / Armor / Accessory。
+- 敌人技能不要直接写死进 `EnemyAI.cs`；应通过 `EnemySkillData` + `EnemySkillController` 配置。
+- `EnemySkillController.skills` 为空代表无技能，必须保持不影响普通攻击。
+- `EnemyCastBarUI` 依赖 OnGUI，GUIStyle 必须在 `OnGUI()` 内懒初始化，不要在 `Awake()` / `Start()` 中访问 `GUI.skin`。
 
 ---
 
@@ -1407,6 +1442,9 @@ Cursor 当前规则：
 - `Assets/Scripts/Enemy/EnemySpawnPoint.cs`
 - `Assets/Scripts/Enemy/EnemyDeathHandler.cs`
 - `Assets/Scripts/Enemy/FactionSystem.cs`
+- `Assets/Scripts/Enemy/Skills/EnemySkillData.cs`
+- `Assets/Scripts/Enemy/Skills/EnemySkillController.cs`
+- `Assets/Scripts/Enemy/Skills/EnemyCastBarUI.cs`
 - `Assets/Scripts/HealthComponent.cs`
 - `Assets/Scripts/PlayerController.cs`
 - `Assets/Scripts/RPGCameraController.cs`
@@ -1426,8 +1464,12 @@ Cursor 当前规则：
 
 ### 核心资产
 
+- `Assets/Resources/EnemyBase.prefab`
+- `Assets/Resources/SkeletonEnemy_Variant.prefab`
+- `Assets/Resources/SkeletonBossEnemy_Variant.prefab`
 - `Assets/Resources/SkeletonEnemy.prefab`
 - `Assets/Resources/ItemDrop.prefab`
+- 读条重击 `EnemySkillData` 资产（当前路径未确认，已配置到 `SkeletonBossEnemy_Variant.prefab`）
 - `Assets/Items/TestItem_Bone.asset`
 - `Assets/Items/TestItem_GuardCore.asset`
 - `Assets/Scripts/SkeletonAnimator.controller`
@@ -1465,12 +1507,20 @@ Cursor 当前规则：
 → 攻击力 / 最大生命值汇总变化
 → 卸下装备回背包
 → 替换装备时旧装备回背包
+→ 指定敌人释放读条技能并显示机制预告
 → 继续刷怪
 ```
 
 ### 推荐下一阶段方向
 
-#### 优先级 1：整理 EnemyAI / NavMesh 移动基础
+#### 优先级 1：玩家减伤技能第一版
+
+1. 在玩家侧实现一个最小可用减伤技能，用于应对敌人读条重击。
+2. 先只验证“读条期间正确开减伤 → 承受更少伤害”的 Tank 判断。
+3. 不先做完整技能树、复杂 Buff 系统、Hikari 治疗或 Boss 时间轴。
+4. 后续再接成功减伤奖励与 Hikari 治疗负担。
+
+#### 优先级 2：整理 EnemyAI / NavMesh 移动基础
 
 1. 实测 Wander / Chase / ReturnToSpawn 的 Agent 行为。
 2. 检查 Chase → Attack 是否存在滑动 / 抖动。
@@ -1480,7 +1530,7 @@ Cursor 当前规则：
 6. 整理 NavMeshSurface LayerMask，只让 Terrain / Ground / Environment 参与 Bake。
 7. 视需要将嵌入 Scene 的 NavMeshData 另存为独立 `.asset`。
 
-#### 优先级 2：继续完善刷装备闭环
+#### 优先级 3：继续完善刷装备闭环
 
 1. 实测并调整 SkeletonEnemy 的 Core 掉率。
 2. 增加第二个 Core 测试装备，例如：
@@ -1489,7 +1539,7 @@ Cursor 当前规则：
 3. 测试替换 Core：新 Core 从背包进装备槽，旧 Core 回背包。
 4. 之后再考虑简单 DropTable ScriptableObject。
 
-#### 优先级 3：装备系统扩展
+#### 优先级 4：装备系统扩展
 
 1. 当前已完成 Core / Armor / Accessory 三槽结构。
 2. 当前已完成 PlayerCombatStats 多槽属性汇总。
@@ -1497,14 +1547,14 @@ Cursor 当前规则：
 4. 主角武器固定，不进入装备系统。
 5. 暂时不做随机词条。
 
-#### 优先级 4：正式 UI
+#### 优先级 5：正式 UI
 
 1. 正式背包 UI。
 2. 正式装备 UI。
 3. 正式死亡 / 复活 UI。
 4. 正式存档点提示。
 
-#### 优先级 5：中长期结构升级
+#### 优先级 6：中长期结构升级
 
 1. 引入 `ItemInstance`，支持同名装备不同词条。
 2. 引入 `StatModifier`。
@@ -1529,45 +1579,42 @@ Cursor 当前规则：
 
 ### ⭐ 最推荐的下一个小任务
 
-**实现手柄输入第一版 / 输入抽象最小整理。**
+**玩家减伤技能第一版。**
 
 目的：
 
 ```text
-当前玩家移动已经是 Legacy-like 相机基准逻辑。
-这套结构天然适合手柄：左摇杆 = 移动方向，右摇杆 = 相机旋转。
-下一步可在不改变移动系统的前提下，把键盘 WASD / 鼠标输入整理为统一 moveInput / cameraInput。
+当前敌人已经具备读条重击和可视化预告。
+下一步应让玩家拥有一个最小减伤技能，用来验证 Tank 判断：
+看到读条 → 正确开减伤 → 承受更少伤害。
 ```
 
 建议目标：
 
 ```text
-只处理 PlayerController / RPGCameraController 的输入读取层。
-不修改移动方向计算。
-不修改 Animator Controller。
-不修改 Prefab / Scene。
-不做完整设置菜单。
-不引入复杂 Input Action 重构，除非先确认现有输入结构。
+只做一个最小减伤技能。
+优先验证伤害结算和持续时间。
+不做完整 Buff 系统、不做技能树、不接 Hikari、不做成功奖励。
+不要修改 Animator / Prefab / Scene，除非本次目标确实需要。
 ```
 
 验收目标：
 
 ```text
-键盘 + 鼠标现有操作完全保留。
-手柄左摇杆可控制相机基准移动。
-手柄右摇杆可控制相机旋转。
-八方向 Walk / Run 动画仍正常。
+玩家可主动开启短时间减伤。
+敌人读条重击命中时，如果减伤有效，玩家受到的伤害降低。
+减伤结束后伤害恢复正常。
+Console / Debug 信息能确认减伤是否生效。
 ```
 
 ### 备选任务
 
-1. 整理 NavMeshSurface LayerMask，只让 Terrain / Ground / Environment 参与 Bake。
-2. 将 SampleScene 的 NavMeshData 独立保存为 `.asset`。
-3. 设计锁定目标时的 strafe / backstep 战斗移动模式，和当前非锁定 Legacy-like 移动区分。
-4. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
-5. 将 `SkeletonDebugUI` 拆分为多个 Debug Panel 脚本。
-6. 设计敌人长期不可达时的 Evade / ReturnToSpawn 规则。
-7. 正式背包 UI / 正式装备 UI 第一版。
+1. 给敌人读条重击补正式参数调优：伤害、读条时间、冷却、范围。
+2. 继续验证普通小怪无技能 / Boss 有技能 / skills 为空的 Prefab Variant 继承关系。
+3. 在复杂地形上验证 NavMeshAgent、Attack / 读条范围、高低差与 ItemDrop 贴地表现（当前暂不做）。
+4. 整理 NavMeshSurface LayerMask，只让 Terrain / Ground / Environment 参与 Bake。
+5. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
+6. 正式背包 UI / 正式装备 UI 第一版。
 
 ## 12. 本次有效变更摘要（2026-05-11）
 
@@ -1764,7 +1811,7 @@ public void SetSpawnAreaContext(
 EnemyBase 是所有敌人 Prefab Variant 的基础模板，不直接用于生成。
 
 **根对象组件：**
-Transform、Animator、Rigidbody、CapsuleCollider、NavMeshAgent、FactionComponent、FOVDetector、EnemyAI、HealthComponent、WorldHealthBar、EnemyDeathHandler、EnemyDropper
+Transform、Animator、Rigidbody、CapsuleCollider、NavMeshAgent、FactionComponent、FOVDetector、EnemyAI、HealthComponent、WorldHealthBar、EnemyDeathHandler、EnemyDropper、EnemySkillController、EnemyCastBarUI
 
 **子对象：**
 - `VisualRoot`（空 GameObject，localPosition=0，scale=1）
@@ -1775,6 +1822,8 @@ Transform、Animator、Rigidbody、CapsuleCollider、NavMeshAgent、FactionCompo
 - FOVDetector.eyePosition 保持为 null（Variant 中绑定自己骨骼）
 - Animator Controller 当前使用 SkeletonAnimator.controller（Variant 可覆写）
 - 后续新增所有敌人通用脚本时，只加到 EnemyBase.prefab
+- EnemySkillController.skills 在 EnemyBase 中保持为空，表示默认无技能
+- EnemyCastBarUI 可保留在 EnemyBase 上；没有读条时不会显示
 
 ### Variant 工作流
 
@@ -1813,6 +1862,7 @@ EnemyBase.prefab
 - VisualRoot 下：M_Skeleton.Body / Jaw / Skull / root 骨骼层级
 - FOVDetector.eyePosition = VisualRoot/.../head.x
 - EnemyDropper.drops = 骨头100% + 守护核心20%（同旧 SkeletonEnemy）
+- EnemySkillController.skills 继承 EnemyBase 空列表，当前无技能
 - 其余参数继承 EnemyBase（与旧 SkeletonEnemy 一致）
 
 ### SkeletonBossEnemy_Variant.prefab
@@ -1824,7 +1874,8 @@ EnemyBase.prefab
 - 根对象 scale = (1, 1, 1)
 - Collider / NavMeshAgent 单独调整（匹配 1.5× 体型）
 - EnemyDropper.drops = 守护核心100%（Boss 测试用）
-- 与旧 SkeletonBossEnemy 行为基本一致
+- EnemySkillController.skills 覆写配置读条重击（CastAttack）
+- 与旧 SkeletonBossEnemy 行为基本一致，但当前具备读条重击测试技能
 
 **注意：**
 旧 `SkeletonEnemy.prefab` 和 `SkeletonBossEnemy.prefab` 仍然存在并可用，未被删除。
@@ -1845,6 +1896,108 @@ EnemyBase
 
 当前阶段不建议过早加 SkeletonBase 中间层。
 ```
+
+
+## 3.9 Enemy Skill / 敌人技能系统
+
+### `EnemySkillData.cs`
+
+敌人技能数据 ScriptableObject。
+
+当前用途：
+
+- 定义敌人可配置技能，不把技能写死进 `EnemyAI.cs`。
+- 支持通过 Prefab / Variant 的 Inspector 配置不同敌人会哪些技能。
+- 第一版已用于 `CastAttack`（读条重击）。
+
+当前关键字段 / 属性：
+
+- `skillId`：技能内部 ID
+- `displayName`：显示名，用于读条 UI
+- `skillType`：当前至少包含 `None` / `CastAttack`
+- `damage`：技能伤害
+- `castTime`：读条时间
+- `cooldown`：冷却时间
+- `range`：释放 / 命中范围
+
+注意：
+
+- `EnemySkillData` 只保存数据，不负责执行技能。
+- 后续新增敌人技能类型时，应优先扩展该数据结构和 `EnemySkillController`，不要直接把技能逻辑写死进 `EnemyAI.cs`。
+
+### `EnemySkillController.cs`
+
+敌人技能控制器，挂载在敌人 Prefab 根对象上。
+
+职责：
+
+- 持有 `List<EnemySkillData> skills`。
+- 判断技能是否可用、距离是否满足、冷却是否结束。
+- 执行第一版 `CastAttack` 读条技能。
+- 暴露读条状态供 UI 读取。
+- 在 Attack 状态离开、ReturnToSpawn、ResetToSpawn、ForceDisengage、OnDisable 等情况下清理读条。
+
+当前关键状态 / 属性：
+
+- `IsCasting`：是否正在读条。
+- `CurrentSkill`：当前读条技能。
+- `CurrentCastElapsed`：当前读条经过时间。
+- `CurrentCastDuration`：当前读条总时间。
+- `CurrentCastRemaining`：剩余读条时间。
+- `CurrentCastProgress`：0～1 的读条进度。
+
+当前关键方法：
+
+- `TryGetReadySkillInRange(Transform target, out EnemySkillData skill)`
+- `TryStartSkill(EnemySkillData skill, Transform target)`
+- `CancelCasting(string reason)`
+
+安全规则：
+
+- `skills == null` 或 `skills.Count == 0` 时不报错，返回无可用技能。
+- `skills` 中有 null 元素时跳过。
+- `skillType == None` 时不会执行。
+- 目标 null、缺少 `HealthComponent`、目标死亡、超出范围时不会造成伤害。
+- 无技能 / 技能不可用时，`EnemyAI` 会继续普通攻击。
+- `OnDisable()` 会清理读条状态，避免对象被禁用时残留 cast 状态。
+
+### `EnemyCastBarUI.cs`
+
+敌人读条 UI 第一版，当前使用 `OnGUI + Camera.WorldToScreenPoint` 绘制。
+
+职责：
+
+- 读取同一敌人身上的 `EnemySkillController`。
+- `IsCasting == true` 时显示技能名、进度条、读条时间。
+- `IsCasting == false` 时不显示。
+
+实现注意：
+
+- GUIStyle 通过 `EnsureStyles()` 在 `OnGUI()` 内懒初始化。
+- 不要在 `Awake()` / `Start()` 中访问 `GUI.skin`。
+- 使用 `Texture2D.whiteTexture + GUI.color` 绘制进度条，不每帧创建贴图。
+- `Camera.main == null`、`CurrentSkill == null`、`CurrentCastDuration <= 0` 时安全 return 或 fallback。
+
+### 当前 Prefab 使用方式
+
+当前设计目标是：敌人基础模板统一挂技能相关组件，具体敌人通过 Variant 决定是否有技能。
+
+```text
+EnemyBase.prefab
+- EnemySkillController（skills 为空）
+- EnemyCastBarUI
+→ 默认无技能、无读条显示、无影响
+
+SkeletonEnemy_Variant.prefab
+→ 继承 EnemyBase，保持 skills 为空
+→ 普通小怪无技能，只普通攻击
+
+SkeletonBossEnemy_Variant.prefab
+→ 覆写 EnemySkillController.skills，配置读条重击
+→ 可释放 CastAttack / 读条重击
+```
+
+已确认：不设置技能的小怪不会触发技能；配置读条重击的敌人可以正常读条、显示 CastBar，并在命中时造成伤害。
 
 ---
 
@@ -1996,3 +2149,12 @@ EnemySpawnArea 与装备替换闭环已由用户确认没有明显问题。
 1. `PlayerController.cs` 与 `RPGCameraController.cs` 的玩家操作已整理为 FF14 Legacy-like：WASD 相机基准移动、移动时角色朝实际方向转身、右键只控制相机、左键只用于目标选择、左键 + 右键支持双键前进，Shift 支持八方向跑步。
 2. 玩家移动动画输出已适配 Legacy-like：非锁定移动下任意方向只使用 Forward Walk / Forward Run，不再使用左走 / 右走 / 后退动画；`Horizontal` 保持 0，`Speed` 表示 Idle / Walk / Run。
 3. `RPGCameraController.cs` 鼠标视角旋转改为 `Mouse.delta * rotationSpeed`，不再乘 `Time.deltaTime`；`rotationSpeed` 可在 Inspector 中调整。`SkeletonDebugUI.cs` 装备状态窗口高度已改为按实际显示行数动态计算。
+
+
+---
+
+## 20. 本次有效变更摘要（2026-05-14 第二次）
+
+1. 敌人技能系统第一版已落地：新增 `EnemySkillData.cs`、`EnemySkillController.cs`、`EnemyCastBarUI.cs`；`EnemyAI.cs` 的 Attack 状态已接入技能调用，有技能时尝试释放，无技能时继续普通攻击。
+2. `CastAttack` / 读条重击第一版已可用：指定敌人可读条、显示技能名 / 进度 / 时间，读条结束后按距离和目标状态结算伤害；Miss / Cancel / ReturnToSpawn / ResetToSpawn / ForceDisengage / OnDisable 会清理读条。
+3. 敌人 Prefab 工作流更新：`EnemyBase.prefab` 统一挂载 `EnemySkillController` 与 `EnemyCastBarUI` 且 skills 为空；`SkeletonEnemy_Variant.prefab` 保持无技能；`SkeletonBossEnemy_Variant.prefab` 覆写配置读条重击。当前复杂地形下的寻路、动作、动画、读条范围和 ItemDrop 贴地表现尚未验证，暂不处理。
