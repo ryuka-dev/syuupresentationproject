@@ -115,6 +115,9 @@ public class EnemyAI : MonoBehaviour
     private Vector3 _lastValidChaseDestination;
     /// <summary>_lastValidChaseDestination が有効かどうかのフラグ。</summary>
     private bool    _hasLastValidChaseDestination;
+    // ─── スキルコントローラー ────────────────────────────────
+    private EnemySkillController _skillController;
+
 
     // ─── 生命周期 ────────────────────────────────────────────
     void Awake()
@@ -128,6 +131,7 @@ public class EnemyAI : MonoBehaviour
         _spawnRotation      = transform.rotation;
         _spawnAreaCenter    = _spawnPosition;
         _hasSpawnAreaContext = false;
+        _skillController    = GetComponent<EnemySkillController>();
     }
 
     void OnEnable()
@@ -271,6 +275,7 @@ public class EnemyAI : MonoBehaviour
 
         _chasingWithAgent             = false;
         _hasLastValidChaseDestination = false;  // Chase キャッシュをクリア
+        _skillController?.CancelCasting("ReturnToSpawn");
 
         hateTable.Clear();
         currentTarget       = null;
@@ -488,6 +493,10 @@ public class EnemyAI : MonoBehaviour
             StopAgentAndRestoreRigidbody();
         else if (currentState == EnemyState.Chase && _chasingWithAgent)
             StopAgentAndRestoreRigidbody();
+
+        // Attack から離れる場合: スキル施法をキャンセル
+        if (currentState == EnemyState.Attack)
+            _skillController?.CancelCasting("LeaveAttack");
 
         // Chase から離れる場合: フラグとキャッシュをクリア
         if (currentState == EnemyState.Chase)
@@ -712,6 +721,15 @@ public class EnemyAI : MonoBehaviour
                 if (!rb.isKinematic)
                     rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
                 FaceTarget();
+                // スキルコントローラーが読条中は通常攻撃をスキップ
+                if (_skillController != null && _skillController.IsCasting)
+                    break;
+                // 射程内にクールダウン済みスキルがあれば使用を試みる
+                if (_skillController != null && currentTarget != null &&
+                    _skillController.TryGetReadySkillInRange(currentTarget, out EnemySkillData readySkill) &&
+                    _skillController.TryStartSkill(readySkill, currentTarget))
+                    break;
+                // 通常攻撃
                 if (animator != null)
                 {
                     bool inAttackAnim = animator.GetCurrentAnimatorStateInfo(0).IsName("Attack");
@@ -862,6 +880,7 @@ public class EnemyAI : MonoBehaviour
     // ─── Debug / 强制复位 ────────────────────────────────────
     public void ResetToSpawn()
     {
+        _skillController?.CancelCasting("ResetToSpawn");
         hateTable.Clear();
         currentTarget                 = null;
         disengageTimer                = 0f;
@@ -904,6 +923,7 @@ public class EnemyAI : MonoBehaviour
         if (currentState == EnemyState.ReturnToSpawn) return;
 
         Debug.Log($"[EnemyAI] {gameObject.name} 外部指令により強制脱戦、出生点へ帰還。");
+        _skillController?.CancelCasting("ForceDisengage");
         EnterReturnToSpawn();
     }
 

@@ -4874,10 +4874,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemySpawnArea
   spawnEntries:
-  - enemyPrefab: {fileID: 8523427318928488213, guid: eeb4515b33890cf469389670276e91e5, type: 3}
-    weight: 10
-    maxAlive: 5
   - enemyPrefab: {fileID: 6916372191042502291, guid: 8f1aa5c173be01846af123af8fc0ea83, type: 3}
+    weight: 10
+    maxAlive: 1
+  - enemyPrefab: {fileID: 8523427318928488213, guid: eeb4515b33890cf469389670276e91e5, type: 3}
     weight: 10
     maxAlive: 1
   maxAliveCount: 6
