@@ -1,6 +1,6 @@
 ﻿# PROJECT_STATE
 
-最后更新：2026-05-13  
+最后更新：2026-05-14  
 当前主要场景：`Assets/Scenes/SampleScene.unity`  
 Unity 版本：6000.4.3f1 (Unity 6)
 
@@ -242,27 +242,68 @@ EnterReturnToSpawn()
 
 ### `PlayerController.cs`
 
-玩家输入和移动控制。使用 New Input System。`applyRootMotion = false`。
+玩家输入、移动、移动时朝向与移动动画参数输出。使用 New Input System。`applyRootMotion = false`。
+
+当前操作逻辑为 FF14 Legacy-like / 现代第三人称 RPG 风格：
+
+- WASD 以相机水平面方向为基准移动。
+- `cameraTransform.forward / right` 会用 `Vector3.ProjectOnPlane(..., Vector3.up)` 去掉 y 轴影响。
+- 有移动输入时，Player 朝实际移动方向平滑转身。
+- 无移动输入时，Player 不会因为相机旋转而原地转身。
+- Shift + 任意移动输入 = Sprint，八方向都可跑步。
+- 鼠标左键 + 右键同时按住时，等价于前进输入；若同时按 Shift，则向相机前方跑步。
+- 左键 + 右键 + A / D 允许斜向移动。
+- 左键 + 右键 + S 时，双键前进优先，不被 S 抵消。
+- 移动仍使用 Rigidbody `rb.linearVelocity`。
+
+Animator 移动参数当前适配 Legacy-like 操作：
+
+```text
+无输入：Speed = 0, Horizontal = 0
+任意方向走路：Speed = 0.5, Horizontal = 0
+任意方向跑步：Speed = 1.0, Horizontal = 0, IsSprinting = true
+```
+
+说明：
+
+- A / D / S 不再输出左走、右走、后退动画参数。
+- 角色会先转向实际移动方向，因此任意方向移动都播放 Forward Walk / Forward Run。
+- `IsJumping`、`IsGrounded`、`VerticalVelocity` 仍按原逻辑处理。
 
 ### `RPGCameraController.cs`
 
-第三人称相机跟随。右键拖拽时同步玩家朝向。
+第三人称相机跟随与右键视角旋转控制。
 
-本次新增 / 修复：
+当前职责：
 
-- 新增 `_isCameraDragging` 状态。
-- 新增 `SetCursorVisible(bool visible)`：
-  - `Cursor.lockState = CursorLockMode.None`
-  - `Cursor.visible = visible`
-- 视角拖拽开始时隐藏鼠标。
-- 视角拖拽结束时显示鼠标。
-- `OnDisable()` / `OnDestroy()` 强制恢复鼠标显示。
+- 只负责相机跟随、相机 yaw / pitch、Cursor 显示隐藏。
+- 不再直接修改 Player rotation。
+- Player 移动时朝向由 `PlayerController` 负责。
+
+当前鼠标规则：
+
+- 只有鼠标右键按住时，相机才会旋转。
+- 左键单独点击 / 拖动不旋转相机，不隐藏 Cursor。
+- 右键拖拽开始时隐藏 Cursor。
+- 右键松开时显示 Cursor。
+- `OnDisable()` / `OnDestroy()` 强制恢复 Cursor 显示。
 - 不使用 `CursorLockMode.Locked`，避免光标跳到屏幕中心。
-- 修复 Fullscreen Editor Play Mode / F11 全屏下，按右键或左键操作视角后鼠标永久消失的问题。
+
+当前灵敏度规则：
+
+```csharp
+_yaw   += delta.x * rotationSpeed;
+_pitch -= delta.y * rotationSpeed;
+```
+
+- `Mouse.current.delta.ReadValue()` 已经是本帧鼠标移动量，因此不再乘 `Time.deltaTime`。
+- `rotationSpeed` 为 Inspector 可调灵敏度，Range 当前为 `0.01f ~ 1.0f`。
+- 用户实测 `rotationSpeed = 0.5` 体感合适；当前场景实际值以 Main Camera Inspector 保存值为准。
+- `minPitch / maxPitch` 仍由 Inspector 控制。
 
 注意：
 
-- 当前实现优先保证“松手后光标恢复显示”。
+- 如果脚本默认值与 Scene 中 Main Camera 组件序列化值不同，Unity 会以 Inspector 中保存的组件值为准。
 - Unity 原生 API 不擅长精确恢复 OS 鼠标坐标；如果将来需要完全回到按下前的屏幕坐标，需单独设计。
 
 ### `PlayerTargeting.cs`
@@ -886,7 +927,7 @@ drops[1]
 float equipX = margin + leftPanelWidth + 12f;
 float equipY = margin;
 float width  = 310f;
-float height = 240f;
+float height = CalculateEquipmentStatusWindowHeight(width);
 ```
 
 说明：
@@ -894,7 +935,9 @@ float height = 240f;
 - `margin` 当前为 `20f`。
 - 左侧主面板宽度为 `Mathf.Clamp(Screen.width * 0.32f, 320f, 420f)`。
 - 装备窗口跟随左侧主面板宽度变化，显示在主 Debug 按钮面板右侧。
-- 窗口位于屏幕左上区域，不延伸到屏幕下方。
+- 窗口位于屏幕左上区域。
+- 窗口高度会根据实际显示行数动态计算，不低于最小高度 240f。
+- 装备槽显示行由 `BuildEquipmentSlotLines()` 生成，高度计算与实际绘制共用同一行数据。
 - 第一版只显示信息，不提供装备 / 卸下按钮。
 
 显示内容：
@@ -1029,7 +1072,9 @@ PickupItem 依赖该 Tag 判断玩家。
 
 - `RPGCameraController`
 - target = Player Transform
-- 当前已负责拖拽时隐藏鼠标、松手 / 禁用 / 销毁时恢复鼠标。
+- 当前负责相机跟随、右键旋转、Cursor 显示 / 隐藏。
+- 当前不再直接旋转 Player。
+- `rotationSpeed` 为 Inspector 可调鼠标灵敏度；用户实测值为 0.5，实际保存值以 Inspector 为准。
 
 #### SkeletonSpawnerManager
 
@@ -1115,20 +1160,43 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 ## 5. Input / Control
 
 - 使用：New Input System 1.19.0
-- 玩家移动：WASD
-- 目标选择：鼠标左键
+- 当前操作风格：FF14 Legacy-like / 现代第三人称 RPG 风格
+- 玩家移动：WASD，相机水平面基准移动
+  - W：朝相机前方移动
+  - S：朝相机后方移动，不是慢速倒退
+  - A / D：朝相机左 / 右方向移动，角色会转向实际移动方向
+- 跑步：Shift + 任意移动输入，八方向都可跑步
+- 鼠标左键：目标选择，不旋转相机，不隐藏 Cursor
+- 鼠标右键：按住并移动鼠标时旋转相机
+- 鼠标左键 + 右键：向当前相机前方移动，等价于前进输入
+- 鼠标左键 + 右键 + Shift：向当前相机前方跑步
 - 技能释放：键盘 1
 - 拾取物品：E
-- 摄像机 / 玩家朝向：鼠标右键拖拽
 - Debug UI：F1
 - 关卡重开：R，仅旧 Victory / Game Over 后生效
 
+移动 / 动画规则：
+
+- Player 有移动输入时朝实际移动方向平滑转身。
+- Player 无移动输入时不会被相机旋转强制转身。
+- 任意方向普通移动播放 Forward Walk。
+- 任意方向 + Shift 播放 Forward Run。
+- 左走 / 右走 / 后退动画当前不用于非锁定 Legacy-like 移动。
+
 Cursor 当前规则：
 
-- 视角拖拽开始：隐藏鼠标
-- 视角拖拽结束：显示鼠标
+- 右键视角拖拽开始：隐藏鼠标
+- 右键视角拖拽结束：显示鼠标
+- 左键单独点击 / 拖动：不隐藏鼠标
 - RPGCameraController 被禁用 / 销毁：强制显示鼠标
 - 不使用 CursorLockMode.Locked
+
+相机灵敏度：
+
+- `RPGCameraController.rotationSpeed` 控制鼠标视角灵敏度。
+- 鼠标 delta 不乘 `Time.deltaTime`。
+- 当前用户实测 `rotationSpeed = 0.5` 体感合适；实际值以 Main Camera Inspector 为准。
+
 
 ---
 
@@ -1137,6 +1205,11 @@ Cursor 当前规则：
 ### 战斗 / AI
 
 - ✅ 玩家第三人称移动控制
+- ✅ FF14 Legacy-like 相机基准移动
+- ✅ WASD 八方向移动时角色朝实际移动方向转身
+- ✅ Shift + 任意移动输入支持八方向跑步
+- ✅ 鼠标左键 + 右键双键前进
+- ✅ 非锁定移动动画统一使用 Forward Walk / Forward Run
 - ✅ 敌人 FSM AI（Idle / Wander / Chase / Attack / ReturnToSpawn）
 - ✅ EnemyAI Idle / Wander 混合游荡
 - ✅ SampleScene NavMeshSurface_World + NavMesh Bake
@@ -1219,6 +1292,9 @@ Cursor 当前规则：
 - ✅ 独立装备状态 Debug 窗口
 - ✅ 右侧背包 Debug 窗口
 - ✅ 鼠标拖拽后永久消失问题修复
+- ✅ 左键不再触发相机旋转或 Cursor 隐藏
+- ✅ RPGCameraController 鼠标灵敏度改为不乘 Time.deltaTime，并可在 Inspector 调整
+- ✅ 装备状态 Debug 窗口高度按实际显示行数动态计算
 
 ---
 
@@ -1244,6 +1320,8 @@ Cursor 当前规则：
 - ⚠️ 正式发布前应隐藏或限制 Debug 菜单。
 - ⚠️ 玩家死亡后 RPGCameraController 被禁用，相机静止在死亡位置，暂无死亡镜头演出。
 - ⚠️ 正式死亡 / 复活 UI 尚未接入，当前仍主要依赖 Debug UI。
+- ⚠️ 当前操作逻辑是非锁定 Legacy-like 移动；尚未实现锁定目标时的 strafe / backstep 战斗移动模式。
+- ⚠️ 鼠标灵敏度当前只支持 Inspector 调整，尚未实现正式设置菜单或保存设置。
 
 ### 性能 / 架构
 
@@ -1302,6 +1380,7 @@ Cursor 当前规则：
 - Base Layer 的 Death 状态无出口过渡，不可添加出口。
 - `IsDead` Trigger 由 PlayerDeathHandler 触发。
 - `Attack` Trigger 由 PlayerSkillController 触发，仅在 UpperBody Layer 使用。
+- 非锁定 Legacy-like 移动下，移动动画参数应保持 `Horizontal = 0`，通过 `Speed = 0 / 0.5 / 1.0` 表示 Idle / Walk / Run。
 - UpperBody Layer 的 `Any State → UpperBodyIdle`（IsDead 条件）不可删除。
 - `UpperBodyIdle.anim` 不可删除。
 
@@ -1309,6 +1388,9 @@ Cursor 当前规则：
 
 - Rigidbody 使用 `rb.linearVelocity`（Unity 6）。
 - 输入系统使用 `Mouse.current` / `Keyboard.current`，不得使用旧 `UnityEngine.Input`。
+- Player 当前采用 Legacy-like 相机基准移动：移动方向由 `PlayerController` 根据相机水平 forward / right 计算。
+- `RPGCameraController` 不应直接旋转 Player；Player 移动时朝向由 `PlayerController` 负责。
+- 鼠标视角旋转使用 `Mouse.delta * rotationSpeed`，不要再乘 `Time.deltaTime`。
 - Debug OnGUI 可以继续用于开发工具，但正式 UI 应使用 Canvas / TMP / Button 或 UI Toolkit。
 - EnemyAI 当前正常移动由 NavMeshAgent 主导；Rigidbody 主要用于碰撞 / 物理辅助，并保留必要旧 fallback 兼容。
 - Chase 中“目标点暂时不可达”不应被视为 Agent 失效；不要因此切 Rigidbody，应该继续追最后有效 destination 并持续重试。
@@ -1326,6 +1408,7 @@ Cursor 当前规则：
 - `Assets/Scripts/Enemy/EnemyDeathHandler.cs`
 - `Assets/Scripts/Enemy/FactionSystem.cs`
 - `Assets/Scripts/HealthComponent.cs`
+- `Assets/Scripts/PlayerController.cs`
 - `Assets/Scripts/RPGCameraController.cs`
 - `Assets/Scripts/Player/PlayerTargeting.cs`
 - `Assets/Scripts/Player/PlayerSkillController.cs`
@@ -1446,46 +1529,44 @@ Cursor 当前规则：
 
 ### ⭐ 最推荐的下一个小任务
 
-**整理 / 验证 Armor 与 Accessory 测试装备来源。**
+**实现手柄输入第一版 / 输入抽象最小整理。**
 
 目的：
 
 ```text
-PlayerEquipment 已支持 Core / Armor / Accessory。
-PlayerCombatStats 已汇总三槽属性。
-SkeletonDebugUI 已支持三槽显示与从背包装备 / 卸下。
-下一步应确认 Armor / Accessory 测试装备的获取方式，方便完整验证多槽装备闭环。
+当前玩家移动已经是 Legacy-like 相机基准逻辑。
+这套结构天然适合手柄：左摇杆 = 移动方向，右摇杆 = 相机旋转。
+下一步可在不改变移动系统的前提下，把键盘 WASD / 鼠标输入整理为统一 moveInput / cameraInput。
 ```
 
 建议目标：
 
 ```text
-只处理测试装备资产与必要的掉落配置。
-不改 PlayerEquipment / PlayerCombatStats / PlayerInventory。
-不做正式 DropTable。
-不做正式 UI。
-不做随机词条。
+只处理 PlayerController / RPGCameraController 的输入读取层。
+不修改移动方向计算。
+不修改 Animator Controller。
+不修改 Prefab / Scene。
+不做完整设置菜单。
+不引入复杂 Input Action 重构，除非先确认现有输入结构。
 ```
 
 验收目标：
 
 ```text
-Armor / Accessory 能进入背包。
-能从 Debug UI 装备到对应槽位。
-装备后从背包移除。
-卸下后回背包。
-替换时旧装备回背包。
-装备状态窗口与战斗属性汇总实时变化。
+键盘 + 鼠标现有操作完全保留。
+手柄左摇杆可控制相机基准移动。
+手柄右摇杆可控制相机旋转。
+八方向 Walk / Run 动画仍正常。
 ```
 
 ### 备选任务
 
 1. 整理 NavMeshSurface LayerMask，只让 Terrain / Ground / Environment 参与 Bake。
 2. 将 SampleScene 的 NavMeshData 独立保存为 `.asset`。
-3. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
-4. 将 `SkeletonDebugUI` 拆分为多个 Debug Panel 脚本。
-5. 设计敌人长期不可达时的 Evade / ReturnToSpawn 规则。
-6. 若实际发现 Chase / Attack 边缘抖动，再给 Attack 增加距离 hysteresis。
+3. 设计锁定目标时的 strafe / backstep 战斗移动模式，和当前非锁定 Legacy-like 移动区分。
+4. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
+5. 将 `SkeletonDebugUI` 拆分为多个 Debug Panel 脚本。
+6. 设计敌人长期不可达时的 Evade / ReturnToSpawn 规则。
 7. 正式背包 UI / 正式装备 UI 第一版。
 
 ## 12. 本次有效变更摘要（2026-05-11）
@@ -1907,3 +1988,11 @@ DebugManager Missing Script 已清理。
 旧 Ground 系列对象已删除。
 EnemySpawnArea 与装备替换闭环已由用户确认没有明显问题。
 ```
+
+---
+
+## 19. 本次有效变更摘要（2026-05-14）
+
+1. `PlayerController.cs` 与 `RPGCameraController.cs` 的玩家操作已整理为 FF14 Legacy-like：WASD 相机基准移动、移动时角色朝实际方向转身、右键只控制相机、左键只用于目标选择、左键 + 右键支持双键前进，Shift 支持八方向跑步。
+2. 玩家移动动画输出已适配 Legacy-like：非锁定移动下任意方向只使用 Forward Walk / Forward Run，不再使用左走 / 右走 / 后退动画；`Horizontal` 保持 0，`Speed` 表示 Idle / Walk / Run。
+3. `RPGCameraController.cs` 鼠标视角旋转改为 `Mouse.delta * rotationSpeed`，不再乘 `Time.deltaTime`；`rotationSpeed` 可在 Inspector 中调整。`SkeletonDebugUI.cs` 装备状态窗口高度已改为按实际显示行数动态计算。
