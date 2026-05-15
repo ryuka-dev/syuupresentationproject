@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using System;
 
 /// <summary>
@@ -11,14 +11,18 @@ public class HealthComponent : MonoBehaviour
     public float currentHealth { get; private set; }
 
     public event Action<float, float>     OnHealthChanged;  // (current, max)
-    public event Action<float, Transform> OnDamaged;        // (伤害值, 攻击来源)
+    public event Action<float, Transform> OnDamaged;        // (最终伤害值, 攻击来源)
     public event Action                   OnDied;
 
     public bool IsDead => currentHealth <= 0f;
 
+    // 减伤控制器引用，仅玩家 GameObject 上存在；敌人没有此组件则自动跳过，不影响敌人受伤逻辑。
+    private PlayerMitigationController _mitigationController;
+
     void Awake()
     {
-        currentHealth = maxHealth;
+        currentHealth         = maxHealth;
+        _mitigationController = GetComponent<PlayerMitigationController>();
     }
 
     /// <summary>旧接口，保持向后兼容。</summary>
@@ -32,10 +36,14 @@ public class HealthComponent : MonoBehaviour
     {
         Debug.Log($"[Health] TakeDamage({amount}) called. IsDead={IsDead} current={currentHealth}");
         if (IsDead) return;
-        currentHealth = Mathf.Max(0, currentHealth - amount);
-        Debug.Log($"[Health] After damage: current={currentHealth}");
+
+        // 统一减伤修正入口：玩家侧有 PlayerMitigationController 时会应用减伤倍率；敌人侧直接返回原值。
+        float finalDamage = ApplyIncomingDamageModifiers(amount);
+
+        currentHealth = Mathf.Max(0, currentHealth - finalDamage);
+        Debug.Log($"[Health] After damage: current={currentHealth} (finalDamage={finalDamage:F1})");
         OnHealthChanged?.Invoke(currentHealth, maxHealth);
-        OnDamaged?.Invoke(amount, attacker);
+        OnDamaged?.Invoke(finalDamage, attacker);
         if (currentHealth <= 0f) OnDied?.Invoke();
     }
 
@@ -59,7 +67,7 @@ public class HealthComponent : MonoBehaviour
     }
 
     /// <summary>
-    /// 最大生命值を変更する。
+    /// 最大生命値を変更する。
     /// keepCurrentRatio=true の場合は現在 HP を旧 maxHealth との比率で再計算する。
     /// keepCurrentRatio=false の場合は現在 HP をそのまま保持し、超過分のみ切り捨てる。
     /// IsDead 状態・OnDied・復活処理には一切関与しない。
@@ -85,5 +93,18 @@ public class HealthComponent : MonoBehaviour
 
         OnHealthChanged?.Invoke(currentHealth, maxHealth);
         Debug.Log($"[Health] SetMaxHealth: oldMax={oldMax}, newMax={maxHealth}, oldCurrent={oldCurrent}, newCurrent={currentHealth}");
+    }
+
+    // ─── Private ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// 对即将受到的伤害应用所有输入端减伤修正。
+    /// 当前只支持 PlayerMitigationController。
+    /// 敌人没有此组件时直接返回原始伤害值，不影响敌人逻辑。
+    /// </summary>
+    private float ApplyIncomingDamageModifiers(float damage)
+    {
+        if (_mitigationController == null) return damage;
+        return _mitigationController.ModifyIncomingDamage(damage);
     }
 }
