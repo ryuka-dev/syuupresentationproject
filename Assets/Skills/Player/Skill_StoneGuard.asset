@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 90bf24020f4e1cb4c8c7417a83149f7b, type: 3}
+  m_Name: Skill_StoneGuard
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerSkillData
+  skillId: Stone_Guard
+  skillName: Stone Guard
+  description: "\u8F7B\u91CF\u51CF\u4F24"
+  icon: {fileID: 21300000, guid: 9c2f8b0a2f33f6046adc28ff41a1aa42, type: 3}
+  inputSlot: 3
+  keyLabel: 3
+  cooldown: 14
+  duration: 12
+  effectType: 1
+  damageTakenMultiplier: 0.8
+  visualType: 1
