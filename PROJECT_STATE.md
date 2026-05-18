@@ -33,11 +33,13 @@ Unity 版本：6000.4.3f1 (Unity 6)
 
 ```text
 玩家移动
-→ 鼠标左键选中敌人
+→ 鼠标左键点击或 Tab 从屏幕左到右循环选中敌人
+→ 当前目标头顶显示倒三角指示器
 → 按 1 使用普通攻击
-→ 按 PlayerSkillManager 注册的技能键使用玩家技能（当前至少 Slot2 / Slot3）
+→ 按 PlayerSkillManager 注册的技能键使用玩家技能（当前至少 Slot2 / Slot3，另有攻击强化测试技能，具体资产路径未确认）
 → Canvas 技能栏显示技能图标、持续时间与冷却
-→ PlayerStatusEffectController 根据 Active 技能修正玩家受到的伤害
+→ PlayerStatusEffectController 根据 Active 技能修正玩家受到的伤害 / 普通攻击输出伤害
+→ 伤害飘字显示玩家打出的实际伤害与受到的实际伤害
 → 敌人普通攻击 / 指定敌人释放读条技能
 → 敌人死亡
 → 任务击杀进度增加
@@ -315,7 +317,48 @@ _pitch -= delta.y * rotationSpeed;
 
 ### `PlayerTargeting.cs`
 
-鼠标左键点击，Physics.Raycast 检测目标，验证 HealthComponent + FactionComponent + 敌对关系后设为 `CurrentTarget`。提供 `ClearTarget()`，玩家死亡时会主动清空目标。
+玩家当前目标选择系统。
+
+当前职责：
+
+- 鼠标左键点击时，使用 Physics.Raycast 检测目标。
+- 验证目标是否有 `HealthComponent`、`FactionComponent`，并通过 `_selfFaction.ShouldAttack(faction.faction)` 判断敌对关系。
+- `CurrentTarget` 当前统一设置为 `faction.transform`，鼠标点击与 Tab 选择保持一致。
+- 提供 `ClearTarget()`，玩家死亡时会主动清空目标。
+- 使用 New Input System 读取 `Keyboard.current.tabKey.wasPressedThisFrame`。
+- Tab 目标选择第一版：收集屏幕内、摄像机前方、未死亡、敌对、距离玩家不超过 `tabTargetMaxDistance` 的敌人，按 `Camera.WorldToViewportPoint(...).x` 从左到右排序。
+- 按 Tab 时：无目标选最左；有目标选右侧下一个；到最右后循环回最左；当前目标死亡 / 画面外 / 不在候选列表时重新从最左开始；无候选时 `ClearTarget()`。
+- 当前候选收集使用 `FindObjectsByType<HealthComponent>(FindObjectsSortMode.None)`，敌人数量增多后应改为注册缓存。
+
+关键字段：
+
+- `allowTabTargeting`
+- `tabTargetMaxDistance`
+- `tabTargetViewportPadding`
+
+### `TargetSelectionIndicator.cs`
+
+路径：`Assets/Scripts/UI/TargetSelectionIndicator.cs`
+
+当前目标视觉指示器，预期挂载在 Player 上。
+
+职责：
+
+- 读取同一 Player 上的 `PlayerTargeting.CurrentTarget`。
+- 当前目标存在且未死亡时，控制 `indicatorPrefab` 显示在目标头顶。
+- 当前目标为空 / 死亡 / 丢失时隐藏。
+- 目标切换时重新计算一次头顶高度偏移。
+- 每帧只使用 `target.position + _cachedWorldOffsetFromTarget` 跟随，不再每帧扫描 Collider，避免静止目标因动画 / bounds 变化导致倒三角上下频闪。
+- 指示器面向 Main Camera，当前使用 `transform.forward = camera.transform.forward`。
+- 不负责 Raycast、敌我判断、目标选择或攻击逻辑。
+
+重要字段：
+
+- `playerTargeting`
+- `indicatorPrefab`
+- `targetOffset`
+- `fallbackHeight`
+- `hideWhenTargetDead`
 
 ### `PlayerSkillController.cs`
 
@@ -325,7 +368,8 @@ _pitch -= delta.y * rotationSpeed;
 
 - 读取 `PlayerTargeting.CurrentTarget`
 - 验证目标有效性
-- 读取 `PlayerCombatStats.CurrentNormalAttackDamage` 作为最终普通攻击伤害
+- 读取 `PlayerCombatStats.CurrentNormalAttackDamage` 作为普通攻击基础伤害
+- 通过同一 Player 上的 `PlayerStatusEffectController.ModifyOutgoingNormalAttackDamage(...)` 应用 Active 技能的普通攻击输出倍率
 - 调用 `HealthComponent.TakeDamage(finalDamage, transform)`
 - 触发 `Attack` Trigger 播放攻击动画
 
@@ -334,6 +378,7 @@ _pitch -= delta.y * rotationSpeed;
 - 不再直接读取 `PlayerEquipment.EquippedCore.AttackPowerBonus`。
 - 不再写死 Core 装备 +10 伤害。
 - 若 Player 上没有 `PlayerCombatStats`，回退使用原本 `normalAttackDamage`。
+- 若 Player 上没有 `PlayerStatusEffectController`，普通攻击伤害不做技能输出倍率修正。
 
 ### `PlayerDeathHandler.cs`
 
@@ -360,9 +405,9 @@ _pitch -= delta.y * rotationSpeed;
 当前包含：
 
 - `PlayerSkillInputSlot`：`None / Slot1 ... Slot9`
-- `PlayerSkillEffectType`：当前至少 `None / DamageReduction`
+- `PlayerSkillEffectType`：当前至少 `None / DamageReduction / AttackPowerMultiplier`
 - `PlayerSkillVisualType`：当前至少 `None / DefenseRing`
-- 字段：`skillId`、`skillName`、`description`、`icon`、`inputSlot`、`keyLabel`、`cooldown`、`duration`、`effectType`、`damageTakenMultiplier`、`visualType`
+- 字段：`skillId`、`skillName`、`description`、`icon`、`inputSlot`、`keyLabel`、`cooldown`、`duration`、`effectType`、`damageTakenMultiplier`、`attackPowerMultiplier`、`visualType`
 
 当前已确认资产：
 
@@ -377,6 +422,11 @@ _pitch -= delta.y * rotationSpeed;
   - `visualType = DefenseRing`
 - `Assets/Skills/Player/Skill_StoneGuard.asset`
   - 当前作为第二个 DamageReduction 测试技能使用；详细参数以 Inspector 为准。
+- 攻击强化测试技能资产
+  - 当前已创建并注册到 Player 的 `PlayerSkillManager.skills`，Play Mode 测试正常。
+  - `effectType = AttackPowerMultiplier`
+  - 会在 Active 期间提高普通攻击最终伤害。
+  - 具体资产路径 / 参数未确认，以下次读取项目文件或 Inspector 为准。
 
 #### `PlayerSkillManager.cs`
 
@@ -405,14 +455,18 @@ _pitch -= delta.y * rotationSpeed;
 
 - 读取 `PlayerSkillManager.RuntimeStates`。
 - 对 Active 且 `EffectType == DamageReduction` 的技能应用受到伤害倍率。
+- 对 Active 且 `EffectType == AttackPowerMultiplier` 的技能应用普通攻击输出倍率。
 - 当前多个 DamageReduction 技能同时 Active 时使用乘算叠加：
   - 例如 `0.5 * 0.8 = 0.4`
+- 当前多个 AttackPowerMultiplier 技能同时 Active 时也使用乘算叠加：
+  - 例如 `1.5 * 1.2 = 1.8`
 - `HealthComponent` 通过它统一修正玩家受到的伤害。
+- `PlayerSkillController` 通过 `ModifyOutgoingNormalAttackDamage(float baseDamage)` 修正玩家普通攻击最终伤害。
 
 注意：
 
 - 当前没有完整 Buff 优先级、覆盖规则、持续状态列表或 `StatModifier`。
-- 目前只支持 DamageReduction 这一类玩家技能效果。
+- 目前支持的玩家技能效果仍是最小原型：`DamageReduction` 与 `AttackPowerMultiplier`。
 
 #### `PlayerSkillCanvasUI.cs`
 
@@ -522,7 +576,7 @@ TakeDamage(...)
 - 玩家受到伤害时，DamageReduction 技能效果由 `PlayerStatusEffectController` 统一处理。
 - 敌人通常没有 `PlayerStatusEffectController`，因此敌人受伤不受玩家技能系统影响。
 - 旧 `PlayerMitigationController` fallback 已移除。
-- `OnDamaged` 传入最终伤害值。
+- `OnDamaged` 传入最终伤害值，当前伤害飘字系统通过该事件显示玩家打出的实际伤害与受到的实际伤害。
 
 `SetMaxHealth` 规则：
 
@@ -532,6 +586,45 @@ TakeDamage(...)
 - 最后触发 `OnHealthChanged(currentHealth, maxHealth)`。
 - 不处理死亡 / 复活状态。
 - 不调用 `RestoreFullHealth()`。
+
+### Damage Number / Combat Feedback
+
+#### `DamageNumberPopup.cs`
+
+路径：`Assets/Scripts/UI/DamageNumberPopup.cs`
+
+单个世界空间伤害飘字。
+
+职责：
+
+- 使用 `TextMeshPro` 显示伤害数字。
+- `Initialize(float damage)` / `Initialize(float damage, Camera targetCamera)` 初始化显示值。
+- 伤害值四舍五入为整数，最小显示 1。
+- 生命周期内向上移动、逐渐淡出、面向摄像机，结束后 Destroy 自身。
+- 当前第一版直接 Instantiate / Destroy，尚未使用对象池。
+
+#### `DamageNumberSpawner.cs`
+
+路径：`Assets/Scripts/UI/DamageNumberSpawner.cs`
+
+伤害飘字生成器，挂在带 `HealthComponent` 的对象上。
+
+职责：
+
+- 在 `OnEnable()` 订阅同对象 `HealthComponent.OnDamaged`。
+- 在 `OnDisable()` 取消订阅。
+- 受到最终伤害时，在对象头顶附近生成 `DamageNumberPopup`。
+- 不计算伤害、不修改血量、不区分攻击来源。
+- 依赖 Inspector 的 `popupPrefab` 绑定，缺失时只 Warning，不崩溃。
+
+当前绑定状态：
+
+- Player 已绑定 `DamageNumberSpawner`，使用玩家受伤用 Popup Prefab。
+- `Assets/Resources/EnemyBase.prefab` 已绑定 `DamageNumberSpawner`，使用玩家打出伤害用 Popup Prefab。
+- 当前已创建并使用：
+  - `Assets/Resources/UI/DamageNumberPopup.prefab`
+  - `Assets/Resources/UI/DamageNumberPopup_PlayerDamage.prefab`
+  - `Assets/Resources/UI/DamageNumberPopup_PlayerTaken.prefab`
 
 ### `PlayerCombatStats.cs`
 
@@ -1251,6 +1344,8 @@ Trigger 检测玩家进入后更新玩家最近复活点。
 - PlayerStatusEffectController
 - PlayerMitigationVisualFeedback
 - PlayerSkillHudUI（OnGUI 调试 HUD，显示最后按过的技能）
+- DamageNumberSpawner（玩家受伤飘字）
+- TargetSelectionIndicator（当前目标头顶倒三角指示器）
 
 Tag：`Player`  
 PickupItem 依赖该 Tag 判断玩家。
@@ -1332,10 +1427,11 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 
 #### `Assets/Resources/EnemyBase.prefab`
 
-敌人通用基础模板，不直接用于生成。当前已统一挂载 `EnemySkillController` 与 `EnemyCastBarUI`。
+敌人通用基础模板，不直接用于生成。当前已统一挂载 `EnemySkillController`、`EnemyCastBarUI` 与 `DamageNumberSpawner`。
 
 - `EnemySkillController.skills` 默认为空，表示普通敌人默认无技能。
 - `EnemyCastBarUI` 默认可保留；没有读条时不显示。
+- `DamageNumberSpawner` 用于敌人受伤时显示玩家打出的实际伤害数字。
 - 具体敌人通过 Prefab Variant 覆写模型、掉落、视野绑定、体型、技能等配置。
 
 #### `Assets/Resources/SkeletonEnemy_Variant.prefab`
@@ -1387,6 +1483,26 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 - 挂载 `PickupItem`
 - `itemData` 运行时由 `EnemyDropper` 注入
 
+#### `Assets/Resources/UI/DamageNumberPopup.prefab`
+
+- 伤害飘字基础 Prefab。
+- 当前已复制出玩家打出伤害 / 玩家受到伤害两个显示版本。
+
+#### `Assets/Resources/UI/DamageNumberPopup_PlayerDamage.prefab`
+
+- 敌人受到伤害时使用。
+- 用于显示玩家打出的实际伤害。
+
+#### `Assets/Resources/UI/DamageNumberPopup_PlayerTaken.prefab`
+
+- Player 受到伤害时使用。
+- 当前为红色加粗、字号 5 的测试表现。
+
+#### Target Indicator Prefab
+
+- 当前目标倒三角指示器 Prefab 已创建并绑定到 Player 的 `TargetSelectionIndicator.indicatorPrefab`。
+- 具体资产路径未确认；下一次修改前如需调整，请先读取或在 Inspector 确认。
+
 ---
 
 ## 5. Input / Control
@@ -1398,7 +1514,8 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
   - S：朝相机后方移动，不是慢速倒退
   - A / D：朝相机左 / 右方向移动，角色会转向实际移动方向
 - 跑步：Shift + 任意移动输入，八方向都可跑步
-- 鼠标左键：目标选择，不旋转相机，不隐藏 Cursor
+- 鼠标左键：点击目标选择，不旋转相机，不隐藏 Cursor
+- Tab：从屏幕左侧到右侧循环选中屏幕内敌对目标；到最右后回到最左
 - 鼠标右键：按住并移动鼠标时旋转相机
 - 鼠标左键 + 右键：向当前相机前方移动，等价于前进输入
 - 鼠标左键 + 右键 + Shift：向当前相机前方跑步
@@ -1424,6 +1541,14 @@ Cursor 当前规则：
 - RPGCameraController 被禁用 / 销毁：强制显示鼠标
 - 不使用 CursorLockMode.Locked
 
+
+目标选择规则：
+
+- 鼠标左键使用 Raycast 选择敌对目标。
+- Tab 使用 New Input System 的 `Keyboard.current.tabKey.wasPressedThisFrame`。
+- Tab 候选目标按摄像机 viewport x 从小到大排序，即屏幕左侧到右侧。
+- Tab 候选目标必须在屏幕内、摄像机前方、未死亡、敌对且在 `tabTargetMaxDistance` 内。
+- 当前目标由 `PlayerTargeting.CurrentTarget` 统一提供；`TargetSelectionIndicator` 只读取该值显示倒三角。
 
 玩家技能输入规则：
 
@@ -1472,6 +1597,9 @@ Cursor 当前规则：
 - ✅ 玩家普通攻击动画
 - ✅ 上半身 / 下半身动画分离
 - ✅ 玩家普通攻击伤害读取 PlayerCombatStats
+- ✅ 玩家普通攻击可通过 `AttackPowerMultiplier` 技能效果临时提高最终伤害
+- ✅ Tab 键从屏幕左侧到右侧循环选中屏幕内敌对目标
+- ✅ 当前目标头顶倒三角指示器第一版
 - ✅ 敌人技能系统第一版（EnemySkillData / EnemySkillController）
 - ✅ CastAttack / 读条重击第一版
 - ✅ EnemyAI Attack 状态接入技能调用：有技能时尝试释放，无技能时普通攻击
@@ -1486,8 +1614,11 @@ Cursor 当前规则：
 - ✅ `PlayerSkillManager` 统一管理注册技能的输入、Active、Cooldown、Ready 状态
 - ✅ `PlayerSkillManager.LastPressedSkillState` 记录最后按过的技能，冷却中按下也会更新
 - ✅ `PlayerStatusEffectController` 根据 Active 技能统一修正玩家受到的伤害
+- ✅ `PlayerStatusEffectController` 可根据 Active 技能修正玩家普通攻击输出伤害
 - ✅ DamageReduction 技能效果第一版
+- ✅ AttackPowerMultiplier 技能效果第一版
 - ✅ 多个 DamageReduction 同时 Active 时使用乘算叠加
+- ✅ 多个 AttackPowerMultiplier 同时 Active 时使用乘算叠加
 - ✅ `HealthComponent` 通过 `PlayerStatusEffectController` 应用玩家技能减伤
 - ✅ Iron Bulwark 减伤技能已迁移到 `PlayerSkillData / PlayerSkillManager / PlayerStatusEffectController`
 - ✅ Stone Guard 作为第二个 DamageReduction 测试技能已可按键激活并正常减伤
@@ -1546,6 +1677,14 @@ Cursor 当前规则：
 - ✅ 装备槽 → 背包
 - ✅ 替换装备时旧装备回背包
 
+### 战斗反馈 / 目标显示
+
+- ✅ `DamageNumberPopup` / `DamageNumberSpawner` 伤害飘字第一版
+- ✅ `HealthComponent.OnDamaged` 驱动最终伤害数字显示
+- ✅ Player 受到伤害与敌人受到伤害可使用不同 Popup Prefab
+- ✅ `TargetSelectionIndicator` 读取 `PlayerTargeting.CurrentTarget` 显示目标头顶倒三角
+- ✅ TargetSelectionIndicator 已修正静止目标上下频闪问题：目标切换时计算一次高度偏移，运行中不再每帧扫描 Collider
+
 ### Debug / 工具
 
 - ✅ F1 OnGUI Debug 面板
@@ -1584,9 +1723,9 @@ Cursor 当前规则：
 
 ### 玩家技能系统限制
 
-- ⚠️ 当前玩家技能系统 v0.1 只支持最小 DamageReduction 流程。
+- ⚠️ 当前玩家技能系统 v0.1 只支持最小 DamageReduction / AttackPowerMultiplier 流程。
 - ⚠️ 尚未实现正式 Buff / StatusEffect 数据结构、优先级、覆盖规则、图标状态列表或效果取消事件。
-- ⚠️ 多个 DamageReduction 当前按乘算叠加，尚未设计减伤上限、同类覆盖或职业平衡规则。
+- ⚠️ 多个 DamageReduction / AttackPowerMultiplier 当前按乘算叠加，尚未设计同类覆盖、上限或职业平衡规则。
 - ⚠️ `PlayerMitigationVisualFeedback` 当前仍是 Iron Bulwark 专用视觉反馈，尚未抽象为通用 Skill Visual 系统。
 - ⚠️ `PlayerSkillHudUI` 是 OnGUI 调试 HUD，不是正式玩家 UI。
 - ⚠️ `PlayerSkillManager.skills` 当前通过 Inspector 注册，尚未实现技能学习、解锁、保存、拖拽或热键自定义。
@@ -1602,11 +1741,14 @@ Cursor 当前规则：
 - ⚠️ 正式死亡 / 复活 UI 尚未接入，当前仍主要依赖 Debug UI。
 - ⚠️ 当前操作逻辑是非锁定 Legacy-like 移动；尚未实现锁定目标时的 strafe / backstep 战斗移动模式。
 - ⚠️ 鼠标灵敏度当前只支持 Inspector 调整，尚未实现正式设置菜单或保存设置。
+- ⚠️ 当前目标倒三角是第一版世界空间指示器，尚未实现目标信息 UI、目标血条高亮、描边或锁定目标战斗移动模式。
+- ⚠️ 伤害飘字当前使用 Instantiate / Destroy，尚未实现对象池；伤害数字很多时可能需要优化。
 
 ### 性能 / 架构
 
 - ⚠️ `ScanForTarget()` 每 0.2s 使用 FindObjectsOfType / FindObjectsByType，敌人数量多时有性能隐患。
 - ⚠️ `EnemyWorldManager` 与 `EnemySpawnPoint` 当前仍有 Find 系列 API，未来应改为注册缓存。
+- ⚠️ `PlayerTargeting` 的 Tab 候选收集当前使用 `FindObjectsByType<HealthComponent>`，敌人数量变多后应改为敌人注册缓存。
 - ⚠️ `SkeletonDebugUI` 目前职责较多，已接近 Runtime Debug Console，后续可拆分为 InventoryDebugPanel / EquipmentDebugPanel / CombatStatsDebugPanel。
 - ⚠️ `EntityStats.cs` 已创建但未集成。
 - ⚠️ EnemyAI 已整理移动控制权第一版，正常移动由 NavMeshAgent 主导；Rigidbody fallback 仍保留必要兼容，后续可继续收敛到“Rigidbody 只做碰撞”。
@@ -1669,6 +1811,7 @@ Cursor 当前规则：
 
 - Rigidbody 使用 `rb.linearVelocity`（Unity 6）。
 - 输入系统使用 `Mouse.current` / `Keyboard.current`，不得使用旧 `UnityEngine.Input`。
+- Tab 目标选择逻辑属于 `PlayerTargeting.cs`；不要另建第二套目标系统与 `CurrentTarget` 抢控制权。
 - Player 当前采用 Legacy-like 相机基准移动：移动方向由 `PlayerController` 根据相机水平 forward / right 计算。
 - `RPGCameraController` 不应直接旋转 Player；Player 移动时朝向由 `PlayerController` 负责。
 - 鼠标视角旋转使用 `Mouse.delta * rotationSpeed`，不要再乘 `Time.deltaTime`。
@@ -1680,6 +1823,7 @@ Cursor 当前规则：
 - `EnemySkillController.skills` 为空代表无技能，必须保持不影响普通攻击。
 - `EnemyCastBarUI` 依赖 OnGUI，GUIStyle 必须在 `OnGUI()` 内懒初始化，不要在 `Awake()` / `Start()` 中访问 `GUI.skin`。
 - 玩家技能系统 v0.1 使用 `PlayerSkillData` + `PlayerSkillManager` + `PlayerStatusEffectController`，不要再恢复已删除的 `PlayerMitigationController`。
+- `PlayerStatusEffectController` 当前同时负责 DamageReduction 与 AttackPowerMultiplier 的最小状态效果修正；新增效果类型前应先确认是否继续放在该脚本内。
 - `PlayerSkillManager.skills` 的 Inspector 顺序决定 Canvas 技能栏显示顺序。
 - `SkillCanvas/SkillBar/SkillSlotTemplate` 是正式技能栏第一版的场景绑定；`SkillSlotTemplate` 是隐藏模板，不是具体技能格。
 - `PlayerSkillBarCanvasUI` 使用运行时 Instantiate 生成全部技能格，不要回退到直接复用模板本体作为第一个技能格。
@@ -1704,6 +1848,9 @@ Cursor 当前规则：
 - `Assets/Scripts/PlayerController.cs`
 - `Assets/Scripts/RPGCameraController.cs`
 - `Assets/Scripts/Player/PlayerTargeting.cs`
+- `Assets/Scripts/UI/TargetSelectionIndicator.cs`
+- `Assets/Scripts/UI/DamageNumberPopup.cs`
+- `Assets/Scripts/UI/DamageNumberSpawner.cs`
 - `Assets/Scripts/Player/PlayerSkillController.cs`
 - `Assets/Scripts/Player/PlayerDeathHandler.cs`
 - `Assets/Scripts/Player/PlayerRespawnPointTracker.cs`
@@ -1731,6 +1878,10 @@ Cursor 当前规则：
 - `Assets/Resources/SkeletonBossEnemy_Variant.prefab`
 - `Assets/Resources/SkeletonEnemy.prefab`
 - `Assets/Resources/ItemDrop.prefab`
+- `Assets/Resources/UI/DamageNumberPopup.prefab`
+- `Assets/Resources/UI/DamageNumberPopup_PlayerDamage.prefab`
+- `Assets/Resources/UI/DamageNumberPopup_PlayerTaken.prefab`
+- 目标倒三角指示器 Prefab（路径未确认，已绑定到 Player 的 `TargetSelectionIndicator.indicatorPrefab`）
 - 读条重击 `EnemySkillData` 资产（当前路径未确认，已配置到 `SkeletonBossEnemy_Variant.prefab`）
 - `Assets/Items/TestItem_Bone.asset`
 - `Assets/Items/TestItem_GuardCore.asset`
@@ -1851,46 +2002,40 @@ Cursor 当前规则：
 
 ### ⭐ 最推荐的下一个小任务
 
-**玩家技能系统 v0.1 的下一种效果类型。**
+**完善 `PlayerSkillHudUI` / Debug 显示，让不同玩家技能效果类型显示对应参数。**
 
 目的：
 
 ```text
-当前 DamageReduction 技能已经跑通：
-PlayerSkillData
-→ PlayerSkillManager
-→ PlayerStatusEffectController
-→ Canvas 技能栏 / OnGUI HUD / F1 Debug
+当前玩家技能已支持：
+- DamageReduction
+- AttackPowerMultiplier
 ```
 
 建议目标：
 
 ```text
-新增一个与 DamageReduction 不同的小技能效果类型。
-优先选择范围小、可验证、不会牵涉复杂动画的效果。
-例如：
-- 短时间提高普通攻击伤害
-- 短时间获得护盾值
-- 瞬发自我治疗 Debug 技能
+当 LastPressedSkillState 的 EffectType 是 DamageReduction 时显示 Damage Taken Multiplier。
+当 EffectType 是 AttackPowerMultiplier 时显示 Attack Power Multiplier。
+保持 OnGUI 调试用途，不做正式 UI。
+不修改技能执行逻辑，不修改 Animator / Prefab / Scene。
 ```
 
 验收目标：
 
 ```text
-新技能可以作为 PlayerSkillData 注册进 PlayerSkillManager。
-Canvas 技能栏自动显示新技能格。
-按对应键可以进入 Active / Cooldown。
-PlayerStatusEffectController 或对应系统能产生可确认的 gameplay 效果。
-不修改 Animator / Prefab，除非目标明确需要。
+按 Iron Bulwark / Stone Guard 时能看到减伤倍率。
+按攻击强化测试技能时能看到攻击倍率。
+冷却中按键也能更新 LastPressedSkillState 的显示。
 ```
 
 ### 备选任务
 
-1. 抽象 `PlayerMitigationVisualFeedback` 为通用 `PlayerSkillVisualController`，根据 `PlayerSkillVisualType` 显示不同视觉反馈。
-2. 给 `PlayerSkillData` / `PlayerSkillManager` 增加更清晰的 Inspector Debug 显示，方便查看 RuntimeStates。
-3. 给敌人读条重击补正式参数调优：伤害、读条时间、冷却、范围。
-4. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
-5. 正式背包 UI / 正式装备 UI 第一版。
+1. 给 `PlayerTargeting` 增加 Shift+Tab 反向选敌，仍复用同一候选列表与敌对判定。
+2. 给伤害飘字增加对象池 `DamageNumberPool`，减少频繁 Instantiate / Destroy。
+3. 抽象 `PlayerMitigationVisualFeedback` 为通用 `PlayerSkillVisualController`，根据 `PlayerSkillVisualType` 显示不同视觉反馈。
+4. 给目标显示追加目标血条高亮或简单目标信息 UI，但不要改目标选择逻辑。
+5. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
 6. 整理 NavMeshSurface LayerMask，只让 Terrain / Ground / Environment 参与 Bake。
 
 
@@ -2444,4 +2589,11 @@ EnemySpawnArea 与装备替换闭环已由用户确认没有明显问题。
 1. 玩家技能系统 v0.1 已落地：新增并接入 `PlayerSkillData`、`PlayerSkillManager`、`PlayerStatusEffectController`、`PlayerSkillCanvasUI`、`PlayerSkillBarCanvasUI`、`PlayerSkillHudUI`；`PlayerMitigationController.cs` 已删除，`HealthComponent` 现在只通过 `PlayerStatusEffectController` 修正玩家受到的伤害。
 2. Iron Bulwark / Stone Guard 等 DamageReduction 技能可通过 `PlayerSkillManager.skills` 注册，按对应数字键激活；Canvas 技能栏会按注册顺序自动生成技能格，Active / Cooldown / Ready 显示正常，多个减伤按乘算叠加。
 3. `SkillCanvas / SkillBar / SkillSlotTemplate` 已成为正式技能栏第一版：模板隐藏，运行时生成所有技能格；技能栏锚定右下，新技能显示在最右侧，技能数量增加时整体向左扩展。
+
+
+## 22. 本次有效变更摘要（2026-05-18 第二次）
+
+1. 玩家技能系统新增 `AttackPowerMultiplier` 效果类型；`PlayerStatusEffectController` 可修正普通攻击输出伤害，`PlayerSkillController` 普通攻击结算已接入该修正。攻击强化测试技能已创建并注册，Play Mode 测试正常，具体资产路径未确认。
+2. 战斗反馈新增伤害飘字系统：`DamageNumberPopup` / `DamageNumberSpawner` 通过 `HealthComponent.OnDamaged` 显示最终实际伤害；Player 与 `EnemyBase.prefab` 已绑定对应 Spawner，并区分玩家打出伤害 / 玩家受到伤害的 Popup Prefab。
+3. 目标选择与显示已强化：`PlayerTargeting` 支持 Tab 从屏幕左侧到右侧循环选择屏幕内敌人；`TargetSelectionIndicator` 读取 `CurrentTarget` 在目标头顶显示倒三角，并已修正静止目标指示器上下频闪问题。
 
