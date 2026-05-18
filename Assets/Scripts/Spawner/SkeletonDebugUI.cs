@@ -7,6 +7,7 @@ public class SkeletonDebugUI : MonoBehaviour
     [SerializeField] private PlayerEquipment   playerEquipment;
     [SerializeField] private PlayerCombatStats playerCombatStats;
     [SerializeField] private PlayerInventory   playerInventory;
+    private PlayerMitigationController playerMitigationController;
     [SerializeField] private ItemData testCoreItem;
 
     private bool    showUI                 = false;
@@ -163,6 +164,9 @@ public class SkeletonDebugUI : MonoBehaviour
         GUI.backgroundColor = Color.white;
 
         GUILayout.Space(10);
+        GUILayout.Space(10);
+        DrawMitigationStatusSection();
+        GUILayout.Space(4);
         GUILayout.Label("F1: Toggle");
 
         GUILayout.EndScrollView();
@@ -510,6 +514,22 @@ private float CalculateEquipmentStatusWindowHeight(float width)
         cs.ApplyCurrentMaxHealth(keepCurrentRatio: false);
     }
 
+private void DrawMitigationStatusSection()
+    {
+        GUILayout.Label("--- 玩家减伤状态 ---");
+        var mc = ResolvePlayerMitigationController();
+        if (mc == null)
+        {
+            GUILayout.Label("PlayerMitigationController not found");
+            return;
+        }
+        GUILayout.Label($"Mitigation Active: {mc.IsMitigationActive}");
+        GUILayout.Label($"Mitigation Remaining: {mc.MitigationRemainingTime:F2} s");
+        GUILayout.Label($"Cooldown Remaining: {mc.CooldownRemainingTime:F2} s");
+        GUILayout.Label($"Damage Taken Multiplier: {mc.DamageTakenMultiplier:P0}");
+    }
+
+
     // ─── Resolve ヘルパー ─────────────────────────────────────
 
     private PlayerEquipment ResolvePlayerEquipment(bool warnIfMissing)
@@ -537,6 +557,15 @@ private float CalculateEquipmentStatusWindowHeight(float width)
         if (p != null) playerInventory = p.GetComponent<PlayerInventory>();
         return playerInventory;
     }
+
+private PlayerMitigationController ResolvePlayerMitigationController()
+    {
+        if (playerMitigationController != null) return playerMitigationController;
+        var p = FindPlayerGameObject();
+        if (p != null) playerMitigationController = p.GetComponent<PlayerMitigationController>();
+        return playerMitigationController;
+    }
+
 
     private void EquipTestCore()
     {
