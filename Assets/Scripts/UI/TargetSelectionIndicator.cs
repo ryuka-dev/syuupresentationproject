@@ -1,8 +1,14 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// 現在の選択目標の頭上に倒三角インジケーターを表示するコンポーネント。
 /// Player に挂载し、PlayerTargeting.CurrentTarget を毎フレーム読む。
+///
+/// バグ修正 (v0.2)：
+///   以前は LateUpdate 毎フレーム Collider bounds を再走査していたため、
+///   アニメーション中に bounds.max.y が変動し、指示器が上下に頻闪していた。
+///   現在は目標切換時に一度だけオフセットを計算し、以後は
+///   target.position + _cachedWorldOffsetFromTarget で毎フレーム位置更新する。
 ///
 /// 使い方：
 ///   1. Player の GameObject にアタッチ。
@@ -21,8 +27,8 @@ public class TargetSelectionIndicator : MonoBehaviour
     [SerializeField] private GameObject      indicatorPrefab;
 
     [Header("頭上位置設定")]
-    [SerializeField] private Vector3 targetOffset          = new Vector3(0f, 0.4f, 0f);
-    [SerializeField] private float   fallbackHeight        = 2f;
+    [SerializeField] private Vector3 targetOffset   = new Vector3(0f, 0.4f, 0f);
+    [SerializeField] private float   fallbackHeight = 2f;
 
     [Header("表示制御")]
     [SerializeField] private bool hideWhenTargetDead = true;
@@ -32,6 +38,12 @@ public class TargetSelectionIndicator : MonoBehaviour
     private GameObject _indicatorInstance;
     private Transform  _currentTarget;
     private Camera     _mainCamera;
+
+    /// <summary>
+    /// 目標切換時に一度だけ計算する「target.position → 頭上」のワールドオフセット。
+    /// 毎フレーム Collider を再走査する代わりにこの値を使って位置を更新する。
+    /// </summary>
+    private Vector3 _cachedWorldOffsetFromTarget;
 
     // prefab 未設定 Warning を一度だけ出すためのフラグ
     private bool _prefabWarningShown;
@@ -65,14 +77,29 @@ public class TargetSelectionIndicator : MonoBehaviour
         // PlayerTargeting が見つからない場合は非表示
         if (playerTargeting == null)
         {
-            HideIndicator();
+            ClearTarget();
             return;
         }
 
         Transform target = playerTargeting.CurrentTarget;
 
+        // 目標が切り替わった場合 → オフセットを再計算
+        if (target != _currentTarget)
+        {
+            _currentTarget = target;
+
+            if (_currentTarget != null)
+            {
+                _cachedWorldOffsetFromTarget = CalculateWorldOffsetFromTarget(_currentTarget);
+            }
+            else
+            {
+                _cachedWorldOffsetFromTarget = Vector3.zero;
+            }
+        }
+
         // 目標なし
-        if (target == null)
+        if (_currentTarget == null)
         {
             HideIndicator();
             return;
@@ -81,10 +108,10 @@ public class TargetSelectionIndicator : MonoBehaviour
         // 目標が死亡している場合は非表示
         if (hideWhenTargetDead)
         {
-            var health = target.GetComponent<HealthComponent>();
+            var health = _currentTarget.GetComponent<HealthComponent>();
             if (health != null && health.IsDead)
             {
-                HideIndicator();
+                ClearTarget();
                 return;
             }
         }
@@ -93,8 +120,8 @@ public class TargetSelectionIndicator : MonoBehaviour
         if (!EnsureIndicatorInstance())
             return;
 
-        // 位置更新
-        _indicatorInstance.transform.position = CalculateIndicatorPosition(target);
+        // 毎フレームの位置更新：Collider 走査なし、キャッシュ済みオフセットを加算するだけ
+        _indicatorInstance.transform.position = _currentTarget.position + _cachedWorldOffsetFromTarget;
 
         // カメラに向ける
         FaceCamera();
@@ -132,13 +159,14 @@ public class TargetSelectionIndicator : MonoBehaviour
     }
 
     /// <summary>
-    /// 目標の頭上座標を計算する。
+    /// 目標切換時に一度だけ呼ばれる。
+    /// target.position を基準にした「頭上への相対オフセット」を返す。
     /// 非 Trigger Collider の bounds.max.y を優先し、
     /// Collider が見つからない場合は fallbackHeight を使用する。
+    /// 毎フレーム呼ばない。
     /// </summary>
-    private Vector3 CalculateIndicatorPosition(Transform target)
+    private Vector3 CalculateWorldOffsetFromTarget(Transform target)
     {
-        // 自身と子の全 Collider を収集（Trigger を除外）
         Collider[] colliders = target.GetComponentsInChildren<Collider>();
 
         bool   hasBounds = false;
@@ -159,35 +187,52 @@ public class TargetSelectionIndicator : MonoBehaviour
             }
         }
 
-        Vector3 basePos;
         if (hasBounds)
         {
-            // bounds の上端 (max.y) をベースに、XZ は target.position に合わせる
-            basePos = new Vector3(target.position.x, combined.max.y, target.position.z);
+            // 頭上位置 = (target.x, colliderbounds.max.y, target.z) + targetOffset
+            Vector3 headPosition = new Vector3(
+                target.position.x,
+                combined.max.y,
+                target.position.z
+            ) + targetOffset;
+
+            // target.position からの相対オフセットとして返す
+            return headPosition - target.position;
         }
         else
         {
             // Collider なし / 全て Trigger → fallback
-            basePos = target.position + Vector3.up * fallbackHeight;
+            return Vector3.up * fallbackHeight + targetOffset;
         }
-
-        return basePos + targetOffset;
     }
 
     /// <summary>
-    /// インジケーターをカメラ正面に向ける（Billboard）。
+    /// インジケーターを TextMeshPro 世界文字に適した方法でカメラに向ける。
+    /// transform.forward = camera.forward 方式（DamageNumberPopup と統一）。
     /// </summary>
     private void FaceCamera()
     {
+        if (_indicatorInstance == null)
+            return;
+
         if (_mainCamera == null)
             _mainCamera = Camera.main;
 
-        if (_mainCamera == null || _indicatorInstance == null)
+        if (_mainCamera == null)
             return;
 
-        Vector3 direction = _indicatorInstance.transform.position - _mainCamera.transform.position;
-        if (direction.sqrMagnitude > 0.0001f)
-            _indicatorInstance.transform.rotation = Quaternion.LookRotation(direction);
+        _indicatorInstance.transform.forward = _mainCamera.transform.forward;
+    }
+
+    /// <summary>
+    /// 目標が消えた / 死亡した場合にキャッシュをリセットして非表示にする。
+    /// 次回同一目標を選び直した場合に高さを再計算できるよう _currentTarget も null にする。
+    /// </summary>
+    private void ClearTarget()
+    {
+        _currentTarget               = null;
+        _cachedWorldOffsetFromTarget = Vector3.zero;
+        HideIndicator();
     }
 
     /// <summary>
