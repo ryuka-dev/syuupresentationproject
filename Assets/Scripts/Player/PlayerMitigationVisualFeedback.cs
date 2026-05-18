@@ -1,15 +1,19 @@
 using UnityEngine;
 
 /// <summary>
-/// Iron Bulwark 減伤视觉反馈 — 第一版。
+/// Iron Bulwark 減伤视觉反馈 — 第五步：改为读取 PlayerSkillManager 的运行时状态。
 /// 减伤激活时在玩家脚下用 LineRenderer 显示蓝色防御光环（呼吸缩放 + 缓慢旋转）。
-/// 减伤结束后隐藏光环。
+/// 光环显示条件：PlayerSkillManager.GetStateBySkillId(skillId).IsActive == true。
+/// 视觉表现本身（LineRenderer、颜色、旋转、呼吸）完全保留，本次只改"何时显示"。
 /// 不处理输入、不修改减伤逻辑、不修改 UI、不修改 HealthComponent。
-/// 挂载方式：把此脚本挂到 Player 上即可。
 /// </summary>
 public class PlayerMitigationVisualFeedback : MonoBehaviour
 {
-    [Header("减伤控制器引用（留空时自动查找）")]
+    [Header("技能管理器引用（留空时自动查找）")]
+    [SerializeField] private PlayerSkillManager skillManager;
+    [SerializeField] private string             skillId = "iron_bulwark";
+
+    [Header("旧引用（过渡期保留，当前不用于主逻辑）")]
     [SerializeField] private PlayerMitigationController mitigationController;
 
     [Header("光环形状")]
@@ -30,32 +34,28 @@ public class PlayerMitigationVisualFeedback : MonoBehaviour
     private GameObject   _ringGO;
     private LineRenderer _lr;
     private Material     _runtimeMat;
-    private bool         _ready;          // 所有依赖均就绪
+    private bool         _ready;    // BuildRing() 成否のみに依存
 
     // ─── Unity 生命周期 ───────────────────────────────────────────
 
     private void Awake()
     {
-        ResolveController();
-        if (mitigationController == null)
-        {
-            Debug.LogWarning("[MitigationFX] PlayerMitigationController not found. Visual feedback disabled.");
-            return;
-        }
+        ResolveSkillManager();
+        if (skillManager == null)
+            Debug.LogWarning("[MitigationFX] PlayerSkillManager not found. Visual feedback may not activate.");
 
         _ready = BuildRing();
     }
 
     private void OnEnable()
     {
-        // 脚本 re-enable 时保持正确初始状态
-        if (_ringGO != null && mitigationController != null)
-            _ringGO.SetActive(mitigationController.IsMitigationActive);
+        // 脚本 re-enable 時に正しい初期状態を保つ
+        if (_ringGO != null)
+            _ringGO.SetActive(ShouldShowMitigationRing());
     }
 
     private void OnDisable()
     {
-        // 脚本禁用时隐藏光环
         if (_ringGO != null) _ringGO.SetActive(false);
     }
 
@@ -66,36 +66,47 @@ public class PlayerMitigationVisualFeedback : MonoBehaviour
 
     private void Update()
     {
-        if (!_ready || mitigationController == null) return;
+        if (!_ready) return;
 
-        bool active = mitigationController.IsMitigationActive;
-        if (_ringGO.activeSelf != active)
-            _ringGO.SetActive(active);
+        bool shouldShow = ShouldShowMitigationRing();
+        if (_ringGO.activeSelf != shouldShow)
+            _ringGO.SetActive(shouldShow);
 
-        if (!active) return;
+        if (!shouldShow) return;
 
-        // ── 旋转 ──
+        // ── 旋転 ──
         _ringGO.transform.Rotate(0f, rotationSpeed * Time.deltaTime, 0f, Space.Self);
 
-        // ── 呼吸缩放 ──
+        // ── 呼吸スケール ──
         float pulse = 1f + Mathf.Sin(Time.time * pulseSpeed) * pulseScaleAmount;
         _ringGO.transform.localScale = new Vector3(pulse, 1f, pulse);
     }
 
     // ─── Private ─────────────────────────────────────────────────
 
-    private void ResolveController()
+    /// <summary>
+    /// 光环を表示すべきかどうかを PlayerSkillManager 経由で判定する。
+    /// PlayerSkillManager / state が見つからない場合は false（エラーなし）。
+    /// </summary>
+    private bool ShouldShowMitigationRing()
     {
-        if (mitigationController != null) return;
-        mitigationController = GetComponent<PlayerMitigationController>();
-        if (mitigationController == null)
-            mitigationController = FindFirstObjectByType<PlayerMitigationController>();
+        if (skillManager == null) return false;
+        var state = skillManager.GetStateBySkillId(skillId);
+        if (state == null) return false;
+        return state.IsActive;
     }
 
-    /// <summary>
-    /// Runtime で ring GameObject と LineRenderer を生成する。
-    /// 成功したら true を返す。
-    /// </summary>
+    private void ResolveSkillManager()
+    {
+        if (skillManager != null) return;
+        skillManager = GetComponent<PlayerSkillManager>();
+        if (skillManager != null) return;
+        skillManager = GetComponentInParent<PlayerSkillManager>();
+        if (skillManager != null) return;
+        skillManager = FindFirstObjectByType<PlayerSkillManager>();
+    }
+
+    /// <summary>Runtime で ring GameObject と LineRenderer を生成する。成功したら true。</summary>
     private bool BuildRing()
     {
         // ── Material ──
@@ -110,7 +121,7 @@ public class PlayerMitigationVisualFeedback : MonoBehaviour
 
         _runtimeMat       = new Material(shader);
         _runtimeMat.name  = "MitigationRingMat_Runtime";
-        _runtimeMat.color = activeColor;  // Sprites/Default などに対応
+        _runtimeMat.color = activeColor;
 
         // ── Ring GameObject ──
         _ringGO = new GameObject("MitigationRing_Runtime");
@@ -120,14 +131,14 @@ public class PlayerMitigationVisualFeedback : MonoBehaviour
 
         // ── LineRenderer ──
         _lr = _ringGO.AddComponent<LineRenderer>();
-        _lr.useWorldSpace  = false;
-        _lr.loop           = true;
-        _lr.positionCount  = segments;
-        _lr.startWidth     = lineWidth;
-        _lr.endWidth       = lineWidth;
-        _lr.startColor     = activeColor;
-        _lr.endColor       = activeColor;
-        _lr.material       = _runtimeMat;
+        _lr.useWorldSpace      = false;
+        _lr.loop               = true;
+        _lr.positionCount      = segments;
+        _lr.startWidth         = lineWidth;
+        _lr.endWidth           = lineWidth;
+        _lr.startColor         = activeColor;
+        _lr.endColor           = activeColor;
+        _lr.material           = _runtimeMat;
         _lr.shadowCastingMode  = UnityEngine.Rendering.ShadowCastingMode.Off;
         _lr.receiveShadows     = false;
 
@@ -135,12 +146,10 @@ public class PlayerMitigationVisualFeedback : MonoBehaviour
         for (int i = 0; i < segments; i++)
         {
             float angle = i * 2f * Mathf.PI / segments;
-            float x     = Mathf.Cos(angle) * radius;
-            float z     = Mathf.Sin(angle) * radius;
-            _lr.SetPosition(i, new Vector3(x, yOffset, z));
+            _lr.SetPosition(i, new Vector3(Mathf.Cos(angle) * radius, yOffset, Mathf.Sin(angle) * radius));
         }
 
-        _ringGO.SetActive(false);   // デフォルト非表示
+        _ringGO.SetActive(false);
         return true;
     }
 }

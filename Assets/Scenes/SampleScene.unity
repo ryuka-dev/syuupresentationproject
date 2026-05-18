@@ -3102,6 +3102,59 @@ MonoBehaviour:
   panelSize: {x: 220, y: 120}
   bottomOffset: 181.4
   rightOffset: 40
+--- !u!114 &919417068
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 919417038}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4cc648ad595799f42876f5f6665d9c50, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerMitigationVisualFeedback
+  skillManager: {fileID: 919417069}
+  skillId: iron_bulwark
+  mitigationController: {fileID: 919417065}
+  radius: 1.2
+  yOffset: 0.05
+  lineWidth: 0.06
+  segments: 96
+  pulseSpeed: 3
+  pulseScaleAmount: 0.08
+  rotationSpeed: 60
+  activeColor: {r: 0.25, g: 0.75, b: 1, a: 0.75}
+--- !u!114 &919417069
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 919417038}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8ab444a42d85a7f409840a64398fc121, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerSkillManager
+  skills:
+  - {fileID: 11400000, guid: 069070b5ecee0574fb042b7859fde373, type: 2}
+  logSkillActivation: 1
+  runtimeStates: []
+--- !u!114 &919417070
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 919417038}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a844f2957e0ec434e86ee4e82578533a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerStatusEffectController
+  skillManager: {fileID: 919417069}
+  logDamageModification: 1
 --- !u!1 &971681417
 GameObject:
   m_ObjectHideFlags: 0
@@ -5096,6 +5149,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerSkillCanvasUI
   skillName: Iron Bulwark
   keyLabel: 2
+  skillId: iron_bulwark
+  skillManager: {fileID: 0}
   mitigationController: {fileID: 0}
   iconImage: {fileID: 609095936}
   cooldownOverlay: {fileID: 660028062}
@@ -5740,6 +5795,15 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
       insertIndex: -1
       addedObject: {fileID: 919417067}
+    - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 919417068}
+    - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 919417069}
+    - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 919417070}
   m_SourcePrefab: {fileID: 100100000, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
 --- !u!1 &2029538305
 GameObject:

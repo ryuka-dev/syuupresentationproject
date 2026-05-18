@@ -3,82 +3,87 @@ using UnityEngine.UI;
 using TMPro;
 
 /// <summary>
-/// 正式 Canvas 技能格 UI — Iron Bulwark 第一版。
-/// 每帧读取 PlayerMitigationController 状态，更新图标遮罩和倒计时文本。
-/// 不处理输入，不启动技能，只负责 UI 显示。
-/// 挂载到场景中 IronBulwarkSlot GameObject 上。
-/// Inspector 中绑定各子对象引用；如果 mitigationController 未绑定，
-/// 则在 Start 中自动搜索（仅一次，不每帧 Find）。
+/// 正式 Canvas 技能格 UI — Iron Bulwark 第一版（第三步：接入 PlayerSkillManager）。
+/// 読み取り元を PlayerMitigationController から PlayerSkillManager の RuntimeState に切り替え。
+/// Update では PlayerSkillManager.GetStateBySkillId(skillId) で状態を取得し UI を更新する。
+/// PlayerSkillManager または skillId が見つからない場合は安全に NOT FOUND 表示（エラーなし）。
+/// 不处理输入，不启动技能，不修改减伤逻辑。
+/// 挂载到 IronBulwarkSlot GameObject 上。
 /// </summary>
 public class PlayerSkillCanvasUI : MonoBehaviour
 {
     [Header("技能数据（只读配置）")]
     [SerializeField] private string skillName = "Iron Bulwark";
     [SerializeField] private string keyLabel  = "2";
+    [SerializeField] private string skillId   = "iron_bulwark";
 
-    [Header("运行时绑定 — 减伤控制器")]
+    [Header("运行时绑定 — 技能管理器（留空自动查找）")]
+    [SerializeField] private PlayerSkillManager skillManager;
+
+    // 旧引用保留为过渡期兜底，不再用于主逻辑。下一步废弃原型时可一并删除。
+    [Header("旧引用（过渡期保留，当前不使用）")]
     [SerializeField] private PlayerMitigationController mitigationController;
 
     [Header("UI 元素绑定")]
-    [SerializeField] private Image            iconImage;
-    [SerializeField] private Image            cooldownOverlay;
-    [SerializeField] private TextMeshProUGUI  cooldownText;
-    [SerializeField] private TextMeshProUGUI  keyText;
-    [SerializeField] private TextMeshProUGUI  skillNameText;
-
-    // 冷却计算用：记录上次激活开始时的最大冷却时长（用于 fillAmount 计算）
-    private float _maxCooldown = 12f;
+    [SerializeField] private Image           iconImage;
+    [SerializeField] private Image           cooldownOverlay;
+    [SerializeField] private TextMeshProUGUI cooldownText;
+    [SerializeField] private TextMeshProUGUI keyText;
+    [SerializeField] private TextMeshProUGUI skillNameText;
 
     // ─── Unity 生命周期 ───────────────────────────────────────────
 
     private void Start()
     {
-        // Inspector 未绑定时自动查找（仅一次）
-        if (mitigationController == null)
-        {
-            mitigationController = FindFirstObjectByType<PlayerMitigationController>();
-            if (mitigationController == null)
-                Debug.LogWarning("[PlayerSkillCanvasUI] PlayerMitigationController not found. UI will show safe fallback state.");
-        }
+        // PlayerSkillManager の解決（Inspector 未バインド時のみ自動検索）
+        if (skillManager == null)
+            skillManager = GetComponentInParent<PlayerSkillManager>();
+        if (skillManager == null)
+            skillManager = FindFirstObjectByType<PlayerSkillManager>();
+        if (skillManager == null)
+            Debug.LogWarning("[PlayerSkillCanvasUI] PlayerSkillManager not found. UI will show NOT FOUND.");
 
-        // 初始化静态文本
-        if (keyText       != null) keyText.text       = keyLabel;
-        if (skillNameText != null) skillNameText.text  = skillName;
+        // 静的テキストの初期化
+        if (keyText       != null) keyText.text      = keyLabel;
+        if (skillNameText != null) skillNameText.text = skillName;
 
-        // 初始状态：READY
+        // 初期状態：READY
         ApplyReadyState();
     }
 
     private void Update()
     {
-        if (mitigationController == null)
+        // ── PlayerSkillManager が見つからない ─────────────────────
+        if (skillManager == null)
         {
             ApplyNotFoundState();
             return;
         }
 
-        if (mitigationController.IsMitigationActive)
+        // ── skillId に対応する RuntiemState を取得 ─────────────────
+        var state = skillManager.GetStateBySkillId(skillId);
+        if (state == null)
         {
-            // 追踪最大冷却值（active 期间 cooldown 已经被设置为最大值）
-            if (mitigationController.CooldownRemainingTime > _maxCooldown)
-                _maxCooldown = mitigationController.CooldownRemainingTime;
-
-            ApplyActiveState(mitigationController.MitigationRemainingTime);
+            ApplyNotFoundState();
+            return;
         }
-        else if (mitigationController.CooldownRemainingTime > 0f)
+
+        // ── 状態に応じて UI を更新 ────────────────────────────────
+        if (state.IsActive)
         {
-            float remaining = mitigationController.CooldownRemainingTime;
-            float fill      = _maxCooldown > 0f ? remaining / _maxCooldown : 0f;
-            ApplyCooldownState(remaining, fill);
+            ApplyActiveState(state.ActiveRemainingTime);
+        }
+        else if (state.IsOnCooldown)
+        {
+            ApplyCooldownState(state.CooldownRemainingTime, state.CooldownNormalized);
         }
         else
         {
-            _maxCooldown = 12f; // 冷却结束后重置（下次重新追踪）
             ApplyReadyState();
         }
     }
 
-    // ─── 状态更新方法 ─────────────────────────────────────────────
+    // ─── 状態更新メソッド ─────────────────────────────────────────
 
     /// <summary>READY：图标正常，无遮罩，冷却文本为空。</summary>
     private void ApplyReadyState()
@@ -112,13 +117,13 @@ public class PlayerSkillCanvasUI : MonoBehaviour
         SetIconBrightness(0.3f);
     }
 
-    // ─── 辅助方法 ─────────────────────────────────────────────────
+    // ─── ヘルパー ─────────────────────────────────────────────────
 
     private void SetOverlayActive(bool active, float fillAmount = 1f)
     {
         if (cooldownOverlay == null) return;
-        cooldownOverlay.enabled     = active;
-        cooldownOverlay.fillAmount  = Mathf.Clamp01(fillAmount);
+        cooldownOverlay.enabled    = active;
+        cooldownOverlay.fillAmount = Mathf.Clamp01(fillAmount);
     }
 
     private void SetIconBrightness(float brightness)

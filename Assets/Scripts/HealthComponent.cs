@@ -16,13 +16,18 @@ public class HealthComponent : MonoBehaviour
 
     public bool IsDead => currentHealth <= 0f;
 
-    // 减伤控制器引用，仅玩家 GameObject 上存在；敌人没有此组件则自动跳过，不影响敌人受伤逻辑。
+    // 新系统：优先使用 PlayerStatusEffectController（第四步新增）。
+    // 如果不存在，fallback 到旧 PlayerMitigationController，保留迁移期兼容性。
+    private PlayerStatusEffectController _statusEffectController;
+
+    // 旧系统：fallback 用，保留到原型脚本废弃前。
     private PlayerMitigationController _mitigationController;
 
     void Awake()
     {
-        currentHealth         = maxHealth;
-        _mitigationController = GetComponent<PlayerMitigationController>();
+        currentHealth           = maxHealth;
+        _statusEffectController = GetComponent<PlayerStatusEffectController>();
+        _mitigationController   = GetComponent<PlayerMitigationController>();
     }
 
     /// <summary>旧接口，保持向后兼容。</summary>
@@ -104,7 +109,14 @@ public class HealthComponent : MonoBehaviour
     /// </summary>
     private float ApplyIncomingDamageModifiers(float damage)
     {
-        if (_mitigationController == null) return damage;
-        return _mitigationController.ModifyIncomingDamage(damage);
+        // 新系统优先（PlayerStatusEffectController → PlayerSkillManager）
+        if (_statusEffectController != null)
+            return _statusEffectController.ModifyIncomingDamage(damage);
+
+        // 旧系统 fallback（PlayerMitigationController 原型，迁移完成前保留）
+        if (_mitigationController != null)
+            return _mitigationController.ModifyIncomingDamage(damage);
+
+        return damage;
     }
 }

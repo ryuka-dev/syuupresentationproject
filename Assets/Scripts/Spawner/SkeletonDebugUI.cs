@@ -8,6 +8,8 @@ public class SkeletonDebugUI : MonoBehaviour
     [SerializeField] private PlayerCombatStats playerCombatStats;
     [SerializeField] private PlayerInventory   playerInventory;
     private PlayerMitigationController playerMitigationController;
+    private PlayerSkillManager playerSkillManager;
+    private const string IronBulwarkSkillId = "iron_bulwark";
     [SerializeField] private ItemData testCoreItem;
 
     private bool    showUI                 = false;
@@ -517,16 +519,40 @@ private float CalculateEquipmentStatusWindowHeight(float width)
 private void DrawMitigationStatusSection()
     {
         GUILayout.Label("--- 玩家减伤状态 ---");
-        var mc = ResolvePlayerMitigationController();
-        if (mc == null)
+
+        // 优先读取 PlayerSkillManager
+        var sm    = ResolvePlayerSkillManager();
+        var state = sm != null ? sm.GetStateBySkillId(IronBulwarkSkillId) : null;
+
+        if (state != null)
         {
-            GUILayout.Label("PlayerMitigationController not found");
+            GUILayout.Label("Skill Source: PlayerSkillManager");
+            GUILayout.Label($"Skill Id: {IronBulwarkSkillId}");
+            GUILayout.Label($"Mitigation Active: {state.IsActive}");
+            GUILayout.Label($"Active Remaining: {state.ActiveRemainingTime:F2} s");
+            GUILayout.Label($"Cooldown Remaining: {state.CooldownRemainingTime:F2} s");
+            string multiplierStr = state.SkillData != null
+                ? $"{state.SkillData.DamageTakenMultiplier * 100f:F0}%"
+                : "N/A";
+            GUILayout.Label($"Damage Taken Multiplier: {multiplierStr}");
             return;
         }
-        GUILayout.Label($"Mitigation Active: {mc.IsMitigationActive}");
-        GUILayout.Label($"Mitigation Remaining: {mc.MitigationRemainingTime:F2} s");
-        GUILayout.Label($"Cooldown Remaining: {mc.CooldownRemainingTime:F2} s");
-        GUILayout.Label($"Damage Taken Multiplier: {mc.DamageTakenMultiplier:P0}");
+
+        // fallback: 旧 PlayerMitigationController
+        var mc = ResolvePlayerMitigationController();
+        if (mc != null)
+        {
+            GUILayout.Label("Skill Source: Legacy PlayerMitigationController");
+            GUILayout.Label($"Mitigation Active: {mc.IsMitigationActive}");
+            GUILayout.Label($"Active Remaining: {mc.MitigationRemainingTime:F2} s");
+            GUILayout.Label($"Cooldown Remaining: {mc.CooldownRemainingTime:F2} s");
+            GUILayout.Label($"Damage Taken Multiplier: {mc.DamageTakenMultiplier * 100f:F0}%");
+            return;
+        }
+
+        // 両方とも見つからない
+        GUILayout.Label("PlayerSkillManager state not found");
+        GUILayout.Label("PlayerMitigationController not found");
     }
 
 
@@ -565,6 +591,15 @@ private PlayerMitigationController ResolvePlayerMitigationController()
         if (p != null) playerMitigationController = p.GetComponent<PlayerMitigationController>();
         return playerMitigationController;
     }
+
+private PlayerSkillManager ResolvePlayerSkillManager()
+    {
+        if (playerSkillManager != null) return playerSkillManager;
+        var p = FindPlayerGameObject();
+        if (p != null) playerSkillManager = p.GetComponent<PlayerSkillManager>();
+        return playerSkillManager;
+    }
+
 
 
     private void EquipTestCore()

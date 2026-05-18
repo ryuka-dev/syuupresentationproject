@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 90bf24020f4e1cb4c8c7417a83149f7b, type: 3}
+  m_Name: Skill_IronBulwark
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerSkillData
+  skillId: iron_bulwark
+  skillName: Iron Bulwark
+  description: "\u77ED\u65F6\u95F4\u964D\u4F4E\u53D7\u5230\u7684\u4F24\u5BB3\uFF0C\u7528\u4E8E\u627F\u53D7\u654C\u4EBA\u7684\u5F3A\u529B\u653B\u51FB\u3002"
+  icon: {fileID: 21300000, guid: 9912ea245f6acd84491e21695256c270, type: 3}
+  inputSlot: 2
+  keyLabel: 2
+  cooldown: 12
+  duration: 10
+  effectType: 1
+  damageTakenMultiplier: 0.5
+  visualType: 1
