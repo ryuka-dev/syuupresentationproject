@@ -13,9 +13,6 @@ public class PlayerMitigationVisualFeedback : MonoBehaviour
     [SerializeField] private PlayerSkillManager skillManager;
     [SerializeField] private string             skillId = "iron_bulwark";
 
-    [Header("旧引用（过渡期保留，当前不用于主逻辑）")]
-    [SerializeField] private PlayerMitigationController mitigationController;
-
     [Header("光环形状")]
     [SerializeField] private float radius          = 1.2f;
     [SerializeField] private float yOffset         = 0.05f;

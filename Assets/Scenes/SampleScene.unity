@@ -3069,21 +3069,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerCombatStats
   baseNormalAttackDamage: 20
   baseMaxHealth: 100
---- !u!114 &919417065
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 919417038}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a89a8cf3f7e30204689aadcf1b38c192, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PlayerMitigationController
-  damageTakenMultiplier: 0.5
-  duration: 4
-  cooldown: 12
 --- !u!114 &919417067
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3099,6 +3084,7 @@ MonoBehaviour:
   showHud: 1
   skillName: Iron Bulwark
   keyLabel: 2
+  skillId: iron_bulwark
   panelSize: {x: 220, y: 120}
   bottomOffset: 181.4
   rightOffset: 40
@@ -3116,7 +3102,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerMitigationVisualFeedback
   skillManager: {fileID: 919417069}
   skillId: iron_bulwark
-  mitigationController: {fileID: 919417065}
   radius: 1.2
   yOffset: 0.05
   lineWidth: 0.06
@@ -5151,7 +5136,6 @@ MonoBehaviour:
   keyLabel: 2
   skillId: iron_bulwark
   skillManager: {fileID: 0}
-  mitigationController: {fileID: 0}
   iconImage: {fileID: 609095936}
   cooldownOverlay: {fileID: 660028062}
   cooldownText: {fileID: 836205467}
@@ -5789,9 +5773,6 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
       insertIndex: -1
       addedObject: {fileID: 919417063}
-    - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 919417065}
     - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
       insertIndex: -1
       addedObject: {fileID: 919417067}

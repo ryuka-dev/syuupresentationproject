@@ -20,10 +20,6 @@ public class PlayerSkillCanvasUI : MonoBehaviour
     [Header("运行时绑定 — 技能管理器（留空自动查找）")]
     [SerializeField] private PlayerSkillManager skillManager;
 
-    // 旧引用保留为过渡期兜底，不再用于主逻辑。下一步废弃原型时可一并删除。
-    [Header("旧引用（过渡期保留，当前不使用）")]
-    [SerializeField] private PlayerMitigationController mitigationController;
-
     [Header("UI 元素绑定")]
     [SerializeField] private Image           iconImage;
     [SerializeField] private Image           cooldownOverlay;

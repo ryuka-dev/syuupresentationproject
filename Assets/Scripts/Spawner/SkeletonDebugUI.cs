@@ -7,7 +7,6 @@ public class SkeletonDebugUI : MonoBehaviour
     [SerializeField] private PlayerEquipment   playerEquipment;
     [SerializeField] private PlayerCombatStats playerCombatStats;
     [SerializeField] private PlayerInventory   playerInventory;
-    private PlayerMitigationController playerMitigationController;
     private PlayerSkillManager playerSkillManager;
     private const string IronBulwarkSkillId = "iron_bulwark";
     [SerializeField] private ItemData testCoreItem;
@@ -520,7 +519,6 @@ private void DrawMitigationStatusSection()
     {
         GUILayout.Label("--- 玩家减伤状态 ---");
 
-        // 优先读取 PlayerSkillManager
         var sm    = ResolvePlayerSkillManager();
         var state = sm != null ? sm.GetStateBySkillId(IronBulwarkSkillId) : null;
 
@@ -535,24 +533,12 @@ private void DrawMitigationStatusSection()
                 ? $"{state.SkillData.DamageTakenMultiplier * 100f:F0}%"
                 : "N/A";
             GUILayout.Label($"Damage Taken Multiplier: {multiplierStr}");
-            return;
         }
-
-        // fallback: 旧 PlayerMitigationController
-        var mc = ResolvePlayerMitigationController();
-        if (mc != null)
+        else
         {
-            GUILayout.Label("Skill Source: Legacy PlayerMitigationController");
-            GUILayout.Label($"Mitigation Active: {mc.IsMitigationActive}");
-            GUILayout.Label($"Active Remaining: {mc.MitigationRemainingTime:F2} s");
-            GUILayout.Label($"Cooldown Remaining: {mc.CooldownRemainingTime:F2} s");
-            GUILayout.Label($"Damage Taken Multiplier: {mc.DamageTakenMultiplier * 100f:F0}%");
-            return;
+            GUILayout.Label("PlayerSkillManager state not found");
+            GUILayout.Label($"Skill Id: {IronBulwarkSkillId}");
         }
-
-        // 両方とも見つからない
-        GUILayout.Label("PlayerSkillManager state not found");
-        GUILayout.Label("PlayerMitigationController not found");
     }
 
 
@@ -584,13 +570,7 @@ private void DrawMitigationStatusSection()
         return playerInventory;
     }
 
-private PlayerMitigationController ResolvePlayerMitigationController()
-    {
-        if (playerMitigationController != null) return playerMitigationController;
-        var p = FindPlayerGameObject();
-        if (p != null) playerMitigationController = p.GetComponent<PlayerMitigationController>();
-        return playerMitigationController;
-    }
+
 
 private PlayerSkillManager ResolvePlayerSkillManager()
     {
