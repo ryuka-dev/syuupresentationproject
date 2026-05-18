@@ -1,6 +1,6 @@
 ﻿# PROJECT_STATE
 
-最后更新：2026-05-14  
+最后更新：2026-05-18  
 当前主要场景：`Assets/Scenes/SampleScene.unity`  
 Unity 版本：6000.4.3f1 (Unity 6)
 
@@ -9,7 +9,7 @@ Unity 版本：6000.4.3f1 (Unity 6)
 ## 1. Project Overview
 
 - 项目类型：3D RPG 动作游戏原型
-- 当前开发阶段：早期原型 - 野外战斗 / 刷怪 / 掉落 / 背包 / 装备数值闭环验证
+- 当前开发阶段：早期原型 - 野外战斗 / 刷怪 / 掉落 / 背包 / 装备数值 / 玩家技能系统闭环验证
 - 使用的主要包：
   - URP (Universal Render Pipeline) 17.4.0
   - New Input System 1.19.0
@@ -35,6 +35,9 @@ Unity 版本：6000.4.3f1 (Unity 6)
 玩家移动
 → 鼠标左键选中敌人
 → 按 1 使用普通攻击
+→ 按 PlayerSkillManager 注册的技能键使用玩家技能（当前至少 Slot2 / Slot3）
+→ Canvas 技能栏显示技能图标、持续时间与冷却
+→ PlayerStatusEffectController 根据 Active 技能修正玩家受到的伤害
 → 敌人普通攻击 / 指定敌人释放读条技能
 → 敌人死亡
 → 任务击杀进度增加
@@ -343,6 +346,146 @@ _pitch -= delta.y * rotationSpeed;
 - 调用 `EnemyWorldManager.ForceAllLivingEnemiesReturnToSpawn()`
 - 复活时只恢复玩家自身，不额外重置敌人
 
+
+### Player Skill System v0.1
+
+当前玩家技能已经从单个减伤原型，整理为最小统一技能系统。
+
+#### `PlayerSkillData.cs`
+
+路径：`Assets/Scripts/Player/Skills/PlayerSkillData.cs`
+
+玩家技能静态数据 ScriptableObject。
+
+当前包含：
+
+- `PlayerSkillInputSlot`：`None / Slot1 ... Slot9`
+- `PlayerSkillEffectType`：当前至少 `None / DamageReduction`
+- `PlayerSkillVisualType`：当前至少 `None / DefenseRing`
+- 字段：`skillId`、`skillName`、`description`、`icon`、`inputSlot`、`keyLabel`、`cooldown`、`duration`、`effectType`、`damageTakenMultiplier`、`visualType`
+
+当前已确认资产：
+
+- `Assets/Skills/Player/Skill_IronBulwark.asset`
+  - `skillId = iron_bulwark`
+  - `inputSlot = Slot2`
+  - `keyLabel = 2`
+  - `cooldown = 12`
+  - `duration = 4`
+  - `effectType = DamageReduction`
+  - `damageTakenMultiplier = 0.5`
+  - `visualType = DefenseRing`
+- `Assets/Skills/Player/Skill_StoneGuard.asset`
+  - 当前作为第二个 DamageReduction 测试技能使用；详细参数以 Inspector 为准。
+
+#### `PlayerSkillManager.cs`
+
+路径：`Assets/Scripts/Player/Skills/PlayerSkillManager.cs`
+
+职责：
+
+- 持有 `PlayerSkillData[] skills`。
+- Play Mode 中根据 `skills` 生成 `RuntimeStates`。
+- 使用 New Input System 将 `PlayerSkillInputSlot` 映射到 `Keyboard.current.digit1Key ... digit9Key`。
+- 管理每个技能的 Active / Cooldown / Ready 状态。
+- 记录 `LastPressedSkillState`，即最后一次按下的技能；冷却中按下也会更新。
+- 只管理输入、持续时间、冷却与运行时状态，不直接执行伤害或视觉效果。
+
+重要规则：
+
+- `PlayerSkillManager.skills` 的顺序是正式技能栏显示顺序。
+- 新增技能应优先创建 `PlayerSkillData` 资产，再加入 Player 上 `PlayerSkillManager.skills` 数组。
+- 当前普通攻击 `1` 仍由 `PlayerSkillController` 管理；技能系统主要管理 Slot2 之后的技能。
+
+#### `PlayerStatusEffectController.cs`
+
+路径：`Assets/Scripts/Player/Skills/PlayerStatusEffectController.cs`
+
+职责：
+
+- 读取 `PlayerSkillManager.RuntimeStates`。
+- 对 Active 且 `EffectType == DamageReduction` 的技能应用受到伤害倍率。
+- 当前多个 DamageReduction 技能同时 Active 时使用乘算叠加：
+  - 例如 `0.5 * 0.8 = 0.4`
+- `HealthComponent` 通过它统一修正玩家受到的伤害。
+
+注意：
+
+- 当前没有完整 Buff 优先级、覆盖规则、持续状态列表或 `StatModifier`。
+- 目前只支持 DamageReduction 这一类玩家技能效果。
+
+#### `PlayerSkillCanvasUI.cs`
+
+路径：`Assets/Scripts/Player/PlayerSkillCanvasUI.cs`
+
+通用单个 Canvas 技能格 UI。
+
+职责：
+
+- 通过 `Initialize(PlayerSkillManager manager, PlayerSkillRuntimeState state)` 绑定具体技能。
+- 从 `PlayerSkillData` 自动设置技能名、按键文本、图标。
+- 根据 `PlayerSkillRuntimeState` 显示 READY / ACTIVE / COOLDOWN。
+- 冷却时显示遮罩与倒计时。
+
+#### `PlayerSkillBarCanvasUI.cs`
+
+路径：`Assets/Scripts/Player/PlayerSkillBarCanvasUI.cs`
+
+Canvas 技能栏控制器，挂载在 `SkillBar` 上。
+
+当前使用 B 方案：
+
+```text
+SkillSlotTemplate 只作为隐藏模板
+→ Play Mode 根据 PlayerSkillManager.RuntimeStates 动态 Instantiate 全部技能格
+→ 技能格数量 = RuntimeStates 数量
+→ 顺序 = PlayerSkillManager.skills 顺序
+```
+
+布局规则：
+
+- `SkillBar` 锚点固定右下角。
+- `SkillBar` 的 `pivot = (1, 0)`。
+- `SkillBar` 距屏幕右下约 `(-40, 40)`。
+- 技能格在 `SkillBar` 内从左到右排列。
+- 新增技能显示在最右侧；技能数量增加时，整个技能栏向左扩展，右边缘保持固定。
+- 当前技能格尺寸约 `96 x 112`，图标区域约 `96 x 96`。
+
+#### `PlayerSkillHudUI.cs`
+
+OnGUI 技能调试 HUD。
+
+当前显示 `PlayerSkillManager.LastPressedSkillState`，用于调试最后按过的技能：
+
+- 未按过技能：显示 `No skill pressed yet`
+- 按下 Slot2 / Slot3 / Slot4 等：显示对应技能名、Key、SkillId、Status、Active Remaining、Cooldown Remaining、EffectType 与 Damage Taken Multiplier
+
+该脚本仍是 OnGUI 调试用途，不是正式 UI。
+
+#### `PlayerMitigationVisualFeedback.cs`
+
+Iron Bulwark 视觉反馈原型。
+
+当前不再读取旧 `PlayerMitigationController`，而是读取 `PlayerSkillManager.GetStateBySkillId("iron_bulwark").IsActive`。
+
+行为：
+
+- `iron_bulwark` Active 时，在玩家脚下显示蓝色 LineRenderer 防御光环。
+- Active 结束或冷却中时隐藏。
+- 当前只针对 `iron_bulwark`，尚未抽象为通用技能视觉系统。
+
+#### 已移除旧原型
+
+`Assets/Scripts/Player/PlayerMitigationController.cs` 已删除。
+
+当前不再保留旧减伤控制器：
+
+- `HealthComponent` 不再 fallback 到 `PlayerMitigationController`。
+- `SkeletonDebugUI` 不再 fallback 到 `PlayerMitigationController`。
+- `PlayerSkillCanvasUI` / `PlayerMitigationVisualFeedback` 不再引用 `PlayerMitigationController`。
+- SampleScene 的 Player 上已移除旧 Missing Script。
+
+
 ---
 
 ## 3.3 Health & Combat Stats
@@ -362,6 +505,24 @@ _pitch -= delta.y * rotationSpeed;
   - `OnHealthChanged(float, float)`
   - `OnDied`
   - `OnDamaged(float, Transform)`
+
+
+当前伤害修正规则：
+
+```text
+TakeDamage(...)
+→ ApplyIncomingDamageModifiers(damage)
+→ 如果同一 GameObject 上有 PlayerStatusEffectController：
+     使用 PlayerStatusEffectController.ModifyIncomingDamage(damage)
+→ 否则伤害不变
+```
+
+说明：
+
+- 玩家受到伤害时，DamageReduction 技能效果由 `PlayerStatusEffectController` 统一处理。
+- 敌人通常没有 `PlayerStatusEffectController`，因此敌人受伤不受玩家技能系统影响。
+- 旧 `PlayerMitigationController` fallback 已移除。
+- `OnDamaged` 传入最终伤害值。
 
 `SetMaxHealth` 规则：
 
@@ -915,6 +1076,24 @@ drops[1]
   - Base Max Health
   - Current Max Health
   - 应用当前最大生命值
+  - 玩家减伤状态（读取 PlayerSkillManager 的 iron_bulwark state）
+
+
+### 玩家技能 / 减伤 Debug 显示
+
+`SkeletonDebugUI.cs` 的“玩家减伤状态”现在读取 `PlayerSkillManager.GetStateBySkillId("iron_bulwark")`。
+
+显示内容：
+
+- `Skill Source: PlayerSkillManager`
+- `Skill Id: iron_bulwark`
+- `Mitigation Active`
+- `Active Remaining`
+- `Cooldown Remaining`
+- `Damage Taken Multiplier`
+
+旧 `PlayerMitigationController` fallback 已移除；找不到 `PlayerSkillManager` 或对应 state 时显示 `PlayerSkillManager state not found`。
+
 
 ### 当前装备状态 Debug 窗口
 
@@ -1068,6 +1247,10 @@ Trigger 检测玩家进入后更新玩家最近复活点。
 - PlayerInventory
 - PlayerEquipment
 - PlayerCombatStats
+- PlayerSkillManager
+- PlayerStatusEffectController
+- PlayerMitigationVisualFeedback
+- PlayerSkillHudUI（OnGUI 调试 HUD，显示最后按过的技能）
 
 Tag：`Player`  
 PickupItem 依赖该 Tag 判断玩家。
@@ -1080,6 +1263,33 @@ PickupItem 依赖该 Tag 判断玩家。
 - 当前不再直接旋转 Player。
 - `rotationSpeed` 为 Inspector 可调鼠标灵敏度；用户实测值为 0.5，实际保存值以 Inspector 为准。
 
+
+#### SkillCanvas
+
+正式 Canvas 技能栏第一版。
+
+当前结构：
+
+```text
+SkillCanvas
+└─ SkillBar
+   └─ SkillSlotTemplate
+      ├─ Icon
+      ├─ CooldownOverlay
+      ├─ CooldownText
+      ├─ KeyText
+      └─ SkillNameText
+```
+
+说明：
+
+- `SkillBar` 挂载 `PlayerSkillBarCanvasUI`。
+- `SkillSlotTemplate` 是隐藏模板，不作为实际技能格显示。
+- Play Mode 中根据 `PlayerSkillManager.RuntimeStates` 动态生成 `SkillSlot_<skillId>`。
+- 技能显示顺序与 Player 的 `PlayerSkillManager.skills` 数组一致。
+- 技能栏锚点在右下，`pivot = (1, 0)`，新增技能显示在最右侧，技能数量增加时整体向左扩展。
+- 不要把 `SkillSlotTemplate` 当成具体 Iron Bulwark 技能格修改；它是通用模板。
+
 #### SkeletonSpawnerManager
 
 - `SkeletonSpawner`
@@ -1090,11 +1300,8 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 
 #### DebugManager
 
-截图中发现 `DebugManager` 上存在 `Missing (Mono Script)`。
-
-- 这很可能对应 Console 中的：`The referenced script (Unknown) on this Behaviour is missing!`
+- 先前发现的 `Missing (Mono Script)` 已清理。
 - 当前 F1 Debug UI 不依赖 DebugManager，而是挂在 SkeletonSpawnerManager 上。
-- 后续可单独移除该 Missing Script 组件，或删除无用 DebugManager。
 
 #### NavMeshSurface_World
 
@@ -1195,7 +1402,8 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 - 鼠标右键：按住并移动鼠标时旋转相机
 - 鼠标左键 + 右键：向当前相机前方移动，等价于前进输入
 - 鼠标左键 + 右键 + Shift：向当前相机前方跑步
-- 技能释放：键盘 1
+- 普通攻击：键盘 1
+- 玩家技能槽：由 `PlayerSkillManager` 读取 `PlayerSkillData.inputSlot`，映射到键盘数字键 1～9；当前已用于 Slot2 / Slot3 等测试技能
 - 拾取物品：E
 - Debug UI：F1
 - 关卡重开：R，仅旧 Victory / Game Over 后生效
@@ -1215,6 +1423,14 @@ Cursor 当前规则：
 - 左键单独点击 / 拖动：不隐藏鼠标
 - RPGCameraController 被禁用 / 销毁：强制显示鼠标
 - 不使用 CursorLockMode.Locked
+
+
+玩家技能输入规则：
+
+- `PlayerSkillManager` 使用 New Input System 的 `Keyboard.current.digit1Key ... digit9Key`。
+- `PlayerSkillData.inputSlot` 决定技能按键槽。
+- `keyLabel` 只用于 UI 显示。
+- 当前普通攻击仍由 `PlayerSkillController` 的键盘 1 管理；不要在未统一前让 Skill Slot1 与普通攻击冲突。
 
 相机灵敏度：
 
@@ -1262,6 +1478,28 @@ Cursor 当前规则：
 - ✅ EnemyCastBarUI 读条提示第一版（OnGUI 显示技能名 / 进度 / 时间）
 - ✅ EnemyBase 可统一挂载 EnemySkillController / EnemyCastBarUI，skills 为空时无影响
 - ✅ SkeletonBossEnemy_Variant 可通过 skills 覆写配置读条重击
+
+
+### 玩家技能 / 状态效果 / 技能 UI
+
+- ✅ `PlayerSkillData` 玩家技能数据资产第一版
+- ✅ `PlayerSkillManager` 统一管理注册技能的输入、Active、Cooldown、Ready 状态
+- ✅ `PlayerSkillManager.LastPressedSkillState` 记录最后按过的技能，冷却中按下也会更新
+- ✅ `PlayerStatusEffectController` 根据 Active 技能统一修正玩家受到的伤害
+- ✅ DamageReduction 技能效果第一版
+- ✅ 多个 DamageReduction 同时 Active 时使用乘算叠加
+- ✅ `HealthComponent` 通过 `PlayerStatusEffectController` 应用玩家技能减伤
+- ✅ Iron Bulwark 减伤技能已迁移到 `PlayerSkillData / PlayerSkillManager / PlayerStatusEffectController`
+- ✅ Stone Guard 作为第二个 DamageReduction 测试技能已可按键激活并正常减伤
+- ✅ `PlayerMitigationController.cs` 旧原型脚本已删除
+- ✅ 正式 Canvas 技能栏第一版：`SkillCanvas / SkillBar / SkillSlotTemplate`
+- ✅ `PlayerSkillBarCanvasUI` 根据注册技能数量动态生成技能格
+- ✅ 技能格顺序与 `PlayerSkillManager.skills` 顺序一致
+- ✅ 新增技能显示在最右侧，技能栏锚定右下并向左扩展
+- ✅ `PlayerSkillCanvasUI` 通用技能格：显示图标、按键、技能名、Active 时间、Cooldown 遮罩与倒计时
+- ✅ `PlayerSkillHudUI` OnGUI 调试 HUD 显示最后按过的技能
+- ✅ `PlayerMitigationVisualFeedback` 读取 `PlayerSkillManager`，在 Iron Bulwark Active 时显示脚下防御光环
+- ✅ F1 Debug UI 的玩家减伤状态显示读取 `PlayerSkillManager`
 
 ### 复活 / SavePoint
 
@@ -1342,6 +1580,17 @@ Cursor 当前规则：
 - ⚠️ 尚未实现正式 DropTable ScriptableObject。
 - ⚠️ 当前 EnemyDropper 是 Prefab 上的简单 drops 列表，不是完整掉落表系统。
 - ⚠️ 当前部分测试装备资产 / 掉落配置仍是调试用途，正式掉落表尚未实现。
+
+
+### 玩家技能系统限制
+
+- ⚠️ 当前玩家技能系统 v0.1 只支持最小 DamageReduction 流程。
+- ⚠️ 尚未实现正式 Buff / StatusEffect 数据结构、优先级、覆盖规则、图标状态列表或效果取消事件。
+- ⚠️ 多个 DamageReduction 当前按乘算叠加，尚未设计减伤上限、同类覆盖或职业平衡规则。
+- ⚠️ `PlayerMitigationVisualFeedback` 当前仍是 Iron Bulwark 专用视觉反馈，尚未抽象为通用 Skill Visual 系统。
+- ⚠️ `PlayerSkillHudUI` 是 OnGUI 调试 HUD，不是正式玩家 UI。
+- ⚠️ `PlayerSkillManager.skills` 当前通过 Inspector 注册，尚未实现技能学习、解锁、保存、拖拽或热键自定义。
+- ⚠️ 普通攻击仍由 `PlayerSkillController` 独立处理，尚未统一进 `PlayerSkillManager`；不要让 Slot1 与普通攻击冲突。
 
 ### 场景 / UI
 
@@ -1430,6 +1679,12 @@ Cursor 当前规则：
 - 敌人技能不要直接写死进 `EnemyAI.cs`；应通过 `EnemySkillData` + `EnemySkillController` 配置。
 - `EnemySkillController.skills` 为空代表无技能，必须保持不影响普通攻击。
 - `EnemyCastBarUI` 依赖 OnGUI，GUIStyle 必须在 `OnGUI()` 内懒初始化，不要在 `Awake()` / `Start()` 中访问 `GUI.skin`。
+- 玩家技能系统 v0.1 使用 `PlayerSkillData` + `PlayerSkillManager` + `PlayerStatusEffectController`，不要再恢复已删除的 `PlayerMitigationController`。
+- `PlayerSkillManager.skills` 的 Inspector 顺序决定 Canvas 技能栏显示顺序。
+- `SkillCanvas/SkillBar/SkillSlotTemplate` 是正式技能栏第一版的场景绑定；`SkillSlotTemplate` 是隐藏模板，不是具体技能格。
+- `PlayerSkillBarCanvasUI` 使用运行时 Instantiate 生成全部技能格，不要回退到直接复用模板本体作为第一个技能格。
+- 技能栏锚点在右下，`pivot = (1, 0)`；新增技能显示在最右侧，整体向左扩展。
+
 
 ---
 
@@ -1459,6 +1714,13 @@ Cursor 当前规则：
 - `Assets/Scripts/Items/ItemStack.cs`
 - `Assets/Scripts/Items/PickupItem.cs`
 - `Assets/Scripts/Items/EnemyDropper.cs`
+- `Assets/Scripts/Player/Skills/PlayerSkillData.cs`
+- `Assets/Scripts/Player/Skills/PlayerSkillManager.cs`
+- `Assets/Scripts/Player/Skills/PlayerStatusEffectController.cs`
+- `Assets/Scripts/Player/PlayerSkillCanvasUI.cs`
+- `Assets/Scripts/Player/PlayerSkillBarCanvasUI.cs`
+- `Assets/Scripts/Player/PlayerSkillHudUI.cs`
+- `Assets/Scripts/Player/PlayerMitigationVisualFeedback.cs`
 - `Assets/Scripts/Spawner/SkeletonDebugUI.cs`
 - `Assets/Scripts/Level/SavePoint.cs`
 
@@ -1481,6 +1743,11 @@ Cursor 当前规则：
 - `Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/HumanM@Death01.fbx`
 - `Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/1H/HumanM@Attack1H01_R.fbx`
 - `Assets/Fonts/09_SourceHanSansSC/TMP/SourceHanSansSC-Medium_TMP.asset`
+- `Assets/Skills/Player/Skill_IronBulwark.asset`
+- `Assets/Skills/Player/Skill_StoneGuard.asset`
+- `Assets/Art/UI/SkillIcons/Skill_IronBulwark.png`
+- `Assets/Art/UI/SkillIcons/`：玩家技能图标目录
+
 
 ### 不应修改的文件
 
@@ -1500,6 +1767,9 @@ Cursor 当前规则：
 ```text
 刷怪
 → 战斗
+→ 玩家使用注册技能（如 Iron Bulwark / Stone Guard）
+→ Canvas 技能栏显示 Active / Cooldown
+→ PlayerStatusEffectController 修正玩家受到的伤害
 → 掉落骨头 / 装备
 → 拾取
 → 背包显示
@@ -1513,12 +1783,12 @@ Cursor 当前规则：
 
 ### 推荐下一阶段方向
 
-#### 优先级 1：玩家减伤技能第一版
+#### 优先级 1：玩家技能系统 v0.1 稳定化与小范围扩展
 
-1. 在玩家侧实现一个最小可用减伤技能，用于应对敌人读条重击。
-2. 先只验证“读条期间正确开减伤 → 承受更少伤害”的 Tank 判断。
-3. 不先做完整技能树、复杂 Buff 系统、Hikari 治疗或 Boss 时间轴。
-4. 后续再接成功减伤奖励与 Hikari 治疗负担。
+1. 当前 Iron Bulwark 与 Stone Guard 已验证 DamageReduction 技能流程。
+2. 下一步优先在现有 v0.1 框架上增加一个不同类型的小技能或整理通用视觉反馈。
+3. 暂时不要直接做完整技能树、技能学习、拖拽热键栏或复杂 Buff 系统。
+4. 若新增效果类型，应从 `PlayerSkillData.PlayerSkillEffectType` 与 `PlayerStatusEffectController` 小步扩展。
 
 #### 优先级 2：整理 EnemyAI / NavMesh 移动基础
 
@@ -1549,10 +1819,11 @@ Cursor 当前规则：
 
 #### 优先级 5：正式 UI
 
-1. 正式背包 UI。
-2. 正式装备 UI。
-3. 正式死亡 / 复活 UI。
-4. 正式存档点提示。
+1. Canvas 技能栏第一版已完成。
+2. 正式背包 UI。
+3. 正式装备 UI。
+4. 正式死亡 / 复活 UI。
+5. 正式存档点提示。
 
 #### 优先级 6：中长期结构升级
 
@@ -1568,6 +1839,7 @@ Cursor 当前规则：
 - 完整存档系统
 - 完整正式背包 UI
 - 完整正式装备栏 UI
+- 完整技能树 / 技能学习 / 拖拽技能栏
 - 五人真实同屏战斗
 - 完整 Hikari AI
 - Boss 战最终版
@@ -1579,42 +1851,48 @@ Cursor 当前规则：
 
 ### ⭐ 最推荐的下一个小任务
 
-**玩家减伤技能第一版。**
+**玩家技能系统 v0.1 的下一种效果类型。**
 
 目的：
 
 ```text
-当前敌人已经具备读条重击和可视化预告。
-下一步应让玩家拥有一个最小减伤技能，用来验证 Tank 判断：
-看到读条 → 正确开减伤 → 承受更少伤害。
+当前 DamageReduction 技能已经跑通：
+PlayerSkillData
+→ PlayerSkillManager
+→ PlayerStatusEffectController
+→ Canvas 技能栏 / OnGUI HUD / F1 Debug
 ```
 
 建议目标：
 
 ```text
-只做一个最小减伤技能。
-优先验证伤害结算和持续时间。
-不做完整 Buff 系统、不做技能树、不接 Hikari、不做成功奖励。
-不要修改 Animator / Prefab / Scene，除非本次目标确实需要。
+新增一个与 DamageReduction 不同的小技能效果类型。
+优先选择范围小、可验证、不会牵涉复杂动画的效果。
+例如：
+- 短时间提高普通攻击伤害
+- 短时间获得护盾值
+- 瞬发自我治疗 Debug 技能
 ```
 
 验收目标：
 
 ```text
-玩家可主动开启短时间减伤。
-敌人读条重击命中时，如果减伤有效，玩家受到的伤害降低。
-减伤结束后伤害恢复正常。
-Console / Debug 信息能确认减伤是否生效。
+新技能可以作为 PlayerSkillData 注册进 PlayerSkillManager。
+Canvas 技能栏自动显示新技能格。
+按对应键可以进入 Active / Cooldown。
+PlayerStatusEffectController 或对应系统能产生可确认的 gameplay 效果。
+不修改 Animator / Prefab，除非目标明确需要。
 ```
 
 ### 备选任务
 
-1. 给敌人读条重击补正式参数调优：伤害、读条时间、冷却、范围。
-2. 继续验证普通小怪无技能 / Boss 有技能 / skills 为空的 Prefab Variant 继承关系。
-3. 在复杂地形上验证 NavMeshAgent、Attack / 读条范围、高低差与 ItemDrop 贴地表现（当前暂不做）。
-4. 整理 NavMeshSurface LayerMask，只让 Terrain / Ground / Environment 参与 Bake。
-5. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
-6. 正式背包 UI / 正式装备 UI 第一版。
+1. 抽象 `PlayerMitigationVisualFeedback` 为通用 `PlayerSkillVisualController`，根据 `PlayerSkillVisualType` 显示不同视觉反馈。
+2. 给 `PlayerSkillData` / `PlayerSkillManager` 增加更清晰的 Inspector Debug 显示，方便查看 RuntimeStates。
+3. 给敌人读条重击补正式参数调优：伤害、读条时间、冷却、范围。
+4. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
+5. 正式背包 UI / 正式装备 UI 第一版。
+6. 整理 NavMeshSurface LayerMask，只让 Terrain / Ground / Environment 参与 Bake。
+
 
 ## 12. 本次有效变更摘要（2026-05-11）
 
@@ -2158,3 +2436,12 @@ EnemySpawnArea 与装备替换闭环已由用户确认没有明显问题。
 1. 敌人技能系统第一版已落地：新增 `EnemySkillData.cs`、`EnemySkillController.cs`、`EnemyCastBarUI.cs`；`EnemyAI.cs` 的 Attack 状态已接入技能调用，有技能时尝试释放，无技能时继续普通攻击。
 2. `CastAttack` / 读条重击第一版已可用：指定敌人可读条、显示技能名 / 进度 / 时间，读条结束后按距离和目标状态结算伤害；Miss / Cancel / ReturnToSpawn / ResetToSpawn / ForceDisengage / OnDisable 会清理读条。
 3. 敌人 Prefab 工作流更新：`EnemyBase.prefab` 统一挂载 `EnemySkillController` 与 `EnemyCastBarUI` 且 skills 为空；`SkeletonEnemy_Variant.prefab` 保持无技能；`SkeletonBossEnemy_Variant.prefab` 覆写配置读条重击。当前复杂地形下的寻路、动作、动画、读条范围和 ItemDrop 贴地表现尚未验证，暂不处理。
+
+---
+
+## 21. 本次有效变更摘要（2026-05-18）
+
+1. 玩家技能系统 v0.1 已落地：新增并接入 `PlayerSkillData`、`PlayerSkillManager`、`PlayerStatusEffectController`、`PlayerSkillCanvasUI`、`PlayerSkillBarCanvasUI`、`PlayerSkillHudUI`；`PlayerMitigationController.cs` 已删除，`HealthComponent` 现在只通过 `PlayerStatusEffectController` 修正玩家受到的伤害。
+2. Iron Bulwark / Stone Guard 等 DamageReduction 技能可通过 `PlayerSkillManager.skills` 注册，按对应数字键激活；Canvas 技能栏会按注册顺序自动生成技能格，Active / Cooldown / Ready 显示正常，多个减伤按乘算叠加。
+3. `SkillCanvas / SkillBar / SkillSlotTemplate` 已成为正式技能栏第一版：模板隐藏，运行时生成所有技能格；技能栏锚定右下，新技能显示在最右侧，技能数量增加时整体向左扩展。
+
