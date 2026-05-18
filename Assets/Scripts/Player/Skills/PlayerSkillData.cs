@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// 玩家技能输入槽位。
@@ -28,6 +28,7 @@ public enum PlayerSkillEffectType
 {
     None,
     DamageReduction,
+    AttackPowerMultiplier,
 }
 
 /// <summary>
@@ -65,8 +66,9 @@ public class PlayerSkillData : ScriptableObject
     [SerializeField] private float duration = 0f;
 
     [Header("技能效果")]
-    [SerializeField] private PlayerSkillEffectType effectType          = PlayerSkillEffectType.None;
+    [SerializeField] private PlayerSkillEffectType effectType            = PlayerSkillEffectType.None;
     [SerializeField] private float                 damageTakenMultiplier = 1f;
+    [SerializeField] private float                 attackPowerMultiplier = 1f;
 
     [Header("视觉表现")]
     [SerializeField] private PlayerSkillVisualType visualType = PlayerSkillVisualType.None;
@@ -83,6 +85,7 @@ public class PlayerSkillData : ScriptableObject
     public float                 Duration              => duration;
     public PlayerSkillEffectType EffectType            => effectType;
     public float                 DamageTakenMultiplier => damageTakenMultiplier;
+    public float                 AttackPowerMultiplier => attackPowerMultiplier;
     public PlayerSkillVisualType VisualType            => visualType;
 
     // ─── OnValidate ───────────────────────────────────────────────
@@ -90,14 +93,15 @@ public class PlayerSkillData : ScriptableObject
     private void OnValidate()
     {
         if (string.IsNullOrEmpty(skillId))
-            Debug.LogWarning($"[PlayerSkillData] {name}: skillId が空です。設定してください。");
+            Debug.LogWarning($"[PlayerSkillData] {name}: skillId is empty.");
 
         if (string.IsNullOrEmpty(skillName))
-            Debug.LogWarning($"[PlayerSkillData] {name}: skillName が空です。設定してください。");
+            Debug.LogWarning($"[PlayerSkillData] {name}: skillName is empty.");
 
         if (cooldown < 0f) cooldown = 0f;
         if (duration < 0f) duration = 0f;
 
         damageTakenMultiplier = Mathf.Clamp(damageTakenMultiplier, 0f, 1f);
+        if (attackPowerMultiplier < 0f) attackPowerMultiplier = 0f;
     }
 }

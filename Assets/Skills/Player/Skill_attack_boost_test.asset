@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 90bf24020f4e1cb4c8c7417a83149f7b, type: 3}
+  m_Name: Skill_attack_boost_test
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerSkillData
+  skillId: attack_boost_test
+  skillName: "\u653B\u51FB\u5F3A\u5316\u6D4B\u8BD5"
+  description: "\u653B\u51FB\u5F3A\u5316\u6D4B\u8BD5"
+  icon: {fileID: 21300000, guid: 9c2f8b0a2f33f6046adc28ff41a1aa42, type: 3}
+  inputSlot: 5
+  keyLabel: 5
+  cooldown: 28
+  duration: 14
+  effectType: 2
+  damageTakenMultiplier: 1
+  attackPowerMultiplier: 1.5
+  visualType: 0

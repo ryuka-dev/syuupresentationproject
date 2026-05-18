@@ -58,6 +58,38 @@ public class PlayerStatusEffectController : MonoBehaviour
         return finalDamage;
     }
 
+/// <summary>
+    /// 玩家普通攻击输出伤害的倍率修正。
+    /// 遍历所有 Active 且 EffectType == AttackPowerMultiplier 的技能，乘算叠加。
+    /// 由 PlayerSkillController 在普通攻击结算时调用。
+    /// skillManager null / RuntimeStates 为空 / 无匹配技能时返回原始伤害。
+    /// </summary>
+    public float ModifyOutgoingNormalAttackDamage(float baseDamage)
+    {
+        if (baseDamage <= 0f)        return baseDamage;
+        if (skillManager == null)    return baseDamage;
+
+        float finalDamage = baseDamage;
+        var   states      = skillManager.RuntimeStates;
+        if (states == null) return baseDamage;
+
+        foreach (var state in states)
+        {
+            if (state == null)           continue;
+            if (state.SkillData == null) continue;
+            if (!state.IsActive)         continue;
+            if (state.SkillData.EffectType != PlayerSkillEffectType.AttackPowerMultiplier) continue;
+
+            finalDamage *= state.SkillData.AttackPowerMultiplier;
+        }
+
+        if (logDamageModification && !Mathf.Approximately(finalDamage, baseDamage))
+            Debug.Log($"[PlayerStatusEffectController] Outgoing damage modified: base={baseDamage:F1}, final={finalDamage:F1}");
+
+        return finalDamage;
+    }
+
+
     // ─── Private ─────────────────────────────────────────────────
 
     private void ResolveSkillManager()

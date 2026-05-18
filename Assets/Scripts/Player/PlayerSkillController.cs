@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
@@ -19,26 +19,27 @@ public class PlayerSkillController : MonoBehaviour
     private FactionComponent  _selfFaction;
     private HealthComponent   _selfHealth;
     private Animator          _animator;
-    private PlayerCombatStats _combatStats;
-    private float             _cooldownTimer;
+    private PlayerCombatStats              _combatStats;
+    private PlayerStatusEffectController  _statusEffectController;
+    private float                         _cooldownTimer;
 
-    private void Awake()
+private void Awake()
     {
         _targeting = GetComponent<PlayerTargeting>();
         if (_targeting == null)
-            Debug.LogWarning("[PlayerSkillController] PlayerTargeting が見つかりません。");
+            Debug.LogWarning("[PlayerSkillController] PlayerTargeting not found.");
 
         _selfFaction = GetComponent<FactionComponent>();
         if (_selfFaction == null)
-            Debug.LogWarning("[PlayerSkillController] FactionComponent が見つかりません。");
+            Debug.LogWarning("[PlayerSkillController] FactionComponent not found.");
 
         _selfHealth = GetComponent<HealthComponent>();
         _animator   = GetComponent<Animator>();
         if (_animator == null)
-            Debug.LogWarning("[PlayerSkillController] Animator が見つかりません。攻撃動画は再生されません。");
+            Debug.LogWarning("[PlayerSkillController] Animator not found.");
 
-        // PlayerCombatStats は省略可能。なくても normalAttackDamage で攻撃できる。
-        _combatStats = GetComponent<PlayerCombatStats>();
+        _combatStats            = GetComponent<PlayerCombatStats>();
+        _statusEffectController = GetComponent<PlayerStatusEffectController>();
     }
 
     private void Update()
@@ -52,7 +53,7 @@ public class PlayerSkillController : MonoBehaviour
         TryNormalAttack();
     }
 
-    private void TryNormalAttack()
+private void TryNormalAttack()
     {
         // 1. 无目标
         if (_targeting == null || _targeting.CurrentTarget == null)
@@ -115,20 +116,28 @@ public class PlayerSkillController : MonoBehaviour
             return;
         }
 
-        // 8. 最终伤害 — 优先从 PlayerCombatStats 读取
+        // 8. 最终伤害 — 优先从 PlayerCombatStats 读取，再由 PlayerStatusEffectController 应用 AttackPowerMultiplier
         float finalDamage;
         if (_combatStats != null)
         {
-            float baseDmg    = _combatStats.BaseNormalAttackDamage;
-            float eqBonus    = _combatStats.EquipmentAttackPowerBonus;
-            finalDamage      = _combatStats.CurrentNormalAttackDamage;
-            _cooldownTimer   = normalAttackCooldown;
+            float baseDmg  = _combatStats.BaseNormalAttackDamage;
+            float eqBonus  = _combatStats.EquipmentAttackPowerBonus;
+            finalDamage    = _combatStats.CurrentNormalAttackDamage;
+
+            if (_statusEffectController != null)
+                finalDamage = _statusEffectController.ModifyOutgoingNormalAttackDamage(finalDamage);
+
+            _cooldownTimer = normalAttackCooldown;
             health.TakeDamage(finalDamage, transform);
             Debug.Log($"[PlayerSkillController] Player attack hit: base={baseDmg}, equipmentBonus={eqBonus}, final={finalDamage}");
         }
         else
         {
-            finalDamage    = normalAttackDamage;
+            finalDamage = normalAttackDamage;
+
+            if (_statusEffectController != null)
+                finalDamage = _statusEffectController.ModifyOutgoingNormalAttackDamage(finalDamage);
+
             _cooldownTimer = normalAttackCooldown;
             health.TakeDamage(finalDamage, transform);
             Debug.Log($"[PlayerSkillController] Player attack hit: final={finalDamage} (fallback: no PlayerCombatStats)");
