@@ -22,6 +22,7 @@ GameObject:
   - component: {fileID: 5735063381198297738}
   - component: {fileID: -3159519137589924971}
   - component: {fileID: -4995931253774540930}
+  - component: {fileID: 3484341557614078609}
   m_Layer: 9
   m_Name: EnemyBase
   m_TagString: Untagged
@@ -300,6 +301,21 @@ MonoBehaviour:
   worldOffset: {x: 0, y: 2.5, z: 0}
   barWidth: 110
   barHeight: 10
+--- !u!114 &3484341557614078609
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1593989802227870837}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 578333c22aee95249beeef2c9f3f5b0a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DamageNumberSpawner
+  popupPrefab: {fileID: 176171211726505972, guid: a03f590b5c2314f499d7557bf88760f1, type: 3}
+  popupOffset: {x: 0, y: 2, z: 0}
+  randomHorizontalOffset: 0.25
 --- !u!1 &8379728281680734945
 GameObject:
   m_ObjectHideFlags: 0
