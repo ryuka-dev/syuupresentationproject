@@ -1,23 +1,19 @@
 using UnityEngine;
 
 /// <summary>
-/// 玩家技能战斗 HUD — 旧 OnGUI 版本（已迁移到 PlayerSkillCanvasUI 正式 Canvas UI）。
-/// 本脚本已改为读取 PlayerSkillManager，移除了对旧 PlayerMitigationController 的依赖。
-/// 如不再需要此 OnGUI HUD，可将 showHud 设为 false 或直接 Remove Component。
+/// 玩家技能战斗 HUD — OnGUI 版。
+/// 显示 PlayerSkillManager.LastPressedSkillState（最后一次按下的技能）的详细信息。
+/// showHud = true にすると右下に表示される。デフォルトは true（Canvas UI とは別位置）。
+/// 不修改技能状态，只读取显示。
 /// </summary>
 public class PlayerSkillHudUI : MonoBehaviour
 {
     [Header("HUD 显示控制")]
-    [SerializeField] private bool showHud = false;   // 已有正式 Canvas UI，默认关闭
-
-    [Header("技能信息")]
-    [SerializeField] private string skillName = "Iron Bulwark";
-    [SerializeField] private string keyLabel  = "2";
-    [SerializeField] private string skillId   = "iron_bulwark";
+    [SerializeField] private bool showHud = true;
 
     [Header("HUD 位置 / 尺寸")]
-    [SerializeField] private Vector2 panelSize    = new Vector2(220f, 120f);
-    [SerializeField] private float   bottomOffset = 40f;
+    [SerializeField] private Vector2 panelSize    = new Vector2(240f, 160f);
+    [SerializeField] private float   bottomOffset = 280f;   // Canvas 技能栏より上に表示
     [SerializeField] private float   rightOffset  = 40f;
 
     private PlayerSkillManager _skillManager;
@@ -27,6 +23,7 @@ public class PlayerSkillHudUI : MonoBehaviour
     private GUIStyle _statusActiveStyle;
     private GUIStyle _statusCooldownStyle;
     private GUIStyle _infoStyle;
+    private GUIStyle _headerStyle;
     private bool     _stylesInitialized;
 
     private void Awake()
@@ -35,7 +32,7 @@ public class PlayerSkillHudUI : MonoBehaviour
         if (_skillManager == null)
             _skillManager = FindFirstObjectByType<PlayerSkillManager>();
         if (_skillManager == null)
-            Debug.LogWarning("[PlayerSkillHudUI] PlayerSkillManager not found. HUD will show NOT FOUND.");
+            Debug.LogWarning("[PlayerSkillHudUI] PlayerSkillManager not found.");
     }
 
     private void OnGUI()
@@ -50,34 +47,51 @@ public class PlayerSkillHudUI : MonoBehaviour
         GUI.Box(new Rect(x, y, panelSize.x, panelSize.y), GUIContent.none);
         GUILayout.BeginArea(new Rect(x + 6f, y + 6f, panelSize.x - 12f, panelSize.y - 12f));
 
-        GUILayout.Label($"{skillName}  [{keyLabel}]", _titleStyle);
+        GUILayout.Label("Last Pressed Skill", _headerStyle);
 
-        var state = _skillManager != null ? _skillManager.GetStateBySkillId(skillId) : null;
+        if (_skillManager == null)
+        {
+            GUILayout.Label("PlayerSkillManager not found", _infoStyle);
+            GUILayout.EndArea();
+            return;
+        }
+
+        var state = _skillManager.LastPressedSkillState;
 
         if (state == null)
         {
-            GUILayout.Label("Status: NOT FOUND", _infoStyle);
+            GUILayout.Label("No skill pressed yet", _infoStyle);
+            GUILayout.EndArea();
+            return;
         }
-        else if (state.IsActive)
+
+        var data = state.SkillData;
+        string name_    = data != null ? data.SkillName             : "Unknown";
+        string key_     = data != null ? data.KeyLabel              : "?";
+        string id_      = data != null ? data.SkillId               : "?";
+        string effect_  = data != null ? data.EffectType.ToString() : "?";
+
+        GUILayout.Label($"{name_}  [{key_}]", _titleStyle);
+        GUILayout.Label($"Id: {id_}", _infoStyle);
+        GUILayout.Label($"Effect: {effect_}", _infoStyle);
+
+        if (state.IsActive)
         {
             GUILayout.Label("Status: ACTIVE", _statusActiveStyle);
-            GUILayout.Label($"Duration: {state.ActiveRemainingTime:F2} s", _infoStyle);
-            if (state.SkillData != null)
-                GUILayout.Label($"Damage Taken: {state.SkillData.DamageTakenMultiplier:P0}", _infoStyle);
+            GUILayout.Label($"Active Remaining: {state.ActiveRemainingTime:F2} s", _infoStyle);
         }
         else if (state.IsOnCooldown)
         {
             GUILayout.Label("Status: COOLDOWN", _statusCooldownStyle);
-            GUILayout.Label($"Cooldown: {state.CooldownRemainingTime:F2} s", _infoStyle);
-            if (state.SkillData != null)
-                GUILayout.Label($"Damage Taken: {state.SkillData.DamageTakenMultiplier:P0}", _infoStyle);
+            GUILayout.Label($"Cooldown Remaining: {state.CooldownRemainingTime:F2} s", _infoStyle);
         }
         else
         {
             GUILayout.Label("Status: READY", _statusReadyStyle);
-            if (state.SkillData != null)
-                GUILayout.Label($"Damage Taken: {state.SkillData.DamageTakenMultiplier:P0}", _infoStyle);
         }
+
+        if (data != null && data.EffectType == PlayerSkillEffectType.DamageReduction)
+            GUILayout.Label($"Damage Taken: {data.DamageTakenMultiplier * 100f:F0}%", _infoStyle);
 
         GUILayout.EndArea();
     }
@@ -87,6 +101,11 @@ public class PlayerSkillHudUI : MonoBehaviour
         if (_stylesInitialized) return;
         _stylesInitialized = true;
 
+        _headerStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontStyle = FontStyle.Bold, fontSize = 11,
+            normal    = { textColor = new Color(0.7f, 0.7f, 0.7f) }
+        };
         _titleStyle = new GUIStyle(GUI.skin.label)
         {
             fontStyle = FontStyle.Bold, fontSize = 13,

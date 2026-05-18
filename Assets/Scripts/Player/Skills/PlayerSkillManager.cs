@@ -112,6 +112,13 @@ public class PlayerSkillManager : MonoBehaviour
     [SerializeField]
     private List<PlayerSkillRuntimeState> runtimeStates = new List<PlayerSkillRuntimeState>();
 
+
+    // 最後に対応キーを押した技能の RuntimeState（冷却中でも更新される）
+    private PlayerSkillRuntimeState lastPressedSkillState;
+
+    /// <summary>最後にキーを押した技能の RuntimeState。一度も押していなければ null。</summary>
+    public PlayerSkillRuntimeState LastPressedSkillState => lastPressedSkillState;
+
     // ─── 公开查询 API ─────────────────────────────────────────────
 
     /// <summary>すべての技能の実行時状態リスト（読み取り専用）。</summary>
@@ -204,7 +211,7 @@ public class PlayerSkillManager : MonoBehaviour
 
     // ─── 入力処理 ─────────────────────────────────────────────────
 
-    private void HandleSkillInput()
+private void HandleSkillInput()
     {
         var kb = Keyboard.current;
         if (kb == null) return;
@@ -214,7 +221,11 @@ public class PlayerSkillManager : MonoBehaviour
             if (state.SkillData == null) continue;
 
             if (WasInputSlotPressed(state.SkillData.InputSlot))
+            {
+                // 冷却中でも「最後に押した技能」として記録する
+                lastPressedSkillState = state;
                 TryActivateSkill(state);
+            }
         }
     }
 

@@ -3,16 +3,14 @@ using UnityEngine.UI;
 using TMPro;
 
 /// <summary>
-/// 正式 Canvas 技能格 UI — Iron Bulwark 第一版（第三步：接入 PlayerSkillManager）。
-/// 読み取り元を PlayerMitigationController から PlayerSkillManager の RuntimeState に切り替え。
-/// Update では PlayerSkillManager.GetStateBySkillId(skillId) で状態を取得し UI を更新する。
-/// PlayerSkillManager または skillId が見つからない場合は安全に NOT FOUND 表示（エラーなし）。
-/// 不处理输入，不启动技能，不修改减伤逻辑。
-/// 挂载到 IronBulwarkSlot GameObject 上。
+/// 正式 Canvas 技能格 UI — 通用版。
+/// PlayerSkillBarCanvasUI から Initialize() で初期化されるか、
+/// 旧来通り Inspector で skillId を設定して Start() で自動検索する。
+/// どちらの使い方でも動作する。
 /// </summary>
 public class PlayerSkillCanvasUI : MonoBehaviour
 {
-    [Header("技能数据（只读配置）")]
+    [Header("技能数据（自动初始化时无需手动填写）")]
     [SerializeField] private string skillName = "Iron Bulwark";
     [SerializeField] private string keyLabel  = "2";
     [SerializeField] private string skillId   = "iron_bulwark";
@@ -27,11 +25,45 @@ public class PlayerSkillCanvasUI : MonoBehaviour
     [SerializeField] private TextMeshProUGUI keyText;
     [SerializeField] private TextMeshProUGUI skillNameText;
 
+    // PlayerSkillBarCanvasUI から直接 state を渡された場合はこちらを優先
+    private PlayerSkillRuntimeState _runtimeState;
+
+    // ─── 公开初始化（PlayerSkillBarCanvasUI から呼ばれる） ─────────
+
+    /// <summary>
+    /// 技能栏スクリプトから呼ばれる初期化メソッド。
+    /// state と manager を設定し、静的テキスト・アイコンを更新する。
+    /// </summary>
+    public void Initialize(PlayerSkillManager manager, PlayerSkillRuntimeState state)
+    {
+        skillManager   = manager;
+        _runtimeState  = state;
+
+        if (state == null || state.SkillData == null)
+        {
+            ApplyNotFoundState();
+            return;
+        }
+
+        var data = state.SkillData;
+        skillId   = data.SkillId;
+        skillName = data.SkillName;
+        keyLabel  = data.KeyLabel;
+
+        if (skillNameText != null) skillNameText.text = data.SkillName;
+        if (keyText       != null) keyText.text       = data.KeyLabel;
+        if (iconImage     != null && data.Icon != null) iconImage.sprite = data.Icon;
+
+        ApplyReadyState();
+    }
+
     // ─── Unity 生命周期 ───────────────────────────────────────────
 
     private void Start()
     {
-        // PlayerSkillManager の解決（Inspector 未バインド時のみ自動検索）
+        // Initialize() が呼ばれていない場合（旧来の手動バインド）のみ自動検索
+        if (_runtimeState != null) return;
+
         if (skillManager == null)
             skillManager = GetComponentInParent<PlayerSkillManager>();
         if (skillManager == null)
@@ -39,49 +71,34 @@ public class PlayerSkillCanvasUI : MonoBehaviour
         if (skillManager == null)
             Debug.LogWarning("[PlayerSkillCanvasUI] PlayerSkillManager not found. UI will show NOT FOUND.");
 
-        // 静的テキストの初期化
         if (keyText       != null) keyText.text      = keyLabel;
         if (skillNameText != null) skillNameText.text = skillName;
 
-        // 初期状態：READY
         ApplyReadyState();
     }
 
-    private void Update()
+private void Update()
     {
-        // ── PlayerSkillManager が見つからない ─────────────────────
-        if (skillManager == null)
-        {
-            ApplyNotFoundState();
-            return;
-        }
-
-        // ── skillId に対応する RuntiemState を取得 ─────────────────
-        var state = skillManager.GetStateBySkillId(skillId);
-        if (state == null)
-        {
-            ApplyNotFoundState();
-            return;
-        }
-
-        // ── 状態に応じて UI を更新 ────────────────────────────────
-        if (state.IsActive)
-        {
-            ApplyActiveState(state.ActiveRemainingTime);
-        }
-        else if (state.IsOnCooldown)
-        {
-            ApplyCooldownState(state.CooldownRemainingTime, state.CooldownNormalized);
-        }
+        PlayerSkillRuntimeState state;
+        if (_runtimeState != null)
+            state = _runtimeState;
+        else if (skillManager != null)
+            state = skillManager.GetStateBySkillId(skillId);
         else
-        {
+            return; // skillManager 未設定なら何もしない
+
+        if (state == null) { ApplyNotFoundState(); return; }
+
+        if (state.IsActive)
+            ApplyActiveState(state.ActiveRemainingTime);
+        else if (state.IsOnCooldown)
+            ApplyCooldownState(state.CooldownRemainingTime, state.CooldownNormalized);
+        else
             ApplyReadyState();
-        }
     }
 
-    // ─── 状態更新メソッド ─────────────────────────────────────────
+    // ─── 状態更新 ─────────────────────────────────────────────────
 
-    /// <summary>READY：图标正常，无遮罩，冷却文本为空。</summary>
     private void ApplyReadyState()
     {
         SetOverlayActive(false);
@@ -89,7 +106,6 @@ public class PlayerSkillCanvasUI : MonoBehaviour
         SetIconBrightness(1f);
     }
 
-    /// <summary>ACTIVE：显示持续时间倒计时，遮罩隐藏（减伤正在生效）。</summary>
     private void ApplyActiveState(float remaining)
     {
         SetOverlayActive(false);
@@ -97,7 +113,6 @@ public class PlayerSkillCanvasUI : MonoBehaviour
         SetIconBrightness(1f);
     }
 
-    /// <summary>COOLDOWN：显示冷却倒计时，遮罩覆盖，图标变暗。</summary>
     private void ApplyCooldownState(float remaining, float fillRatio)
     {
         SetOverlayActive(true, fillRatio);
@@ -105,7 +120,6 @@ public class PlayerSkillCanvasUI : MonoBehaviour
         SetIconBrightness(0.45f);
     }
 
-    /// <summary>NOT FOUND：安全显示，不报错。</summary>
     private void ApplyNotFoundState()
     {
         SetOverlayActive(true, 1f);
