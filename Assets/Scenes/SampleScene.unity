@@ -3152,7 +3152,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 578333c22aee95249beeef2c9f3f5b0a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DamageNumberSpawner
-  popupPrefab: {fileID: 176171211726505972, guid: a03f590b5c2314f499d7557bf88760f1, type: 3}
+  popupPrefab: {fileID: 176171211726505972, guid: f0efa5c696069d34bb247d2e8dc9c7b4, type: 3}
   popupOffset: {x: 0, y: 2, z: 0}
   randomHorizontalOffset: 0.25
 --- !u!1 &971681417
