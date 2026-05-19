@@ -17,6 +17,10 @@ public class DamageNumberSpawner : MonoBehaviour
     [Header("飘字 Prefab（需指定 DamageNumberPopup Prefab）")]
     [SerializeField] private DamageNumberPopup popupPrefab;
 
+    [Header("治疗飘字 Prefab（可选，留空时 fallback 到 popupPrefab）")]
+    [SerializeField] private DamageNumberPopup healingPopupPrefab;
+
+
     [Header("生成位置")]
     [SerializeField] private Vector3 popupOffset          = new Vector3(0f, 2f, 0f);
     [SerializeField] private float   randomHorizontalOffset = 0.25f;
@@ -40,13 +44,19 @@ public class DamageNumberSpawner : MonoBehaviour
     private void OnEnable()
     {
         if (_health != null)
+        {
             _health.OnDamaged += HandleDamaged;
+            _health.OnHealed  += HandleHealed;
+        }
     }
 
     private void OnDisable()
     {
         if (_health != null)
+        {
             _health.OnDamaged -= HandleDamaged;
+            _health.OnHealed  -= HandleHealed;
+        }
     }
 
     // ─── イベントハンドラ ─────────────────────────────────────────
@@ -76,5 +86,32 @@ public class DamageNumberSpawner : MonoBehaviour
         // 生成 & 初期化
         DamageNumberPopup popup = Instantiate(popupPrefab, spawnPos, Quaternion.identity);
         popup.Initialize(damage, _mainCamera);
+    }
+
+
+    /// <summary>
+    /// HealthComponent.OnHealed から呼ばれる。
+    /// actualHealAmount は実際に回復した HP（0 超の保証あり）。
+    /// </summary>
+    private void HandleHealed(float actualHealAmount, Transform healer)
+    {
+        // 使用するプレハブを決定（healingPopupPrefab 優先、なければ popupPrefab にフォールバック）
+        DamageNumberPopup prefabToUse = healingPopupPrefab != null ? healingPopupPrefab : popupPrefab;
+
+        if (prefabToUse == null)
+        {
+            Debug.LogWarning($"[DamageNumberSpawner] 治疗飘字 Prefab 未设置（healingPopupPrefab 和 popupPrefab 均为空）on {gameObject.name}.");
+            return;
+        }
+
+        Vector3 randomH = new Vector3(
+            Random.Range(-randomHorizontalOffset, randomHorizontalOffset),
+            0f,
+            Random.Range(-randomHorizontalOffset, randomHorizontalOffset)
+        );
+        Vector3 spawnPos = transform.position + popupOffset + randomH;
+
+        DamageNumberPopup popup = Instantiate(prefabToUse, spawnPos, Quaternion.identity);
+        popup.Initialize(actualHealAmount, _mainCamera);
     }
 }

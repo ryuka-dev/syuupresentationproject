@@ -2989,6 +2989,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e5292e9d22b039f44b292b0342e4540d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerTargeting
+  allowTabTargeting: 1
+  tabTargetMaxDistance: 30
+  tabTargetViewportPadding: {x: 0, y: 0}
 --- !u!114 &919417054
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3153,6 +3156,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DamageNumberSpawner
   popupPrefab: {fileID: 176171211726505972, guid: f0efa5c696069d34bb247d2e8dc9c7b4, type: 3}
+  healingPopupPrefab: {fileID: 176171211726505972, guid: c0623545e8134f64fa87d81e6917a7c9, type: 3}
   popupOffset: {x: 0, y: 2, z: 0}
   randomHorizontalOffset: 0.25
 --- !u!114 &919417072

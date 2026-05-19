@@ -13,6 +13,8 @@ public class HealthComponent : MonoBehaviour
     public event Action<float, float>     OnHealthChanged;  // (current, max)
     public event Action<float, Transform> OnDamaged;        // (最终伤害值, 攻击来源)
     public event Action                   OnDied;
+    public event Action<float, Transform> OnHealed;         // (actualHealAmount, healer)
+
 
     public bool IsDead => currentHealth <= 0f;
 
@@ -49,21 +51,45 @@ public class HealthComponent : MonoBehaviour
 
     public void Heal(float amount)
     {
+        Heal(amount, null);
+    }
+
+    /// <summary>带治疗来源的统一治疗入口。healer 可为 null。</summary>
+    public void Heal(float amount, Transform healer)
+    {
+        if (amount <= 0f)
+        {
+            Debug.LogWarning($"[Health] Heal called with amount <= 0 ({amount}), ignored.");
+            return;
+        }
         if (IsDead) return;
-        currentHealth = Mathf.Min(maxHealth, currentHealth + amount);
-        OnHealthChanged?.Invoke(currentHealth, maxHealth);
+        if (currentHealth >= maxHealth) return;
+
+        float oldHealth   = currentHealth;
+        currentHealth     = Mathf.Min(maxHealth, currentHealth + amount);
+        float actualHeal  = currentHealth - oldHealth;
+
+        if (actualHeal > 0f)
+        {
+            OnHealthChanged?.Invoke(currentHealth, maxHealth);
+            OnHealed?.Invoke(actualHeal, healer);
+        }
     }
 
     /// <summary>
     /// 复活专用接口：将生命值恢复至最大值，并触发 OnHealthChanged 以刷新 UI 血条。
     /// 不触发 OnDied / OnDamaged。若 HealthComponent 内无额外死亡 bool，
-    /// 调用后 IsDead 自然变为 false（currentHealth > 0）。
+        /// 调用后 IsDead 自然变为 false（currentHealth > 0）。
     /// </summary>
-    public void RestoreFullHealth()
+public void RestoreFullHealth()
     {
-        currentHealth = maxHealth;
+        float oldHealth  = currentHealth;
+        currentHealth    = maxHealth;
         Debug.Log($"[Health] RestoreFullHealth() called. currentHealth={currentHealth}");
         OnHealthChanged?.Invoke(currentHealth, maxHealth);
+        float actualHeal = currentHealth - oldHealth;
+        if (actualHeal > 0f)
+            OnHealed?.Invoke(actualHeal, null);
     }
 
     /// <summary>
