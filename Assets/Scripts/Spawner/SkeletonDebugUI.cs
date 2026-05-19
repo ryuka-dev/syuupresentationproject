@@ -172,6 +172,9 @@ public class SkeletonDebugUI : MonoBehaviour
         GUILayout.Space(10);
         DrawMitigationStatusSection();
         GUILayout.Space(4);
+        DrawHikariDebugSection();
+
+        GUILayout.Space(4);
         GUILayout.Label("F1: Toggle");
 
         GUILayout.EndScrollView();
@@ -545,6 +548,24 @@ private void DrawMitigationStatusSection()
         }
     }
 
+private void DrawHikariDebugSection()
+    {
+        GUILayout.Label("--- Hikari Debug ---");
+
+        var hikari = ResolveHikariSupportController();
+        if (hikari == null)
+        {
+            GUILayout.Label("Hikari Support: Not Found");
+            return;
+        }
+
+        GUILayout.Label("Hikari Support: Found");
+        GUILayout.Label($"Current Burden: {hikari.CurrentBurden:F1} / {hikari.MaxBurden:F1}");
+        GUILayout.Label($"Burden Ratio: {hikari.BurdenRatio * 100f:F1}%");
+        GUILayout.Label($"Burden Maxed: {hikari.IsBurdenMaxed}");
+    }
+
+
 
     // ─── Resolve ヘルパー ─────────────────────────────────────
 
@@ -583,6 +604,16 @@ private PlayerSkillManager ResolvePlayerSkillManager()
         if (p != null) playerSkillManager = p.GetComponent<PlayerSkillManager>();
         return playerSkillManager;
     }
+
+private HikariSupportController _hikariSupportController;
+
+    private HikariSupportController ResolveHikariSupportController()
+    {
+        if (_hikariSupportController != null) return _hikariSupportController;
+        _hikariSupportController = FindFirstObjectByType<HikariSupportController>();
+        return _hikariSupportController;
+    }
+
 
 
 
