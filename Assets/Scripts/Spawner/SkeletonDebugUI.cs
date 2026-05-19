@@ -314,6 +314,81 @@ private float CalculateEquipmentStatusWindowHeight(float width)
         return Mathf.Max(240f, height);
     }
 
+private float CalculateHikariDebugWindowHeight(HikariSupportController hikari)
+    {
+        const float hikariWidth    = 360f;
+        const float extraMargin    = 12f;   // スキン差異・フォント差異向けの安全値
+        const float explicitSpace  = 4f;    // GUILayout.Space(4f) 分
+        const int   buttonCount    = 3;
+        const float buttonH        = 30f;
+
+        // Box の内側 padding
+        RectOffset boxPad    = GUI.skin.box.padding;
+        float contentWidth   = hikariWidth - boxPad.horizontal;
+
+        GUIStyle labelStyle  = GUI.skin.label;
+        GUIStyle buttonStyle = GUI.skin.button;
+
+        float height = boxPad.top + boxPad.bottom;
+
+        // タイトル
+        height += labelStyle.CalcHeight(new GUIContent("--- Hikari 调试 ---"), contentWidth);
+        height += labelStyle.margin.vertical;
+        // Space(4)
+        height += explicitSpace;
+
+        // テキスト行
+        var lines = BuildHikariDebugLines(hikari);
+        foreach (string line in lines)
+        {
+            height += labelStyle.CalcHeight(new GUIContent(line), contentWidth);
+            height += labelStyle.margin.vertical;
+        }
+
+        // ボタン（hikari があるときのみ）
+        if (hikari != null)
+        {
+            // Space(4) before buttons
+            height += explicitSpace;
+            for (int i = 0; i < buttonCount; i++)
+            {
+                height += buttonH + buttonStyle.margin.vertical;
+            }
+        }
+
+        return height + extraMargin;
+    }
+
+/// <summary>
+    /// Hikari Debug に表示するテキスト行を構築する。
+    /// 計算と描画の両方で同じリストを共有する。
+    /// </summary>
+    private System.Collections.Generic.List<string> BuildHikariDebugLines(HikariSupportController hikari)
+    {
+        var lines = new System.Collections.Generic.List<string>();
+        if (hikari == null)
+        {
+            lines.Add("Hikari 支援组件：未找到");
+            return lines;
+        }
+        lines.Add("Hikari 支援组件：已找到");
+        lines.Add($"光负荷：{hikari.CurrentBurden:F1} / {hikari.MaxBurden:F1}");
+        lines.Add($"光负荷比例：{hikari.BurdenRatio * 100f:F1}%");
+        lines.Add($"光负荷已满：{(hikari.IsBurdenMaxed ? "是" : "否")}");
+        lines.Add($"高负荷状态：{(hikari.IsOverburdened ? "是" : "否")}");
+        lines.Add($"高负荷阈値：{hikari.OverburdenThreshold * 100f:F1}%");
+        lines.Add($"高负荷治疗倍率：{hikari.OverburdenHealingMultiplier * 100f:F1}%");
+        lines.Add($"过载状态：{(hikari.IsOverloaded ? "是" : "否")}");
+        lines.Add($"过载阈値：{hikari.OverloadThreshold * 100f:F1}%");
+        lines.Add($"过载恢复阈値：{hikari.OverloadRecoveryThreshold * 100f:F1}%");
+        lines.Add($"治疗可用：{(hikari.CanUseHealing ? "是" : "否")}");
+        lines.Add($"自然下降：{(hikari.IsBurdenRecoveryEnabled ? "开启" : "关闭")}");
+        lines.Add($"下降速度：{hikari.BurdenRecoveryPerSecond:F1} / 秒");
+        return lines;
+    }
+
+
+
 
 
 
@@ -554,60 +629,49 @@ private void DrawMitigationStatusSection()
 private void DrawHikariDebugWindow(float margin, float leftPanelWidth)
     {
         const float gap         = 12f;
-        const float hikariWidth = 330f;
+        const float hikariWidth = 360f;
         float equipHeight       = CalculateEquipmentStatusWindowHeight(hikariWidth);
         float hikariX           = margin + leftPanelWidth + gap;
         float hikariY           = margin + equipHeight + gap;
-        float hikariHeight      = 430f;
+
+        HikariSupportController hikari = ResolveHikariSupportController();
+        float hikariHeight = CalculateHikariDebugWindowHeight(hikari);
 
         GUILayout.BeginArea(new Rect(hikariX, hikariY, hikariWidth, hikariHeight), GUI.skin.box);
-        DrawHikariDebugSection();
+        DrawHikariDebugSection(hikari);
         GUILayout.EndArea();
     }
 
-private void DrawHikariDebugSection()
+private void DrawHikariDebugSection(HikariSupportController hikari)
     {
-        var boldStyle = new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold };
-        GUILayout.Label("--- Hikari 调试 ---", boldStyle);
-        GUILayout.Space(4);
+        GUILayout.Label("--- Hikari 调试 ---",
+            new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold });
+        GUILayout.Space(4f);
 
-        var hikari = ResolveHikariSupportController();
-        if (hikari == null)
-        {
-            GUILayout.Label("Hikari 支援组件：未找到");
-            return;
-        }
+        var lines = BuildHikariDebugLines(hikari);
+        foreach (string line in lines)
+            GUILayout.Label(line);
 
-        GUILayout.Label("Hikari 支援组件：已找到");
-        GUILayout.Label($"光负荷：{hikari.CurrentBurden:F1} / {hikari.MaxBurden:F1}");
-        GUILayout.Label($"光负荷比例：{hikari.BurdenRatio * 100f:F1}%");
-        GUILayout.Label($"光负荷已满：{(hikari.IsBurdenMaxed ? "是" : "否")}");
-        GUILayout.Label($"高负荷状态：{(hikari.IsOverburdened ? "是" : "否")}");
-        GUILayout.Label($"高负荷阈値：{hikari.OverburdenThreshold * 100f:F1}%");
-        GUILayout.Label($"高负荷治疗倍率：{hikari.OverburdenHealingMultiplier * 100f:F1}%");
-        GUILayout.Label($"过载状态：{(hikari.IsOverloaded ? "是" : "否")}");
-        GUILayout.Label($"过载阈値：{hikari.OverloadThreshold * 100f:F1}%");
-        GUILayout.Label($"过载恢复阈値：{hikari.OverloadRecoveryThreshold * 100f:F1}%");
-        GUILayout.Label($"治疗可用：{(hikari.CanUseHealing ? "是" : "否")}");
-        GUILayout.Label($"自然下降：{(hikari.IsBurdenRecoveryEnabled ? "开启" : "关闭")}");
-        GUILayout.Label($"下降速度：{hikari.BurdenRecoveryPerSecond:F1} / 秒");
+        if (hikari == null) return;
 
-        GUILayout.Space(4);
+        GUILayout.Space(4f);
 
         GUI.backgroundColor = new Color(1f, 0.75f, 0.3f);
-        if (GUILayout.Button("增加光负荷 25", GUILayout.Height(30))) hikari.DebugAddBurden(25f);
+        if (GUILayout.Button("增加光负荷 25", GUILayout.Height(30)))
+            hikari.DebugAddBurden(25f);
         GUI.backgroundColor = Color.white;
 
         GUI.backgroundColor = new Color(0.6f, 0.85f, 1f);
-        if (GUILayout.Button("重置光负荷", GUILayout.Height(30))) hikari.DebugResetBurden();
+        if (GUILayout.Button("重置光负荷", GUILayout.Height(30)))
+            hikari.DebugResetBurden();
         GUI.backgroundColor = Color.white;
 
-        string recoveryBtnLabel = hikari.IsBurdenRecoveryEnabled ? "关闭自然下降" : "开启自然下降";
+        string recoveryLabel = hikari.IsBurdenRecoveryEnabled ? "关闭自然下降" : "开启自然下降";
         GUI.backgroundColor = hikari.IsBurdenRecoveryEnabled
             ? new Color(1f, 0.5f, 0.5f)
             : new Color(0.5f, 1f, 0.6f);
-        if (GUILayout.Button(recoveryBtnLabel, GUILayout.Height(30)))
-            hikari.DebugSetBurdenRecoveryEnabled(!hikari.IsBurdenRecoveryEnabled);
+        if (GUILayout.Button(recoveryLabel, GUILayout.Height(30)))
+            hikari.DebugToggleBurdenRecovery();
         GUI.backgroundColor = Color.white;
     }
 
