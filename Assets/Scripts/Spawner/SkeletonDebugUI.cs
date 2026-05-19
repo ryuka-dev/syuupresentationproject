@@ -51,9 +51,13 @@ public class SkeletonDebugUI : MonoBehaviour
         if (GUILayout.Button("Clear All", GUILayout.Height(40))) spawner.ClearAll();
         GUI.backgroundColor = Color.white;
         GUILayout.Space(10);
-
         GUI.backgroundColor = new Color(0.4f, 0.9f, 0.4f);
         if (GUILayout.Button("\u6062\u590d\u73a9\u5bb6\u6ee1\u8840", GUILayout.Height(40))) RestorePlayerFullHealth();
+        GUI.backgroundColor = Color.white;
+
+        GUI.backgroundColor = new Color(0.4f, 1f, 0.6f);
+        if (GUILayout.Button("\u6cbb\u7597\u73a9\u5bb6 30 \u70b9", GUILayout.Height(40))) HealPlayerForDebug(30f);
+        GUI.backgroundColor = Color.white;;
         GUI.backgroundColor = Color.white;
 
         GUI.backgroundColor = new Color(0.4f, 0.7f, 1f);
@@ -616,6 +620,17 @@ private PlayerSkillManager ResolvePlayerSkillManager()
         Debug.Log("[DebugUI] Restore player full health button clicked.");
         health.RestoreFullHealth();
     }
+
+private void HealPlayerForDebug(float amount)
+    {
+        var player = FindPlayerGameObject();
+        if (player == null) { Debug.LogWarning("[DebugUI] HealPlayerForDebug: Player not found."); return; }
+        var health = player.GetComponent<HealthComponent>();
+        if (health == null) { Debug.LogWarning("[DebugUI] HealPlayerForDebug: Player HealthComponent not found."); return; }
+        Debug.Log($"[DebugUI] HealPlayerForDebug({amount}) called. current={health.currentHealth}/{health.maxHealth}");
+        health.Heal(amount);
+    }
+
 
     private void RespawnPlayerTest()
     {
