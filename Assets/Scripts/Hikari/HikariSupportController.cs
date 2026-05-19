@@ -77,6 +77,14 @@ public class HikariSupportController : MonoBehaviour
     [SerializeField] private bool enableBurdenRecovery = true;
 
     
+[Header("Overburden / 高負荷想態")]
+    [Tooltip("Burden Ratio がこの居値以上になると Overburden 状態になります（0〜1）。デフォルト 0.8 = 80% 以上。")]
+    [SerializeField, Range(0f, 1f)] private float overburdenThreshold = 0.8f;
+
+    [Tooltip("Overburden 状態の治療量倍率。デフォルト 0.5 = 50%。")]
+    [SerializeField, Range(0f, 1f)] private float overburdenHealingMultiplier = 0.5f;
+
+    
 
 [Header("デバッグ")]
     [SerializeField] private bool logDebugMessages = true;
@@ -91,6 +99,10 @@ public class HikariSupportController : MonoBehaviour
     public float MaxBurden     => maxBurden;
     public float BurdenRatio   => maxBurden > 0f ? currentBurden / maxBurden : 0f;
     public bool  IsBurdenMaxed => currentBurden >= maxBurden;
+    public bool  IsOverburdened             => BurdenRatio >= overburdenThreshold;
+    public float OverburdenThreshold        => overburdenThreshold;
+    public float OverburdenHealingMultiplier => overburdenHealingMultiplier;
+
 
     private float _nextEmergencyPrayerTime;
 
@@ -150,11 +162,14 @@ private bool TryUseLightMend()
         if (!enableLightMend) return false;
         if (Time.time < _nextLightMendTime) return false;
 
+        float finalHeal = ApplyBurdenHealingModifier(lightMendHealAmount);
+
         if (logDebugMessages)
             Debug.Log($"[HikariSupport] Light Mend 発動 — HP {playerHealth.currentHealth:F1}/{playerHealth.maxHealth:F1}" +
-                      $" ({GetPlayerHpRatio() * 100f:F1}%) → Heal({lightMendHealAmount}) | Burden {currentBurden:F1}+{lightMendBurdenGain}");
+                      $" ({GetPlayerHpRatio() * 100f:F1}%) | base={lightMendHealAmount} final={finalHeal:F1}" +
+                      $" | Overburdened={IsOverburdened} | Burden {currentBurden:F1}/{maxBurden:F1}");
 
-        playerHealth.Heal(lightMendHealAmount, transform);
+        playerHealth.Heal(finalHeal, transform);
         _nextLightMendTime = Time.time + lightMendCooldown;
         AddBurden(lightMendBurdenGain, "Light Mend");
         return true;
@@ -170,11 +185,14 @@ private bool TryUseEmergencyPrayer()
         if (!enableEmergencyPrayer) return false;
         if (Time.time < _nextEmergencyPrayerTime) return false;
 
+        float finalHeal = ApplyBurdenHealingModifier(emergencyPrayerHealAmount);
+
         if (logDebugMessages)
             Debug.Log($"[HikariSupport] Emergency Prayer 発動 — HP {playerHealth.currentHealth:F1}/{playerHealth.maxHealth:F1}" +
-                      $" ({GetPlayerHpRatio() * 100f:F1}%) → Heal({emergencyPrayerHealAmount}) | Burden {currentBurden:F1}+{emergencyPrayerBurdenGain}");
+                      $" ({GetPlayerHpRatio() * 100f:F1}%) | base={emergencyPrayerHealAmount} final={finalHeal:F1}" +
+                      $" | Overburdened={IsOverburdened} | Burden {currentBurden:F1}/{maxBurden:F1}");
 
-        playerHealth.Heal(emergencyPrayerHealAmount, transform);
+        playerHealth.Heal(finalHeal, transform);
         _nextEmergencyPrayerTime = Time.time + emergencyPrayerCooldown;
         AddBurden(emergencyPrayerBurdenGain, "Emergency Prayer");
         return true;
@@ -191,6 +209,16 @@ private bool TryUseEmergencyPrayer()
             ? playerHealth.currentHealth / playerHealth.maxHealth
             : 1f;
     }
+
+/// <summary>
+    /// Burden 状態に応じて治療量に倍率を適用する。
+    /// </summary>
+    private float ApplyBurdenHealingModifier(float baseHealAmount)
+    {
+        if (!IsOverburdened) return baseHealAmount;
+        return Mathf.Max(0f, baseHealAmount * overburdenHealingMultiplier);
+    }
+
 
 // ─── Burden 光負荷 ────────────────────────────────────────────
 
@@ -234,17 +262,19 @@ private bool TryUseEmergencyPrayer()
         currentBurden = Mathf.Max(0f, currentBurden - burdenRecoveryPerSecond * Time.deltaTime);
     }
 
-    private void OnValidate()
+private void OnValidate()
     {
-        maxBurden                  = Mathf.Max(1f,  maxBurden);
-        currentBurden              = Mathf.Clamp(currentBurden, 0f, maxBurden);
-        lightMendBurdenGain        = Mathf.Max(0f,  lightMendBurdenGain);
-        emergencyPrayerBurdenGain  = Mathf.Max(0f,  emergencyPrayerBurdenGain);
-        burdenRecoveryPerSecond    = Mathf.Max(0f,  burdenRecoveryPerSecond);
-        lightMendHealAmount        = Mathf.Max(0f,  lightMendHealAmount);
-        emergencyPrayerHealAmount  = Mathf.Max(0f,  emergencyPrayerHealAmount);
-        lightMendCooldown          = Mathf.Max(0f,  lightMendCooldown);
-        emergencyPrayerCooldown    = Mathf.Max(0f,  emergencyPrayerCooldown);
+        maxBurden                    = Mathf.Max(1f,  maxBurden);
+        currentBurden                = Mathf.Clamp(currentBurden, 0f, maxBurden);
+        lightMendBurdenGain          = Mathf.Max(0f,  lightMendBurdenGain);
+        emergencyPrayerBurdenGain    = Mathf.Max(0f,  emergencyPrayerBurdenGain);
+        burdenRecoveryPerSecond      = Mathf.Max(0f,  burdenRecoveryPerSecond);
+        lightMendHealAmount          = Mathf.Max(0f,  lightMendHealAmount);
+        emergencyPrayerHealAmount    = Mathf.Max(0f,  emergencyPrayerHealAmount);
+        lightMendCooldown            = Mathf.Max(0f,  lightMendCooldown);
+        emergencyPrayerCooldown      = Mathf.Max(0f,  emergencyPrayerCooldown);
+        overburdenThreshold          = Mathf.Clamp01(overburdenThreshold);
+        overburdenHealingMultiplier  = Mathf.Clamp01(overburdenHealingMultiplier);
     }
 
 
