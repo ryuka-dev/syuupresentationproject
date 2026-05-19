@@ -84,7 +84,16 @@ public class HikariSupportController : MonoBehaviour
     [Tooltip("Overburden 状態の治療量倍率。デフォルト 0.5 = 50%。")]
     [SerializeField, Range(0f, 1f)] private float overburdenHealingMultiplier = 0.5f;
 
-    [Header("Overload / 过载")]
+    [Header("Guard Resonance / 守护共鸣")]
+    [Tooltip("玩家在 DamageReduction 技能 Active 期间受伤时，降低 Hikari 光负荷。")]
+    [SerializeField] private bool  guardResonanceEnabled        = true;
+    [Tooltip("守护共鸣触发时减少的光负荷量。")]
+    [SerializeField] private float guardResonanceBurdenReduction = 10f;
+    [Tooltip("守护共鸣的最短触发间隔（秒）。")]
+    [SerializeField] private float guardResonanceCooldown        = 3f;
+
+    
+[Header("Overload / 过载")]
     [Tooltip("Burden Ratio がこの居値以上になると過载状態になります（0〜1）。デフォルト 1.0 = 100%。")]
     [SerializeField, Range(0f, 1f)] private float overloadThreshold = 1f;
 
@@ -111,6 +120,11 @@ public class HikariSupportController : MonoBehaviour
     public float OverloadThreshold         => overloadThreshold;
     public float OverloadRecoveryThreshold => overloadRecoveryThreshold;
     public bool  CanUseHealing             => !_isOverloaded;
+    public bool  GuardResonanceEnabled          => guardResonanceEnabled;
+    public float GuardResonanceBurdenReduction  => guardResonanceBurdenReduction;
+    public float GuardResonanceCooldown         => guardResonanceCooldown;
+    public float GuardResonanceCooldownRemaining => Mathf.Max(0f, _nextGuardResonanceTime - Time.time);
+
 
     
 public bool  IsBurdenRecoveryEnabled  => enableBurdenRecovery;
@@ -123,29 +137,67 @@ public bool  IsBurdenRecoveryEnabled  => enableBurdenRecovery;
 
     private float _nextEmergencyPrayerTime;
     private bool _isOverloaded;
+    private float               _nextGuardResonanceTime;
+    private PlayerSkillManager  _playerSkillManager;
+    private bool                _subscribedToPlayerDamaged;
+
 
 
 
     // ─── Unity ライフサイクル ──────────────────────────────────────
 
-    private void Start()
+private void Start()
     {
-        if (playerHealth != null) return;   // Inspector でアサイン済みならそのまま使う
-
-        var playerGO = GameObject.FindGameObjectWithTag(playerTag);
-        if (playerGO == null)
+        if (playerHealth == null)
         {
-            Debug.LogWarning($"[HikariSupport] Tag '{playerTag}' のオブジェクトが見つかりません。" +
-                             " playerHealth を Inspector でアサインするか、Player タグを確認してください。");
-            return;
+            var playerGO = GameObject.FindGameObjectWithTag(playerTag);
+            if (playerGO == null)
+            {
+                Debug.LogWarning($"[HikariSupport] Tag '{playerTag}' のオブジェクトが見つかりません。" +
+                                 " playerHealth を Inspector でアサインするか、Player タグを確認してください。");
+                return;
+            }
+            playerHealth = playerGO.GetComponent<HealthComponent>();
+            if (playerHealth == null)
+            {
+                Debug.LogWarning($"[HikariSupport] '{playerGO.name}' に HealthComponent が見つかりません。");
+                return;
+            }
+            if (logDebugMessages)
+                Debug.Log($"[HikariSupport] playerHealth を自動解決しました: {playerGO.name}");
+
+            _playerSkillManager = playerGO.GetComponent<PlayerSkillManager>();
+            if (_playerSkillManager == null)
+                Debug.LogWarning("[HikariSupport] PlayerSkillManager が Player に見つかりません。Guard Resonance は機能しません。");
+        }
+        else
+        {
+            // Inspector で手動アサイン済みの場合も PlayerSkillManager を追尾
+            _playerSkillManager = playerHealth.GetComponent<PlayerSkillManager>();
         }
 
-        playerHealth = playerGO.GetComponent<HealthComponent>();
-        if (playerHealth == null)
-            Debug.LogWarning($"[HikariSupport] '{playerGO.name}' に HealthComponent が見つかりません。");
-        else if (logDebugMessages)
-            Debug.Log($"[HikariSupport] playerHealth を自動解決しました: {playerGO.name}");
+        SubscribeToPlayerDamaged();
     }
+
+private void OnDestroy()
+    {
+        UnsubscribeFromPlayerDamaged();
+    }
+
+    private void SubscribeToPlayerDamaged()
+    {
+        if (_subscribedToPlayerDamaged || playerHealth == null) return;
+        playerHealth.OnDamaged    += HandlePlayerDamaged;
+        _subscribedToPlayerDamaged = true;
+    }
+
+    private void UnsubscribeFromPlayerDamaged()
+    {
+        if (!_subscribedToPlayerDamaged || playerHealth == null) return;
+        playerHealth.OnDamaged    -= HandlePlayerDamaged;
+        _subscribedToPlayerDamaged = false;
+    }
+
 
 private void Update()
     {
@@ -327,6 +379,61 @@ public void DebugResetBurden()
         }
     }
 
+// ─── Guard Resonance / 守护共鸣 ────────────────────────────────
+
+    private void HandlePlayerDamaged(float damage, Transform attacker)
+    {
+        TryTriggerGuardResonance();
+    }
+
+    private bool TryTriggerGuardResonance()
+    {
+        if (!guardResonanceEnabled)          return false;
+        if (playerHealth == null)            return false;
+        if (playerHealth.IsDead)             return false;
+        if (Time.time < _nextGuardResonanceTime) return false;
+        if (!HasActiveDamageReductionSkill()) return false;
+
+        ReduceBurden(guardResonanceBurdenReduction, "Guard Resonance");
+        _nextGuardResonanceTime = Time.time + guardResonanceCooldown;
+
+        if (logDebugMessages)
+            Debug.Log("[HikariSupport] Guard Resonance 発動 — Burden 軽減。");
+
+        return true;
+    }
+
+    /// <summary>
+    /// 光負荷を減少させて UpdateOverloadState を呼び出す。
+    /// </summary>
+    private void ReduceBurden(float amount, string source)
+    {
+        if (amount <= 0f) return;
+        float oldBurden = currentBurden;
+        currentBurden   = Mathf.Max(0f, currentBurden - amount);
+        UpdateOverloadState();
+        if (logDebugMessages)
+            Debug.Log($"[HikariSupport] Burden reduced [{source}] {oldBurden:F1} → {currentBurden:F1} / {maxBurden:F1}");
+    }
+
+    /// <summary>
+    /// DamageReduction タイプの技能が 1 つ以上 Active なら true。
+    /// </summary>
+    private bool HasActiveDamageReductionSkill()
+    {
+        if (_playerSkillManager == null) return false;
+        foreach (var state in _playerSkillManager.RuntimeStates)
+        {
+            if (state == null)             continue;
+            if (!state.IsActive)           continue;
+            if (state.SkillData == null)   continue;
+            if (state.SkillData.EffectType == PlayerSkillEffectType.DamageReduction)
+                return true;
+        }
+        return false;
+    }
+
+
 
 private void OnValidate()
     {
@@ -343,6 +450,8 @@ private void OnValidate()
         overburdenHealingMultiplier  = Mathf.Clamp01(overburdenHealingMultiplier);
         overloadThreshold            = Mathf.Clamp01(overloadThreshold);
         overloadRecoveryThreshold    = Mathf.Clamp(overloadRecoveryThreshold, 0f, overloadThreshold);
+        guardResonanceBurdenReduction = Mathf.Max(0f, guardResonanceBurdenReduction);
+        guardResonanceCooldown        = Mathf.Max(0f, guardResonanceCooldown);
     }
 
 

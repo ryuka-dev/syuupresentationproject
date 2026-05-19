@@ -363,7 +363,7 @@ private float CalculateHikariDebugWindowHeight(HikariSupportController hikari)
     /// Hikari Debug に表示するテキスト行を構築する。
     /// 計算と描画の両方で同じリストを共有する。
     /// </summary>
-    private System.Collections.Generic.List<string> BuildHikariDebugLines(HikariSupportController hikari)
+private System.Collections.Generic.List<string> BuildHikariDebugLines(HikariSupportController hikari)
     {
         var lines = new System.Collections.Generic.List<string>();
         if (hikari == null)
@@ -384,6 +384,10 @@ private float CalculateHikariDebugWindowHeight(HikariSupportController hikari)
         lines.Add($"治疗可用：{(hikari.CanUseHealing ? "是" : "否")}");
         lines.Add($"自然下降：{(hikari.IsBurdenRecoveryEnabled ? "开启" : "关闭")}");
         lines.Add($"下降速度：{hikari.BurdenRecoveryPerSecond:F1} / 秒");
+        lines.Add($"守护共鸣：{(hikari.GuardResonanceEnabled ? "开启" : "关闭")}");
+        lines.Add($"守护共鸣减负：{hikari.GuardResonanceBurdenReduction:F1}");
+        lines.Add($"守护共鸣冷却：{hikari.GuardResonanceCooldown:F1} 秒");
+        lines.Add($"守护共鸣剩余冷却：{hikari.GuardResonanceCooldownRemaining:F1} 秒");
         return lines;
     }
 
