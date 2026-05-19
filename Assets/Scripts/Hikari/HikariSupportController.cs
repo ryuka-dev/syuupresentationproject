@@ -57,13 +57,41 @@ public class HikariSupportController : MonoBehaviour
     [Tooltip("Emergency Prayer の最短発動間隔（秒）。")]
     [SerializeField] private float emergencyPrayerCooldown = 25f;
 
+    [Header("Burden / 光負荷")]
+    [Tooltip("Hikari の光負荷最大値。")]
+    [SerializeField] private float maxBurden = 100f;
+
+    [Tooltip("現在の光負荷。Inspector で確認可能。")]
+    [SerializeField] private float currentBurden = 0f;
+
+    [Tooltip("Light Mend 発動一回あたりの光負荷追加量。")]
+    [SerializeField] private float lightMendBurdenGain = 5f;
+
+    [Tooltip("Emergency Prayer 発動一回あたりの光負荷追加量。")]
+    [SerializeField] private float emergencyPrayerBurdenGain = 25f;
+
+    [Tooltip("光負荷の自然回復度（/秒）。")]
+    [SerializeField] private float burdenRecoveryPerSecond = 1f;
+
+    [Tooltip("false にすると光負荷の自然回復を停止します。")]
+    [SerializeField] private bool enableBurdenRecovery = true;
+
     
+
 [Header("デバッグ")]
     [SerializeField] private bool logDebugMessages = true;
 
     // ─── 実行時フィールド ─────────────────────────────────────────
 
     private float _nextLightMendTime;
+
+    // ─── 公開読み取り専用プロパティ ──────────────────────────────────────
+
+    public float CurrentBurden => currentBurden;
+    public float MaxBurden     => maxBurden;
+    public float BurdenRatio   => maxBurden > 0f ? currentBurden / maxBurden : 0f;
+    public bool  IsBurdenMaxed => currentBurden >= maxBurden;
+
     private float _nextEmergencyPrayerTime;
 
 
@@ -93,12 +121,15 @@ private void Update()
         if (playerHealth == null) return;
         if (playerHealth.IsDead)  return;
 
+        // 光負荷自然回復（毎フレーム処理）
+        RecoverBurdenOverTime();
+
         float hpRatio = GetPlayerHpRatio();
 
         // Emergency Prayer を優先チェック
         if (hpRatio < emergencyPrayerHpThreshold)
         {
-            if (TryUseEmergencyPrayer()) return;   // EP 発動 → 同フレームの LM はスキップ
+            if (TryUseEmergencyPrayer()) return;
         }
 
         // Light Mend をフォールバックチェック
@@ -121,10 +152,11 @@ private bool TryUseLightMend()
 
         if (logDebugMessages)
             Debug.Log($"[HikariSupport] Light Mend 発動 — HP {playerHealth.currentHealth:F1}/{playerHealth.maxHealth:F1}" +
-                      $" ({GetPlayerHpRatio() * 100f:F1}%) → Heal({lightMendHealAmount})");
+                      $" ({GetPlayerHpRatio() * 100f:F1}%) → Heal({lightMendHealAmount}) | Burden {currentBurden:F1}+{lightMendBurdenGain}");
 
         playerHealth.Heal(lightMendHealAmount, transform);
         _nextLightMendTime = Time.time + lightMendCooldown;
+        AddBurden(lightMendBurdenGain, "Light Mend");
         return true;
     }
 
@@ -133,17 +165,18 @@ private bool TryUseLightMend()
     /// <summary>
     /// Emergency Prayer の試行。発動できた場合は true を返す。
     /// </summary>
-    private bool TryUseEmergencyPrayer()
+private bool TryUseEmergencyPrayer()
     {
         if (!enableEmergencyPrayer) return false;
         if (Time.time < _nextEmergencyPrayerTime) return false;
 
         if (logDebugMessages)
             Debug.Log($"[HikariSupport] Emergency Prayer 発動 — HP {playerHealth.currentHealth:F1}/{playerHealth.maxHealth:F1}" +
-                      $" ({GetPlayerHpRatio() * 100f:F1}%) → Heal({emergencyPrayerHealAmount})");
+                      $" ({GetPlayerHpRatio() * 100f:F1}%) → Heal({emergencyPrayerHealAmount}) | Burden {currentBurden:F1}+{emergencyPrayerBurdenGain}");
 
         playerHealth.Heal(emergencyPrayerHealAmount, transform);
         _nextEmergencyPrayerTime = Time.time + emergencyPrayerCooldown;
+        AddBurden(emergencyPrayerBurdenGain, "Emergency Prayer");
         return true;
     }
 
@@ -158,5 +191,44 @@ private bool TryUseLightMend()
             ? playerHealth.currentHealth / playerHealth.maxHealth
             : 1f;
     }
+
+// ─── Burden 光負荷 ────────────────────────────────────────────
+
+    /// <summary>
+    /// 光負荷を追加する。友化平とクリップする。
+    /// </summary>
+    private void AddBurden(float amount, string source)
+    {
+        if (amount <= 0f) return;
+        float before = currentBurden;
+        currentBurden = Mathf.Clamp(currentBurden + amount, 0f, maxBurden);
+        if (logDebugMessages)
+            Debug.Log($"[HikariSupport] Burden [{source}] {before:F1} → {currentBurden:F1} / {maxBurden:F1}");
+    }
+
+    /// <summary>
+    /// 毎フレーム、光負荷を自然回復させる。
+    /// </summary>
+    private void RecoverBurdenOverTime()
+    {
+        if (!enableBurdenRecovery) return;
+        if (burdenRecoveryPerSecond <= 0f) return;
+        if (currentBurden <= 0f) return;
+        currentBurden = Mathf.Max(0f, currentBurden - burdenRecoveryPerSecond * Time.deltaTime);
+    }
+
+    private void OnValidate()
+    {
+        maxBurden                  = Mathf.Max(1f,  maxBurden);
+        currentBurden              = Mathf.Clamp(currentBurden, 0f, maxBurden);
+        lightMendBurdenGain        = Mathf.Max(0f,  lightMendBurdenGain);
+        emergencyPrayerBurdenGain  = Mathf.Max(0f,  emergencyPrayerBurdenGain);
+        burdenRecoveryPerSecond    = Mathf.Max(0f,  burdenRecoveryPerSecond);
+        lightMendHealAmount        = Mathf.Max(0f,  lightMendHealAmount);
+        emergencyPrayerHealAmount  = Mathf.Max(0f,  emergencyPrayerHealAmount);
+        lightMendCooldown          = Mathf.Max(0f,  lightMendCooldown);
+        emergencyPrayerCooldown    = Mathf.Max(0f,  emergencyPrayerCooldown);
+    }
+
 
 }
