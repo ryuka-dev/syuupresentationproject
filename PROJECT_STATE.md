@@ -1,6 +1,6 @@
 ﻿# PROJECT_STATE
 
-最后更新：2026-05-18  
+最后更新：2026-05-19  
 当前主要场景：`Assets/Scenes/SampleScene.unity`  
 Unity 版本：6000.4.3f1 (Unity 6)
 
@@ -39,7 +39,8 @@ Unity 版本：6000.4.3f1 (Unity 6)
 → 按 PlayerSkillManager 注册的技能键使用玩家技能（当前至少 Slot2 / Slot3，另有攻击强化测试技能，具体资产路径未确认）
 → Canvas 技能栏显示技能图标、持续时间与冷却
 → PlayerStatusEffectController 根据 Active 技能修正玩家受到的伤害 / 普通攻击输出伤害
-→ 伤害飘字显示玩家打出的实际伤害与受到的实际伤害
+→ 伤害 / 治疗飘字显示玩家打出的实际伤害、受到的实际伤害与实际恢复量
+→ HikariSupportController 根据玩家血量自动治疗，并用光负荷 / 过载 / 守护共鸣形成保护反馈
 → 敌人普通攻击 / 指定敌人释放读条技能
 → 敌人死亡
 → 任务击杀进度增加
@@ -552,13 +553,15 @@ Iron Bulwark 视觉反馈原型。
 
 - `TakeDamage(float)`：向后兼容接口
 - `TakeDamage(float, Transform attacker)`：带攻击来源接口
-- `RestoreFullHealth()`：恢复满血并触发血条刷新
+- `Heal(float amount)` / `Heal(float amount, Transform healer)`：统一治疗入口，按实际恢复量触发治疗事件；死亡状态下不绕过正式复活流程。
+- `RestoreFullHealth()`：恢复满血并触发血条刷新；若实际恢复量大于 0，也会触发治疗事件，保留复活流程可用性。
 - `SetMaxHealth(float newMaxHealth, bool keepCurrentRatio = false)`：动态修改最大生命值
 - `IsDead`
 - 事件：
   - `OnHealthChanged(float, float)`
   - `OnDied`
   - `OnDamaged(float, Transform)`
+  - `OnHealed(float, Transform)`：传入实际恢复量与治疗来源，可为 null。
 
 
 当前伤害修正规则：
@@ -578,6 +581,22 @@ TakeDamage(...)
 - 旧 `PlayerMitigationController` fallback 已移除。
 - `OnDamaged` 传入最终伤害值，当前伤害飘字系统通过该事件显示玩家打出的实际伤害与受到的实际伤害。
 
+治疗规则：
+
+```text
+Heal(amount, healer)
+→ amount <= 0 时不触发治疗
+→ 玩家 / 对象已死亡时不通过 Heal 绕过复活流程
+→ 实际恢复量 = Min(currentHealth + amount, maxHealth) - oldHealth
+→ 实际恢复量 > 0 时触发 OnHealthChanged 与 OnHealed
+```
+
+说明：
+
+- 治疗飘字显示的是实际恢复量，不是传入治疗量。
+- 已满血时不会触发无意义的 0 治疗飘字。
+- `RestoreFullHealth()` 会在实际恢复量大于 0 时触发 `OnHealed(actualHealAmount, null)`。
+
 `SetMaxHealth` 规则：
 
 - `newMaxHealth < 1f` 时修正为 1。
@@ -593,38 +612,115 @@ TakeDamage(...)
 
 路径：`Assets/Scripts/UI/DamageNumberPopup.cs`
 
-单个世界空间伤害飘字。
+单个世界空间飘字。
 
 职责：
 
-- 使用 `TextMeshPro` 显示伤害数字。
+- 使用 `TextMeshPro` 显示数字。
 - `Initialize(float damage)` / `Initialize(float damage, Camera targetCamera)` 初始化显示值。
-- 伤害值四舍五入为整数，最小显示 1。
+- 数值四舍五入为整数，最小显示 1。
 - 生命周期内向上移动、逐渐淡出、面向摄像机，结束后 Destroy 自身。
 - 当前第一版直接 Instantiate / Destroy，尚未使用对象池。
+- 当前同一脚本同时复用于伤害飘字与治疗飘字；不同颜色 / 样式通过不同 Prefab 区分。
 
 #### `DamageNumberSpawner.cs`
 
 路径：`Assets/Scripts/UI/DamageNumberSpawner.cs`
 
-伤害飘字生成器，挂在带 `HealthComponent` 的对象上。
+伤害 / 治疗飘字生成器，挂在带 `HealthComponent` 的对象上。
 
 职责：
 
-- 在 `OnEnable()` 订阅同对象 `HealthComponent.OnDamaged`。
+- 在 `OnEnable()` 订阅同对象 `HealthComponent.OnDamaged` 与 `HealthComponent.OnHealed`。
 - 在 `OnDisable()` 取消订阅。
-- 受到最终伤害时，在对象头顶附近生成 `DamageNumberPopup`。
-- 不计算伤害、不修改血量、不区分攻击来源。
-- 依赖 Inspector 的 `popupPrefab` 绑定，缺失时只 Warning，不崩溃。
+- 受到最终伤害时，在对象头顶附近生成伤害飘字。
+- 实际恢复量大于 0 时，在对象头顶附近生成治疗飘字。
+- 不计算伤害、不计算治疗、不修改血量。
+- `healingPopupPrefab` 不为空时优先用于治疗飘字；为空时 fallback 到 `popupPrefab`，保证未绑定专用治疗 Prefab 时仍可显示数值。
+- 依赖 Inspector 的 Prefab 绑定，缺失时只 Warning，不崩溃。
 
 当前绑定状态：
 
-- Player 已绑定 `DamageNumberSpawner`，使用玩家受伤用 Popup Prefab。
+- Player 已绑定 `DamageNumberSpawner`，使用玩家受伤用 Popup Prefab，并已接入治疗飘字 Prefab。
 - `Assets/Resources/EnemyBase.prefab` 已绑定 `DamageNumberSpawner`，使用玩家打出伤害用 Popup Prefab。
 - 当前已创建并使用：
   - `Assets/Resources/UI/DamageNumberPopup.prefab`
   - `Assets/Resources/UI/DamageNumberPopup_PlayerDamage.prefab`
   - `Assets/Resources/UI/DamageNumberPopup_PlayerTaken.prefab`
+  - `Assets/Resources/UI/DamageNumberPopup_PlayerHealth.prefab`：玩家治疗数值飘字。
+
+### Hikari Support / Hikari 支援系统
+
+#### `HikariSupportController.cs`
+
+路径：`Assets/Scripts/Hikari/HikariSupportController.cs`
+
+当前 Hikari 仍是战斗支援原型，不是完整队友 AI。实际测试对象为场景中的临时 Cube，挂载 `HikariSupportController` 与默认组件；正式 Hikari 模型 / Prefab / Animator / 跟随 AI 尚未制作。
+
+职责：
+
+- 自动寻找 Player 的 `HealthComponent`，并订阅玩家受伤事件。
+- 根据玩家 HP 自动释放 Hikari 支援治疗。
+- 管理 Hikari 光负荷（Burden）、高负荷（Overburden）、过载（Overload）与守护共鸣（Guard Resonance）。
+- 只调用 `HealthComponent.Heal(...)` 进行治疗，不直接改玩家 HP，不手动生成飘字。
+
+当前治疗行为：
+
+```text
+Light Mend / 微光治愈
+- 玩家 HP 比例 < 80% 时尝试触发
+- 基础治疗量 15
+- 冷却 5 秒
+- 成功触发后光负荷 +5
+
+Emergency Prayer / 紧急祈愿
+- 玩家 HP 比例 < 35% 时优先尝试触发
+- 基础治疗量 45
+- 冷却 25 秒
+- 成功触发后光负荷 +25
+- 优先级高于 Light Mend
+```
+
+光负荷规则：
+
+```text
+currentBurden / maxBurden
+< 80%        → 正常治疗
+>= 80%       → 高负荷，治疗量乘以 overburdenHealingMultiplier，当前默认 0.5
+>= 100%      → 过载，Light Mend / Emergency Prayer 不触发、不治疗、不设冷却、不增加 Burden
+<= 60%       → 解除过载，恢复治疗能力
+```
+
+补充：
+
+- 光负荷可自然下降，默认 `burdenRecoveryPerSecond = 1`，可通过 F1 Hikari Debug 按钮临时开启 / 关闭。
+- 光负荷达到上限后不会直接触发战斗失败，也不会杀死 Hikari。
+- 当前只做支援规则与 Debug 可视化，没有正式 UI / 特效 / 音效。
+
+Guard Resonance / 守护共鸣 v0.1：
+
+```text
+触发条件：
+1. guardResonanceEnabled == true
+2. 玩家未死亡
+3. Guard Resonance 不在 3 秒内置冷却中
+4. 玩家至少有一个 PlayerSkillData.EffectType == DamageReduction 的技能处于 Active
+5. 本次伤害来自敌人 EnemySkillType.CastAttack，而不是普通攻击
+
+效果：
+- Hikari 光负荷 -10
+- 不治疗玩家
+- 不生成治疗飘字
+- 不修改玩家 HP
+```
+
+实现要点：
+
+- `HasActiveDamageReductionSkill()` 通过 `PlayerSkillManager.RuntimeStates` 判断 DamageReduction 技能是否 Active。
+- `EnemySkillController` 记录最近一次造成伤害的技能：`LastDamageSkillData` 与 `LastDamageSkillTime`。
+- Hikari 在玩家受伤时通过 attacker 找到 `EnemySkillController`，并检查 `LastDamageSkillData.SkillType == EnemySkillType.CastAttack`。
+- 使用 `guardResonanceSkillHitWindow = 0.25f` 避免普通攻击误用旧的 CastAttack 记录。
+- 不使用最终伤害数值判断 Guard Resonance 是否成功触发。
 
 ### `PlayerCombatStats.cs`
 
@@ -1277,6 +1373,38 @@ float invPanelY      = margin;
 - 验证卸下 Core 后是否回到背包。
 - 验证替换 Core 时旧 Core 是否回到背包。
 
+### Hikari Debug 独立窗口
+
+`SkeletonDebugUI.cs` 当前还负责绘制 Hikari 调试窗口。
+
+位置 / 尺寸：
+
+- Hikari Debug 已从左侧按钮长条移出，显示为独立 OnGUI 窗口。
+- 窗口位于左侧主面板右侧、装备状态窗口下方。
+- 窗口高度不再使用固定值，而是通过 `BuildHikariDebugLines()` + `GUIStyle.CalcHeight()` 根据实际中文文本与按钮高度动态计算。
+- 找不到 `HikariSupportController` 时窗口会自动缩小，只显示“未找到”。
+
+显示内容：
+
+- Hikari 支援组件：已找到 / 未找到
+- 光负荷、光负荷比例、光负荷已满
+- 高负荷状态、高负荷阈值、高负荷治疗倍率
+- 过载状态、过载阈值、过载恢复阈值、治疗可用
+- 守护共鸣状态、减负量、冷却、剩余冷却、触发条件（读条重击 / CastAttack）
+- 自然下降状态与下降速度
+
+按钮：
+
+- `增加光负荷 25`
+- `重置光负荷`
+- `开启自然下降` / `关闭自然下降`
+
+注意：
+
+- 该窗口是 Debug UI，不是正式 Hikari UI。
+- 不要把 Hikari Debug 塞回左侧主面板。
+- 如果新增 Hikari Debug 显示行，应通过 `BuildHikariDebugLines()` 更新文本，避免高度计算与绘制内容不同步。
+
 ### OnGUI 是否可留到正式游戏
 
 - 可以作为隐藏 Debug / Cheat / Developer Menu 保留。
@@ -1344,7 +1472,7 @@ Trigger 检测玩家进入后更新玩家最近复活点。
 - PlayerStatusEffectController
 - PlayerMitigationVisualFeedback
 - PlayerSkillHudUI（OnGUI 调试 HUD，显示最后按过的技能）
-- DamageNumberSpawner（玩家受伤飘字）
+- DamageNumberSpawner（玩家受伤 / 治疗飘字）
 - TargetSelectionIndicator（当前目标头顶倒三角指示器）
 
 Tag：`Player`  
@@ -1416,6 +1544,13 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 - enemyPrefab = `Assets/Resources/SkeletonEnemy.prefab`
 - respawnDelay = 5 秒
 - spawnOnStart = true
+
+#### Hikari 临时测试对象
+
+- 当前 Hikari 仍是临时 Cube 测试对象，具体对象名未确认。
+- 已挂载 `HikariSupportController`，其余为默认组件。
+- 当前没有正式 Hikari Prefab、模型、Animator、跟随 AI 或正式 UI。
+- `SkeletonDebugUI` 通过 `FindFirstObjectByType<HikariSupportController>()` 查找该组件并显示 Hikari Debug。
 
 #### Terrain / Ground
 
@@ -1497,6 +1632,12 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 
 - Player 受到伤害时使用。
 - 当前为红色加粗、字号 5 的测试表现。
+
+#### `Assets/Resources/UI/DamageNumberPopup_PlayerHealth.prefab`
+
+- Player 被治疗时使用。
+- 用于显示实际恢复量。
+- 由 Player 的 `DamageNumberSpawner.healingPopupPrefab` 使用；若未绑定，`DamageNumberSpawner` 会 fallback 到 `popupPrefab`。
 
 #### Target Indicator Prefab
 
@@ -1606,6 +1747,7 @@ Cursor 当前规则：
 - ✅ EnemyCastBarUI 读条提示第一版（OnGUI 显示技能名 / 进度 / 时间）
 - ✅ EnemyBase 可统一挂载 EnemySkillController / EnemyCastBarUI，skills 为空时无影响
 - ✅ SkeletonBossEnemy_Variant 可通过 skills 覆写配置读条重击
+- ✅ `EnemySkillController` 会记录最近一次技能伤害来源，当前用于 Hikari Guard Resonance 判断 CastAttack 命中
 
 
 ### 玩家技能 / 状态效果 / 技能 UI
@@ -1631,6 +1773,7 @@ Cursor 当前规则：
 - ✅ `PlayerSkillHudUI` OnGUI 调试 HUD 显示最后按过的技能
 - ✅ `PlayerMitigationVisualFeedback` 读取 `PlayerSkillManager`，在 Iron Bulwark Active 时显示脚下防御光环
 - ✅ F1 Debug UI 的玩家减伤状态显示读取 `PlayerSkillManager`
+- ✅ Hikari Guard Resonance 可读取 `PlayerSkillManager.RuntimeStates` 判断 DamageReduction 技能是否 Active
 
 ### 复活 / SavePoint
 
@@ -1682,8 +1825,22 @@ Cursor 当前规则：
 - ✅ `DamageNumberPopup` / `DamageNumberSpawner` 伤害飘字第一版
 - ✅ `HealthComponent.OnDamaged` 驱动最终伤害数字显示
 - ✅ Player 受到伤害与敌人受到伤害可使用不同 Popup Prefab
+- ✅ `HealthComponent.Heal()` / `OnHealed` 治疗事件第一版
+- ✅ Player 治疗飘字 Prefab `DamageNumberPopup_PlayerHealth.prefab` 已创建并测试正常
+- ✅ `DamageNumberSpawner` 可通过 `OnHealed` 显示实际恢复量
 - ✅ `TargetSelectionIndicator` 读取 `PlayerTargeting.CurrentTarget` 显示目标头顶倒三角
 - ✅ TargetSelectionIndicator 已修正静止目标上下频闪问题：目标切换时计算一次高度偏移，运行中不再每帧扫描 Collider
+
+### Hikari 支援 / 光负荷
+
+- ✅ `HikariSupportController` 第一版：临时 Cube 可作为 Hikari 测试对象自动治疗 Player
+- ✅ Light Mend / 微光治愈：玩家 HP 低于 80% 时自动小治疗
+- ✅ Emergency Prayer / 紧急祈愿：玩家 HP 低于 35% 时优先大治疗
+- ✅ Hikari 光负荷 / Burden：治疗增加负荷，负荷可自然下降
+- ✅ 高负荷 / Overburden：光负荷 80% 以上时治疗量按倍率衰减
+- ✅ 过载 / Overload：光负荷 100% 时 Hikari 治疗停摆，降到 60% 以下或等于 60% 时恢复
+- ✅ Guard Resonance / 守护共鸣：玩家 DamageReduction Active 期间承受 CastAttack 伤害时降低 Hikari 光负荷
+- ✅ Guard Resonance 不使用最终伤害数值判断，不会被普通攻击触发
 
 ### Debug / 工具
 
@@ -1703,6 +1860,8 @@ Cursor 当前规则：
 - ✅ 左键不再触发相机旋转或 Cursor 隐藏
 - ✅ RPGCameraController 鼠标灵敏度改为不乘 Time.deltaTime，并可在 Inspector 调整
 - ✅ 装备状态 Debug 窗口高度按实际显示行数动态计算
+- ✅ Hikari Debug 独立窗口：中文显示光负荷 / 高负荷 / 过载 / 守护共鸣，并支持动态高度计算
+- ✅ Hikari Debug 支持增加 / 重置光负荷与开启 / 关闭自然下降
 
 ---
 
@@ -1730,6 +1889,15 @@ Cursor 当前规则：
 - ⚠️ `PlayerSkillHudUI` 是 OnGUI 调试 HUD，不是正式玩家 UI。
 - ⚠️ `PlayerSkillManager.skills` 当前通过 Inspector 注册，尚未实现技能学习、解锁、保存、拖拽或热键自定义。
 - ⚠️ 普通攻击仍由 `PlayerSkillController` 独立处理，尚未统一进 `PlayerSkillManager`；不要让 Slot1 与普通攻击冲突。
+
+### Hikari 支援系统限制
+
+- ⚠️ Hikari 当前仍是临时 Cube 测试对象，不是正式角色 Prefab。
+- ⚠️ 尚未实现 Hikari 模型、动画、跟随、站位、受伤、死亡或正式 UI。
+- ⚠️ HikariSupportController 当前是硬编码少量支援行为，不是完整 HikariSkillManager / HikariSkillData 系统。
+- ⚠️ Hikari 的数值仍是原型基准：治疗量、光负荷增减、过载阈值与守护共鸣冷却尚未做正式平衡。
+- ⚠️ Guard Resonance 当前只识别 `EnemySkillType.CastAttack`，未来若新增 Boss 技能类型，需要扩展触发条件或升级为正式 DamageContext / CombatHitInfo。
+- ⚠️ EnemySkillController 的 `LastDamageSkillData / LastDamageSkillTime` 是当前原型用技能来源追踪；如果未来普通攻击或多技能伤害更复杂，应升级为更正式的伤害上下文。
 
 ### 场景 / UI
 
@@ -1844,6 +2012,7 @@ Cursor 当前规则：
 - `Assets/Scripts/Enemy/Skills/EnemySkillData.cs`
 - `Assets/Scripts/Enemy/Skills/EnemySkillController.cs`
 - `Assets/Scripts/Enemy/Skills/EnemyCastBarUI.cs`
+- `Assets/Scripts/Hikari/HikariSupportController.cs`
 - `Assets/Scripts/HealthComponent.cs`
 - `Assets/Scripts/PlayerController.cs`
 - `Assets/Scripts/RPGCameraController.cs`
@@ -1881,6 +2050,7 @@ Cursor 当前规则：
 - `Assets/Resources/UI/DamageNumberPopup.prefab`
 - `Assets/Resources/UI/DamageNumberPopup_PlayerDamage.prefab`
 - `Assets/Resources/UI/DamageNumberPopup_PlayerTaken.prefab`
+- `Assets/Resources/UI/DamageNumberPopup_PlayerHealth.prefab`
 - 目标倒三角指示器 Prefab（路径未确认，已绑定到 Player 的 `TargetSelectionIndicator.indicatorPrefab`）
 - 读条重击 `EnemySkillData` 资产（当前路径未确认，已配置到 `SkeletonBossEnemy_Variant.prefab`）
 - `Assets/Items/TestItem_Bone.asset`
@@ -1899,6 +2069,15 @@ Cursor 当前规则：
 - `Assets/Art/UI/SkillIcons/Skill_IronBulwark.png`
 - `Assets/Art/UI/SkillIcons/`：玩家技能图标目录
 
+
+### 容易误改的绑定 / 约定
+
+- `HealthComponent.OnDamaged(float, Transform)` 仍是伤害飘字与 Hikari 受伤响应的基础事件，不要随意改签名。
+- `HealthComponent.OnHealed(float, Transform)` 负责治疗飘字，治疗逻辑应通过 `Heal(...)` 触发，不要由 UI 或 Spawner 直接改血。
+- `EnemyAI.OnAttackHit()` 是普通攻击 Animation Event，方法名不可改。
+- `EnemySkillController.LastDamageSkillData / LastDamageSkillTime` 当前用于 Guard Resonance 判断 CastAttack；普通攻击不要写入该记录，避免误触发。
+- Hikari Guard Resonance 依赖 `PlayerSkillManager.RuntimeStates` 与 `PlayerSkillEffectType.DamageReduction`，不要让 Slot1 普通攻击与玩家技能系统冲突。
+- Hikari Debug 窗口高度依赖 `BuildHikariDebugLines()` 与 `GUIStyle.CalcHeight()`；新增显示行时要更新 Build 方法，不要重新写固定高度。
 
 ### 不应修改的文件
 
@@ -2002,41 +2181,42 @@ Cursor 当前规则：
 
 ### ⭐ 最推荐的下一个小任务
 
-**完善 `PlayerSkillHudUI` / Debug 显示，让不同玩家技能效果类型显示对应参数。**
+**创建 `BALANCE_BASELINE.md`，记录当前战斗 / Hikari / 装备数值的原型基准。**
 
 目的：
 
 ```text
-当前玩家技能已支持：
-- DamageReduction
-- AttackPowerMultiplier
+当前已有多套会互相影响的数值：
+- 玩家 HP / 普通攻击 / 装备加成
+- 玩家 DamageReduction / AttackPowerMultiplier 技能
+- 敌人普通攻击 / CastAttack / HP
+- Hikari 治疗量、冷却、光负荷增减、高负荷与过载阈值
 ```
 
 建议目标：
 
 ```text
-当 LastPressedSkillState 的 EffectType 是 DamageReduction 时显示 Damage Taken Multiplier。
-当 EffectType 是 AttackPowerMultiplier 时显示 Attack Power Multiplier。
-保持 OnGUI 调试用途，不做正式 UI。
-不修改技能执行逻辑，不修改 Animator / Prefab / Scene。
+先不做最终平衡，只记录“正常 / 危险 / 失败”的粗基准。
+例如：普通小怪战斗时长、精英怪 / Boss 原型时长、Hikari 多久进入高负荷、一次 Emergency Prayer 需要几次 Guard Resonance 弥补。
 ```
 
 验收目标：
 
 ```text
-按 Iron Bulwark / Stone Guard 时能看到减伤倍率。
-按攻击强化测试技能时能看到攻击倍率。
-冷却中按键也能更新 LastPressedSkillState 的显示。
+新增 BALANCE_BASELINE.md。
+写明当前临时数值基准与设计目标。
+不修改任何代码、Prefab、Scene 或 Animator。
 ```
 
 ### 备选任务
 
-1. 给 `PlayerTargeting` 增加 Shift+Tab 反向选敌，仍复用同一候选列表与敌对判定。
-2. 给伤害飘字增加对象池 `DamageNumberPool`，减少频繁 Instantiate / Destroy。
-3. 抽象 `PlayerMitigationVisualFeedback` 为通用 `PlayerSkillVisualController`，根据 `PlayerSkillVisualType` 显示不同视觉反馈。
-4. 给目标显示追加目标血条高亮或简单目标信息 UI，但不要改目标选择逻辑。
-5. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
-6. 整理 NavMeshSurface LayerMask，只让 Terrain / Ground / Environment 参与 Bake。
+1. 给 Hikari Guard Resonance 增加轻量视觉 / 文本反馈，但不要做正式 UI。
+2. 给 `EnemySkillData` 增加更明确的技能标签或 Guard Resonance 触发标记，为未来多个 Boss 技能做准备。
+3. 给 `PlayerTargeting` 增加 Shift+Tab 反向选敌，仍复用同一候选列表与敌对判定。
+4. 给伤害 / 治疗飘字增加对象池 `DamageNumberPool`，减少频繁 Instantiate / Destroy。
+5. 抽象 `PlayerMitigationVisualFeedback` 为通用 `PlayerSkillVisualController`。
+6. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
+7. 整理 NavMeshSurface LayerMask，只让 Terrain / Ground / Environment 参与 Bake。
 
 
 ## 12. 本次有效变更摘要（2026-05-11）
@@ -2368,6 +2548,8 @@ EnemyBase
 - `CurrentCastDuration`：当前读条总时间。
 - `CurrentCastRemaining`：剩余读条时间。
 - `CurrentCastProgress`：0～1 的读条进度。
+- `LastDamageSkillData`：最近一次由敌人技能造成伤害时记录的技能数据。
+- `LastDamageSkillTime`：最近一次由敌人技能造成伤害的记录时间。
 
 当前关键方法：
 
@@ -2383,6 +2565,8 @@ EnemyBase
 - 目标 null、缺少 `HealthComponent`、目标死亡、超出范围时不会造成伤害。
 - 无技能 / 技能不可用时，`EnemyAI` 会继续普通攻击。
 - `OnDisable()` 会清理读条状态，避免对象被禁用时残留 cast 状态。
+- `CastAttackRoutine` 在调用目标 `HealthComponent.TakeDamage(...)` 前记录 `LastDamageSkillData / LastDamageSkillTime`；普通攻击不写入该记录。
+- Hikari 的 Guard Resonance 依赖该记录判断本次玩家受伤是否来自 `EnemySkillType.CastAttack`，不要随意删除或改为普通攻击也记录。
 
 ### `EnemyCastBarUI.cs`
 
@@ -2596,4 +2780,12 @@ EnemySpawnArea 与装备替换闭环已由用户确认没有明显问题。
 1. 玩家技能系统新增 `AttackPowerMultiplier` 效果类型；`PlayerStatusEffectController` 可修正普通攻击输出伤害，`PlayerSkillController` 普通攻击结算已接入该修正。攻击强化测试技能已创建并注册，Play Mode 测试正常，具体资产路径未确认。
 2. 战斗反馈新增伤害飘字系统：`DamageNumberPopup` / `DamageNumberSpawner` 通过 `HealthComponent.OnDamaged` 显示最终实际伤害；Player 与 `EnemyBase.prefab` 已绑定对应 Spawner，并区分玩家打出伤害 / 玩家受到伤害的 Popup Prefab。
 3. 目标选择与显示已强化：`PlayerTargeting` 支持 Tab 从屏幕左侧到右侧循环选择屏幕内敌人；`TargetSelectionIndicator` 读取 `CurrentTarget` 在目标头顶显示倒三角，并已修正静止目标指示器上下频闪问题。
+
+---
+
+## 23. 本次有效变更摘要（2026-05-19）
+
+1. 治疗反馈已接入通用血量系统：`HealthComponent` 新增 `Heal(...)` 与 `OnHealed`，`DamageNumberSpawner` 可通过 `healingPopupPrefab` 显示实际恢复量，`DamageNumberPopup_PlayerHealth.prefab` 已用于玩家治疗飘字。
+2. Hikari 支援原型已形成最小闭环：`HikariSupportController` 支持 Light Mend、Emergency Prayer、光负荷、高负荷治疗衰减、100% 过载停摆、60% 过载恢复，以及 Guard Resonance 降低光负荷。
+3. Guard Resonance 触发条件已收敛为“玩家 DamageReduction Active 期间承受敌人 `EnemySkillType.CastAttack` 伤害”；`EnemySkillController` 记录最近技能伤害来源，普通攻击不会触发守护共鸣。F1 Hikari Debug 已独立中文窗口显示并支持动态高度。
 
