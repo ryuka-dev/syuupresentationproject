@@ -563,6 +563,14 @@ private void DrawHikariDebugSection()
         GUILayout.Label($"Current Burden: {hikari.CurrentBurden:F1} / {hikari.MaxBurden:F1}");
         GUILayout.Label($"Burden Ratio: {hikari.BurdenRatio * 100f:F1}%");
         GUILayout.Label($"Burden Maxed: {hikari.IsBurdenMaxed}");
+
+        GUI.backgroundColor = new Color(1f, 0.75f, 0.3f);
+        if (GUILayout.Button("\u589e\u52a0\u5149\u8d1f\u8377 25", GUILayout.Height(30))) hikari.DebugAddBurden(25f);
+        GUI.backgroundColor = Color.white;
+
+        GUI.backgroundColor = new Color(0.6f, 0.85f, 1f);
+        if (GUILayout.Button("\u91cd\u7f6e\u5149\u8d1f\u8377", GUILayout.Height(30))) hikari.DebugResetBurden();
+        GUI.backgroundColor = Color.white;
     }
 
 

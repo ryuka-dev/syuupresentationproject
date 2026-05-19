@@ -206,6 +206,23 @@ private bool TryUseEmergencyPrayer()
             Debug.Log($"[HikariSupport] Burden [{source}] {before:F1} → {currentBurden:F1} / {maxBurden:F1}");
     }
 
+// ─── Debug 専用 API ──────────────────────────────────────────
+
+    /// <summary>Debug 用：光負荷を外部から追加する。治療は発動しない。</summary>
+    public void DebugAddBurden(float amount)
+    {
+        AddBurden(amount, "Debug");
+    }
+
+    /// <summary>Debug 用：光負荷をゼロにリセットする。治療冷却には影響しない。</summary>
+    public void DebugResetBurden()
+    {
+        currentBurden = 0f;
+        if (logDebugMessages)
+            Debug.Log("[HikariSupport] Burden reset by Debug.");
+    }
+
+
     /// <summary>
     /// 毎フレーム、光負荷を自然回復させる。
     /// </summary>
