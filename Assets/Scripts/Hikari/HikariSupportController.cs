@@ -84,6 +84,14 @@ public class HikariSupportController : MonoBehaviour
     [Tooltip("Overburden 状態の治療量倍率。デフォルト 0.5 = 50%。")]
     [SerializeField, Range(0f, 1f)] private float overburdenHealingMultiplier = 0.5f;
 
+    [Header("Overload / 过载")]
+    [Tooltip("Burden Ratio がこの居値以上になると過载状態になります（0〜1）。デフォルト 1.0 = 100%。")]
+    [SerializeField, Range(0f, 1f)] private float overloadThreshold = 1f;
+
+    [Tooltip("過载解除の基準となる Burden Ratio。デフォルト 0.6 = 60% 以下で解除。")]
+    [SerializeField, Range(0f, 1f)] private float overloadRecoveryThreshold = 0.6f;
+
+
     
 
 [Header("デバッグ")]
@@ -99,12 +107,23 @@ public class HikariSupportController : MonoBehaviour
     public float MaxBurden     => maxBurden;
     public float BurdenRatio   => maxBurden > 0f ? currentBurden / maxBurden : 0f;
     public bool  IsBurdenMaxed => currentBurden >= maxBurden;
+    public bool  IsOverloaded              => _isOverloaded;
+    public float OverloadThreshold         => overloadThreshold;
+    public float OverloadRecoveryThreshold => overloadRecoveryThreshold;
+    public bool  CanUseHealing             => !_isOverloaded;
+
+    
+public bool  IsBurdenRecoveryEnabled  => enableBurdenRecovery;
+    public float BurdenRecoveryPerSecond  => burdenRecoveryPerSecond;
+
     public bool  IsOverburdened             => BurdenRatio >= overburdenThreshold;
     public float OverburdenThreshold        => overburdenThreshold;
     public float OverburdenHealingMultiplier => overburdenHealingMultiplier;
 
 
     private float _nextEmergencyPrayerTime;
+    private bool _isOverloaded;
+
 
 
     // ─── Unity ライフサイクル ──────────────────────────────────────
@@ -133,18 +152,18 @@ private void Update()
         if (playerHealth == null) return;
         if (playerHealth.IsDead)  return;
 
-        // 光負荷自然回復（毎フレーム処理）
         RecoverBurdenOverTime();
+        UpdateOverloadState();
+
+        if (!CanUseHealing) return;
 
         float hpRatio = GetPlayerHpRatio();
 
-        // Emergency Prayer を優先チェック
         if (hpRatio < emergencyPrayerHpThreshold)
         {
             if (TryUseEmergencyPrayer()) return;
         }
 
-        // Light Mend をフォールバックチェック
         if (hpRatio < lightMendHpThreshold)
         {
             TryUseLightMend();
@@ -160,6 +179,11 @@ private void Update()
 private bool TryUseLightMend()
     {
         if (!enableLightMend) return false;
+        if (_isOverloaded)
+        {
+            if (logDebugMessages) Debug.Log("[HikariSupport] Light Mend スキップ: 過载状態");
+            return false;
+        }
         if (Time.time < _nextLightMendTime) return false;
 
         float finalHeal = ApplyBurdenHealingModifier(lightMendHealAmount);
@@ -183,6 +207,11 @@ private bool TryUseLightMend()
 private bool TryUseEmergencyPrayer()
     {
         if (!enableEmergencyPrayer) return false;
+        if (_isOverloaded)
+        {
+            if (logDebugMessages) Debug.Log("[HikariSupport] Emergency Prayer スキップ: 過载状態");
+            return false;
+        }
         if (Time.time < _nextEmergencyPrayerTime) return false;
 
         float finalHeal = ApplyBurdenHealingModifier(emergencyPrayerHealAmount);
@@ -225,13 +254,14 @@ private bool TryUseEmergencyPrayer()
     /// <summary>
     /// 光負荷を追加する。友化平とクリップする。
     /// </summary>
-    private void AddBurden(float amount, string source)
+private void AddBurden(float amount, string source)
     {
         if (amount <= 0f) return;
-        float before = currentBurden;
+        float before  = currentBurden;
         currentBurden = Mathf.Clamp(currentBurden + amount, 0f, maxBurden);
         if (logDebugMessages)
             Debug.Log($"[HikariSupport] Burden [{source}] {before:F1} → {currentBurden:F1} / {maxBurden:F1}");
+        UpdateOverloadState();
     }
 
 // ─── Debug 専用 API ──────────────────────────────────────────
@@ -243,12 +273,28 @@ private bool TryUseEmergencyPrayer()
     }
 
     /// <summary>Debug 用：光負荷をゼロにリセットする。治療冷却には影響しない。</summary>
-    public void DebugResetBurden()
+public void DebugResetBurden()
     {
         currentBurden = 0f;
         if (logDebugMessages)
             Debug.Log("[HikariSupport] Burden reset by Debug.");
+        UpdateOverloadState();
     }
+
+/// <summary>Debug用：光負荷自然回復の ON/OFF を外部から設定する。</summary>
+    public void DebugSetBurdenRecoveryEnabled(bool enabled)
+    {
+        enableBurdenRecovery = enabled;
+        if (logDebugMessages)
+            Debug.Log($"[HikariSupport] Burden recovery set to: {enableBurdenRecovery}");
+    }
+
+    /// <summary>Debug用：光負荷自然回復をトグルする。</summary>
+    public void DebugToggleBurdenRecovery()
+    {
+        DebugSetBurdenRecoveryEnabled(!enableBurdenRecovery);
+    }
+
 
 
     /// <summary>
@@ -261,6 +307,26 @@ private bool TryUseEmergencyPrayer()
         if (currentBurden <= 0f) return;
         currentBurden = Mathf.Max(0f, currentBurden - burdenRecoveryPerSecond * Time.deltaTime);
     }
+
+/// <summary>
+    /// 過载状態を更新する。AddBurden / RecoverBurdenOverTime / DebugResetBurden 後に呼び出す。
+    /// </summary>
+    private void UpdateOverloadState()
+    {
+        if (!_isOverloaded && BurdenRatio >= overloadThreshold)
+        {
+            _isOverloaded = true;
+            if (logDebugMessages)
+                Debug.Log("[HikariSupport] Hikari overloaded. Healing disabled.");
+        }
+        else if (_isOverloaded && BurdenRatio <= overloadRecoveryThreshold)
+        {
+            _isOverloaded = false;
+            if (logDebugMessages)
+                Debug.Log("[HikariSupport] Hikari recovered from overload. Healing enabled.");
+        }
+    }
+
 
 private void OnValidate()
     {
@@ -275,6 +341,8 @@ private void OnValidate()
         emergencyPrayerCooldown      = Mathf.Max(0f,  emergencyPrayerCooldown);
         overburdenThreshold          = Mathf.Clamp01(overburdenThreshold);
         overburdenHealingMultiplier  = Mathf.Clamp01(overburdenHealingMultiplier);
+        overloadThreshold            = Mathf.Clamp01(overloadThreshold);
+        overloadRecoveryThreshold    = Mathf.Clamp(overloadRecoveryThreshold, 0f, overloadThreshold);
     }
 
 
