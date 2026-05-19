@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -184,6 +184,8 @@ public class EnemySkillController : MonoBehaviour
                 float dist = Vector3.Distance(transform.position, target.position);
                 if (dist <= skill.Range)
                 {
+                                        _lastDamageSkillData = skill;
+                    _lastDamageSkillTime  = Time.time;
                     targetHealth.TakeDamage(skill.Damage, transform);
                     Debug.Log($"[EnemySkillController] {gameObject.name}: [{skill.DisplayName}] 命中！ダメージ={skill.Damage}");
                     hit = true;
@@ -218,6 +220,17 @@ public class EnemySkillController : MonoBehaviour
         CleanupCast();
     }
 
+    // ─── 最近ダメージスキル記録 ────────────────────────────────
+
+    private EnemySkillData _lastDamageSkillData;
+    private float          _lastDamageSkillTime = -999f;
+
+    /// <summary>最近ダメージを与えたスキル。ダメージ発生外は null。</summary>
+    public EnemySkillData LastDamageSkillData => _lastDamageSkillData;
+    /// <summary>最近ダメージを与えた時刻（Time.time）。</summary>
+    public float          LastDamageSkillTime  => _lastDamageSkillTime;
+
+    // ─── 内部クリア ─────────────────────────────────────────
     // ─── 内部クリア ─────────────────────────────────────────
     private void CleanupCast()
     {

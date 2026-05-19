@@ -91,6 +91,9 @@ public class HikariSupportController : MonoBehaviour
     [SerializeField] private float guardResonanceBurdenReduction = 10f;
     [Tooltip("守护共鸣的最短触发间隔（秒）。")]
     [SerializeField] private float guardResonanceCooldown        = 3f;
+    [Tooltip("読条重撃記録と受傷時刻の許容差（秒）。これ以内ならスキル命中とみなす。")]
+    [SerializeField] private float guardResonanceSkillHitWindow  = 0.25f;
+
 
     
 [Header("Overload / 过载")]
@@ -381,18 +384,19 @@ public void DebugResetBurden()
 
 // ─── Guard Resonance / 守护共鸣 ────────────────────────────────
 
-    private void HandlePlayerDamaged(float damage, Transform attacker)
+private void HandlePlayerDamaged(float damage, Transform attacker)
     {
-        TryTriggerGuardResonance();
+        TryTriggerGuardResonance(attacker);
     }
 
-    private bool TryTriggerGuardResonance()
+private bool TryTriggerGuardResonance(Transform attacker)
     {
-        if (!guardResonanceEnabled)          return false;
-        if (playerHealth == null)            return false;
-        if (playerHealth.IsDead)             return false;
-        if (Time.time < _nextGuardResonanceTime) return false;
-        if (!HasActiveDamageReductionSkill()) return false;
+        if (!guardResonanceEnabled)               return false;
+        if (playerHealth == null)                  return false;
+        if (playerHealth.IsDead)                   return false;
+        if (Time.time < _nextGuardResonanceTime)   return false;
+        if (!HasActiveDamageReductionSkill())      return false;
+        if (!IsGuardResonanceTriggerHit(attacker)) return false;
 
         ReduceBurden(guardResonanceBurdenReduction, "Guard Resonance");
         _nextGuardResonanceTime = Time.time + guardResonanceCooldown;
@@ -401,6 +405,28 @@ public void DebugResetBurden()
             Debug.Log("[HikariSupport] Guard Resonance 発動 — Burden 軽減。");
 
         return true;
+    }
+
+    /// <summary>
+    /// 次の伤害が Guard Resonance トリガー条件を満たすか。
+    /// 攻撃者の EnemySkillController.最近ダメージスキルが CastAttack 型であり、
+    /// 時間窓内の履歴であれば true。
+    /// </summary>
+    private bool IsGuardResonanceTriggerHit(Transform attacker)
+    {
+        if (attacker == null) return false;
+
+        var skillCtrl = attacker.GetComponentInParent<EnemySkillController>();
+        if (skillCtrl == null) return false;
+
+        var lastSkill = skillCtrl.LastDamageSkillData;
+        if (lastSkill == null) return false;
+
+        // 時間窓チェック: 古いスキル記録による誤発動を防ぎ゙る
+        if (Time.time - skillCtrl.LastDamageSkillTime > guardResonanceSkillHitWindow) return false;
+
+        // CastAttack 型のスキルのみ対応
+        return lastSkill.SkillType == EnemySkillType.CastAttack;
     }
 
     /// <summary>
@@ -452,6 +478,7 @@ private void OnValidate()
         overloadRecoveryThreshold    = Mathf.Clamp(overloadRecoveryThreshold, 0f, overloadThreshold);
         guardResonanceBurdenReduction = Mathf.Max(0f, guardResonanceBurdenReduction);
         guardResonanceCooldown        = Mathf.Max(0f, guardResonanceCooldown);
+        guardResonanceSkillHitWindow  = Mathf.Max(0f, guardResonanceSkillHitWindow);
     }
 
 

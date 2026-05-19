@@ -388,6 +388,8 @@ private System.Collections.Generic.List<string> BuildHikariDebugLines(HikariSupp
         lines.Add($"守护共鸣减负：{hikari.GuardResonanceBurdenReduction:F1}");
         lines.Add($"守护共鸣冷却：{hikari.GuardResonanceCooldown:F1} 秒");
         lines.Add($"守护共鸣剩余冷却：{hikari.GuardResonanceCooldownRemaining:F1} 秒");
+        lines.Add("守护共鸣触发条件：读条重击（CastAttack）");
+        return lines;
         return lines;
     }
 
