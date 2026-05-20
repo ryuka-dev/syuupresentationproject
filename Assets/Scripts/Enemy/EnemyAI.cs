@@ -722,6 +722,9 @@ void UpdateState()
                 break;
             case EnemyState.Chase:
                 HandleChaseMovement();
+                // 追撃中も攻撃圏内なら通常攻撃を試みる（CastAttack 読条中はスキップ）
+                if (_skillController == null || !_skillController.IsCasting)
+                    TryNormalAttack();
                 break;
             case EnemyState.Attack:
                 moveDirection = Vector3.zero;
@@ -736,17 +739,14 @@ void UpdateState()
                     _skillController.TryGetReadySkillInRange(currentTarget, out EnemySkillData readySkill) &&
                     _skillController.TryStartSkill(readySkill, currentTarget))
                     break;
-                // 通常攻撃
+                // 通常攻撃（IsAttacking リセット + TryNormalAttack に統一）
                 if (animator != null)
                 {
                     bool inAttackAnim = animator.GetCurrentAnimatorStateInfo(0).IsName("Attack");
                     if (inAttackAnim)
                         animator.SetBool("IsAttacking", false);
-                    else if (attackCooldownTimer <= 0f)
-                    {
-                        attackCooldownTimer = attackCooldown;
-                        animator.SetBool("IsAttacking", true);
-                    }
+                    else
+                        TryNormalAttack();
                 }
                 break;
             case EnemyState.ReturnToSpawn:
@@ -883,6 +883,32 @@ void UpdateState()
                 Quaternion.LookRotation(dir),
                 rotationSpeed * Time.fixedDeltaTime);
     }
+
+/// <summary>
+    /// 通常攻撃トリガー試行。Chase / Attack 両状態から共通利用。
+    /// クールダウン / 距離 / ターゲット有効性をチェックしてから IsAttacking=true をセットする。
+    /// 実際のダメージ結算は OnAttackHit() Animation Event が負担する。
+    /// </summary>
+    private void TryNormalAttack()
+    {
+        if (currentTarget == null) return;
+        if (myHealth != null && myHealth.IsDead) return;
+        if (animator == null) return;
+        if (attackCooldownTimer > 0f) return;
+
+        var targetHealth = currentTarget.GetComponent<HealthComponent>();
+        if (targetHealth == null || targetHealth.IsDead) return;
+
+        float dist = Vector3.Distance(transform.position, currentTarget.position);
+        if (dist > attackRange) return;
+
+        // 攻撃アニメ中に重複トリガーしない
+        if (animator.GetCurrentAnimatorStateInfo(0).IsName("Attack")) return;
+
+        attackCooldownTimer = attackCooldown;
+        animator.SetBool("IsAttacking", true);
+    }
+
 
     // ─── Debug / 强制复位 ────────────────────────────────────
     public void ResetToSpawn()
