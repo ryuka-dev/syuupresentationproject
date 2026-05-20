@@ -1,6 +1,6 @@
 ﻿# PROJECT_STATE
 
-最后更新：2026-05-19  
+最后更新：2026-05-20  
 当前主要场景：`Assets/Scenes/SampleScene.unity`  
 Unity 版本：6000.4.3f1 (Unity 6)
 
@@ -9,7 +9,7 @@ Unity 版本：6000.4.3f1 (Unity 6)
 ## 1. Project Overview
 
 - 项目类型：3D RPG 动作游戏原型
-- 当前开发阶段：早期原型 - 野外战斗 / 刷怪 / 掉落 / 背包 / 装备数值 / 玩家技能系统闭环验证
+- 当前开发阶段：早期原型 - 野外战斗 / 刷怪 / 掉落 / 背包 / 装备数值 / 玩家技能系统 / Hikari 光负荷与 Tier 1 数值基准闭环验证
 - 使用的主要包：
   - URP (Universal Render Pipeline) 17.4.0
   - New Input System 1.19.0
@@ -40,8 +40,8 @@ Unity 版本：6000.4.3f1 (Unity 6)
 → Canvas 技能栏显示技能图标、持续时间与冷却
 → PlayerStatusEffectController 根据 Active 技能修正玩家受到的伤害 / 普通攻击输出伤害
 → 伤害 / 治疗飘字显示玩家打出的实际伤害、受到的实际伤害与实际恢复量
-→ HikariSupportController 根据玩家血量自动治疗，并用光负荷 / 过载 / 守护共鸣形成保护反馈
-→ 敌人普通攻击 / 指定敌人释放读条技能
+→ HikariSupportController 根据玩家血量自动治疗，并用光负荷 / 过载 / 守护共鸣 / 高负荷反击形成保护反馈
+→ 敌人普通攻击 / 指定敌人释放读条技能；CastAttack 开始读条后不会被玩家拉开距离取消
 → 敌人死亡
 → 任务击杀进度增加
 → 敌人生成多个 ItemDrop
@@ -96,6 +96,7 @@ Unity 版本：6000.4.3f1 (Unity 6)
 - `leashRadius`：活动边界外圈，超过后 ReturnToSpawn
 - `OnAttackHit()`：Animation Event 绑定，方法名不可改
 - `EnemySkillController`：可选敌人技能控制器；skills 为空时不影响普通攻击
+- `TryNormalAttack()`：普通攻击触发逻辑已抽出，Chase / Attack 状态都会尝试触发，但命中仍由 `OnAttackHit()` Animation Event 处理
 
 #### 当前 FSM 状态
 
@@ -114,10 +115,12 @@ Chase
 → 目标点临时不可达时不切 Rigidbody，不放弃 Chase
 → 继续沿旧路径 / 最后一次有效 destination 追击，并持续重试目标位置更新
 → 只有 Agent 本身不可用时 fallback 到 Rigidbody Chase
+→ 当前会在 Chase 中尝试触发普通攻击，但实际命中仍依赖 OnAttackHit() 的距离判定与动画命中帧，移动攻击体感仍需后续单独优化
 
 Attack
 → 进入攻击距离后停止 Agent，保留旧普通攻击逻辑
 → 若挂载 EnemySkillController 且存在可用技能，会优先尝试释放敌人技能
+→ EnemySkillController.IsCasting == true 时保持 Attack 状态，不因目标离开 attackRange 切回 Chase
 → 无技能 / 技能不可用时回落到普通攻击
 → 普通攻击伤害仍通过 OnAttackHit() Animation Event 结算，方法名不可改
 
@@ -278,7 +281,31 @@ Animator 移动参数当前适配 Legacy-like 操作：
 
 - A / D / S 不再输出左走、右走、后退动画参数。
 - 角色会先转向实际移动方向，因此任意方向移动都播放 Forward Walk / Forward Run。
-- `IsJumping`、`IsGrounded`、`VerticalVelocity` 仍按原逻辑处理。
+- `IsJumping` 现在只在真正起跳帧短暂置为 true，下一帧清除，避免 Animator Any State 反复进入 Jump。
+- `_jumpConsumed` 用于限制一次离地过程中只消费一次跳跃请求。
+- `_groundedFrameCount` / `GroundedFrameThreshold` 用于减少高速移动时落地检测抖动。
+- 跳跃物理第一版加入 `fallGravityMultiplier = 2.5`、`riseGravityMultiplier = 1.0`、`maxFallSpeed = 25`，用于减少下落阶段漂浮感；未确认是否已加入可调“提前进入下落重力”的 `fallGravityStartVelocity`。
+- `IsGrounded`、`VerticalVelocity` 仍持续输出给 Animator。
+
+### `PlayerAnimator.controller`
+
+路径：`Assets/Scripts/PlayerAnimator.controller`
+
+当前 Player 跳跃 / 落地动画规则：
+
+- `Any State → Jump` 仍依赖现有 Animator 参数；代码侧已保证 `IsJumping` 只在起跳帧短暂为 true。
+- `JumpDown → Idle` 与 `FallingLoop → Idle` 增加 `Speed < 0.1` 条件。
+- 已新增 `JumpDown / FallingLoop → RunForward` 直接 Transition：
+  - `IsGrounded == true`
+  - `Speed > 0.1`
+  - `IsSprinting == false`
+- 已新增 `JumpDown / FallingLoop → Sprint` 直接 Transition：
+  - `IsGrounded == true`
+  - `Speed > 0.1`
+  - `IsSprinting == true`
+- 移动跳跃落地后可直接进入 RunForward / Sprint，不再强制先播放 Idle。
+- Animation Clip 未修改。
+- Animator 监控中 `Speed` 停止后可能出现极小浮点残留（如 `2.522e-44`），当前未发现影响；如需清理，可后续在 `PlayerController` 输出前加小死区归零。
 
 ### `RPGCameraController.cs`
 
@@ -721,6 +748,26 @@ Guard Resonance / 守护共鸣 v0.1：
 - Hikari 在玩家受伤时通过 attacker 找到 `EnemySkillController`，并检查 `LastDamageSkillData.SkillType == EnemySkillType.CastAttack`。
 - 使用 `guardResonanceSkillHitWindow = 0.25f` 避免普通攻击误用旧的 CastAttack 记录。
 - 不使用最终伤害数值判断 Guard Resonance 是否成功触发。
+
+Light Counter / 高负荷守护反击 v0.1：
+
+```text
+触发条件：
+1. Guard Resonance 成功触发
+2. Guard Resonance 触发前 Hikari BurdenRatio 位于 80%～99%
+3. 攻击者有有效 HealthComponent 且未死亡
+
+效果：
+- 对 CastAttack 攻击者造成固定 30 伤害
+- 不治疗玩家
+- 不增加或减少 Hikari 光负荷
+```
+
+当前已测试规则：
+
+- Burden < 80%：Guard Resonance 可触发，但 Light Counter 不触发。
+- Burden 80%～99%：Guard Resonance 成功后 Light Counter 触发，反伤 30。
+- Burden = 100%：Guard Resonance 可降低光负荷，但由于处于过载状态，Light Counter 不触发。
 
 ### `PlayerCombatStats.cs`
 
@@ -1573,6 +1620,12 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 
 - Source：`EnemyBase.prefab`。
 - 当前不覆写技能列表，继承空 skills，作为无技能普通小怪。
+- Tier 1 普通小怪基准已确认：
+  - `maxHealth = 100`
+  - `attackDamage = 10`
+  - `attackCooldown = 2.0`
+  - `EnemySkillController._skills = 0`
+  - DPS = `10 / 2.0 = 0.5 PHU/s`
 - 掉落配置：骨头100% + 守护核心20%。
 
 #### `Assets/Resources/SkeletonBossEnemy_Variant.prefab`
@@ -1580,6 +1633,14 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 - Source：`EnemyBase.prefab`。
 - VisualRoot 1.5 倍视觉缩放，Collider / NavMeshAgent 单独调整。
 - EnemySkillController.skills 覆写配置读条重击（CastAttack）。
+- Tier 1 精英怪基准已调整：
+  - `maxHealth = 400`
+  - `attackDamage = 15`
+  - `attackCooldown = 2.0`
+  - 普通攻击 DPS = `15 / 2.0 = 0.75 PHU/s`
+  - CastAttack 使用 `Assets/Skills/SK_CastAttack_HeavySlash.asset`
+  - CastAttack：`damage = 50`、`castTime = 2.0`、`cooldown = 10.0`、`range = 2.5`
+- `SK_CastAttack_HeavySlash.asset` 当前确认仅由 `SkeletonBossEnemy_Variant` 使用。
 - 掉落配置：守护核心100%（Boss 测试用）。
 
 #### `Assets/Resources/SkeletonEnemy.prefab`
@@ -1605,6 +1666,14 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 - `autoBraking = true`
 - `updateRotation = true`
 - Rigidbody 仍保留，当前用于非 Agent fallback / 既有碰撞结构
+
+当前 Tier 1 普通小怪基准已确认：
+
+- `maxHealth = 100`
+- `attackDamage = 10`
+- `attackCooldown = 2.0`
+- 无 CastAttack
+- DPS = `10 / 2.0 = 0.5 PHU/s`
 
 当前 `EnemyDropper` 多掉落配置：
 
@@ -1662,6 +1731,10 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 - 鼠标左键 + 右键 + Shift：向当前相机前方跑步
 - 普通攻击：键盘 1
 - 玩家技能槽：由 `PlayerSkillManager` 读取 `PlayerSkillData.inputSlot`，映射到键盘数字键 1～9；当前已用于 Slot2 / Slot3 等测试技能
+- 跳跃：Space
+  - `IsJumping` 只作为起跳帧信号，不代表整个空中状态。
+  - 跳跃落地后会根据 `Speed / IsSprinting` 直接进入 Idle / RunForward / Sprint。
+  - 当前跳跃下落通过 PlayerController 的 Jump Tuning 字段调校；如需调整“提前进入下落重力”的时机，需后续确认是否加入 `fallGravityStartVelocity`。
 - 拾取物品：E
 - Debug UI：F1
 - 关卡重开：R，仅旧 Victory / Game Over 后生效
@@ -1717,6 +1790,9 @@ Cursor 当前规则：
 - ✅ Shift + 任意移动输入支持八方向跑步
 - ✅ 鼠标左键 + 右键双键前进
 - ✅ 非锁定移动动画统一使用 Forward Walk / Forward Run
+- ✅ 玩家跳跃动画循环问题已修复：`IsJumping` 只在起跳帧短暂触发，空中不再反复 Any State → Jump
+- ✅ 玩家跳跃下落手感第一版已调校：下落阶段额外重力倍率可通过 PlayerController 调整
+- ✅ 玩家跳跃落地后可根据移动输入直接进入 RunForward / Sprint，不再强制先播放 Idle
 - ✅ 敌人 FSM AI（Idle / Wander / Chase / Attack / ReturnToSpawn）
 - ✅ EnemyAI Idle / Wander 混合游荡
 - ✅ SampleScene NavMeshSurface_World + NavMesh Bake
@@ -1748,7 +1824,10 @@ Cursor 当前规则：
 - ✅ EnemyBase 可统一挂载 EnemySkillController / EnemyCastBarUI，skills 为空时无影响
 - ✅ SkeletonBossEnemy_Variant 可通过 skills 覆写配置读条重击
 - ✅ `EnemySkillController` 会记录最近一次技能伤害来源，当前用于 Hikari Guard Resonance 判断 CastAttack 命中
-
+- ✅ CastAttack 读条开始后不会被玩家拉开距离取消；读条完成时不再因目标离开 range 而失败
+- ✅ EnemyAI 在 `EnemySkillController.IsCasting` 时保持 Attack 状态，避免读条被 Attack→Chase 状态切换打断
+- ✅ EnemyAI 普通攻击触发逻辑已抽出为 `TryNormalAttack()`，Chase / Attack 状态均会尝试普通攻击；实际命中仍由 `OnAttackHit()` Animation Event 与距离容错决定
+- ✅ Tier 1 普通小怪 / 精英怪数值基准第一版已落地到对应 Prefab / Skill asset / CSV 表
 
 ### 玩家技能 / 状态效果 / 技能 UI
 
@@ -1862,6 +1941,7 @@ Cursor 当前规则：
 - ✅ 装备状态 Debug 窗口高度按实际显示行数动态计算
 - ✅ Hikari Debug 独立窗口：中文显示光负荷 / 高负荷 / 过载 / 守护共鸣，并支持动态高度计算
 - ✅ Hikari Debug 支持增加 / 重置光负荷与开启 / 关闭自然下降
+- ✅ `BALANCE_BASELINE.md` 与 `BalanceTables/*.csv` 第一版 Tier 1 数值基准表已加入项目根目录
 
 ---
 
@@ -1895,7 +1975,7 @@ Cursor 当前规则：
 - ⚠️ Hikari 当前仍是临时 Cube 测试对象，不是正式角色 Prefab。
 - ⚠️ 尚未实现 Hikari 模型、动画、跟随、站位、受伤、死亡或正式 UI。
 - ⚠️ HikariSupportController 当前是硬编码少量支援行为，不是完整 HikariSkillManager / HikariSkillData 系统。
-- ⚠️ Hikari 的数值仍是原型基准：治疗量、光负荷增减、过载阈值与守护共鸣冷却尚未做正式平衡。
+- ⚠️ Hikari 的 Tier 1 数值已进入第一版基准表，但仍是原型平衡；正式 Boss / 多怪压力下还需要继续测试 PHU / BU / 冷却关系。
 - ⚠️ Guard Resonance 当前只识别 `EnemySkillType.CastAttack`，未来若新增 Boss 技能类型，需要扩展触发条件或升级为正式 DamageContext / CombatHitInfo。
 - ⚠️ EnemySkillController 的 `LastDamageSkillData / LastDamageSkillTime` 是当前原型用技能来源追踪；如果未来普通攻击或多技能伤害更复杂，应升级为更正式的伤害上下文。
 
@@ -1908,6 +1988,7 @@ Cursor 当前规则：
 - ⚠️ 玩家死亡后 RPGCameraController 被禁用，相机静止在死亡位置，暂无死亡镜头演出。
 - ⚠️ 正式死亡 / 复活 UI 尚未接入，当前仍主要依赖 Debug UI。
 - ⚠️ 当前操作逻辑是非锁定 Legacy-like 移动；尚未实现锁定目标时的 strafe / backstep 战斗移动模式。
+- ⚠️ Animator 监控中 `Speed` 停止后可能出现极小浮点残留（如 `2.522e-44`），当前未影响 Transition；后续可在 PlayerController 输出前加死区归零。
 - ⚠️ 鼠标灵敏度当前只支持 Inspector 调整，尚未实现正式设置菜单或保存设置。
 - ⚠️ 当前目标倒三角是第一版世界空间指示器，尚未实现目标信息 UI、目标血条高亮、描边或锁定目标战斗移动模式。
 - ⚠️ 伤害飘字当前使用 Instantiate / Destroy，尚未实现对象池；伤害数字很多时可能需要优化。
@@ -1920,6 +2001,7 @@ Cursor 当前规则：
 - ⚠️ `SkeletonDebugUI` 目前职责较多，已接近 Runtime Debug Console，后续可拆分为 InventoryDebugPanel / EquipmentDebugPanel / CombatStatsDebugPanel。
 - ⚠️ `EntityStats.cs` 已创建但未集成。
 - ⚠️ EnemyAI 已整理移动控制权第一版，正常移动由 NavMeshAgent 主导；Rigidbody fallback 仍保留必要兼容，后续可继续收敛到“Rigidbody 只做碰撞”。
+- ⚠️ EnemyAI 已允许 Chase 中尝试普通攻击，但体感提升有限；原因可能是攻击动画前摇与 `OnAttackHit()` 命中时距离检查，后续如需更强近战压迫，应单独设计移动攻击、攻击减速或命中判定盒。
 - ⚠️ Chase 目标不可达时会保持 Chase 并持续重试，不会因寻路失败主动放弃；如果玩家长期站在敌人永远到不了的位置，敌人可能停在最后可达点附近持续追击，后续可考虑 Evade / Unreachable 规则。
 
 ### 地图 / Terrain
@@ -2052,7 +2134,7 @@ Cursor 当前规则：
 - `Assets/Resources/UI/DamageNumberPopup_PlayerTaken.prefab`
 - `Assets/Resources/UI/DamageNumberPopup_PlayerHealth.prefab`
 - 目标倒三角指示器 Prefab（路径未确认，已绑定到 Player 的 `TargetSelectionIndicator.indicatorPrefab`）
-- 读条重击 `EnemySkillData` 资产（当前路径未确认，已配置到 `SkeletonBossEnemy_Variant.prefab`）
+- `Assets/Skills/SK_CastAttack_HeavySlash.asset`：当前 SkeletonBossEnemy_Variant 使用的 CastAttack 资产，已确认未被其他 Prefab 使用
 - `Assets/Items/TestItem_Bone.asset`
 - `Assets/Items/TestItem_GuardCore.asset`
 - `Assets/Scripts/SkeletonAnimator.controller`
@@ -2078,6 +2160,10 @@ Cursor 当前规则：
 - `EnemySkillController.LastDamageSkillData / LastDamageSkillTime` 当前用于 Guard Resonance 判断 CastAttack；普通攻击不要写入该记录，避免误触发。
 - Hikari Guard Resonance 依赖 `PlayerSkillManager.RuntimeStates` 与 `PlayerSkillEffectType.DamageReduction`，不要让 Slot1 普通攻击与玩家技能系统冲突。
 - Hikari Debug 窗口高度依赖 `BuildHikariDebugLines()` 与 `GUIStyle.CalcHeight()`；新增显示行时要更新 Build 方法，不要重新写固定高度。
+- `EnemySkillController.InterruptCurrentCast()` 是未来打断技能的最小入口；当前未接入玩家技能，不要误当作完整打断系统。
+- CastAttack 的 range 只用于开始读条；读条中和读条完成时不因玩家拉开距离取消或失败。
+- `PlayerAnimator.controller` 的 JumpDown / FallingLoop 落地 Transition 依赖 `IsGrounded`、`Speed`、`IsSprinting`；不要删除直接到 RunForward / Sprint 的 Transition。
+- `PlayerController.IsJumping` 现在是起跳帧信号，不是整个空中状态；不要让它在空中持续 true。
 
 ### 不应修改的文件
 
@@ -2181,43 +2267,34 @@ Cursor 当前规则：
 
 ### ⭐ 最推荐的下一个小任务
 
-**创建 `BALANCE_BASELINE.md`，记录当前战斗 / Hikari / 装备数值的原型基准。**
+**基于 `BalanceTables/encounter_tests.csv` 做第一轮遭遇测试记录。**
 
-目的：
-
-```text
-当前已有多套会互相影响的数值：
-- 玩家 HP / 普通攻击 / 装备加成
-- 玩家 DamageReduction / AttackPowerMultiplier 技能
-- 敌人普通攻击 / CastAttack / HP
-- Hikari 治疗量、冷却、光负荷增减、高负荷与过载阈值
-```
-
-建议目标：
+推荐顺序：
 
 ```text
-先不做最终平衡，只记录“正常 / 危险 / 失败”的粗基准。
-例如：普通小怪战斗时长、精英怪 / Boss 原型时长、Hikari 多久进入高负荷、一次 Emergency Prayer 需要几次 Guard Resonance 弥补。
+T1-003：1 只 SkeletonBossEnemy_Variant
+T1-002：3 只普通小怪
+T1-004：1 精英 + 2 普通
+T1-005：6 只普通小怪
 ```
 
 验收目标：
 
 ```text
-新增 BALANCE_BASELINE.md。
-写明当前临时数值基准与设计目标。
-不修改任何代码、Prefab、Scene 或 Animator。
+记录 actual_result / actual_burden_end / actual_player_hp_end / notes。
+确认 Tier 1 普通小怪、精英怪、Hikari 治疗、Guard Resonance、Light Counter 在多怪压力下是否仍然成立。
+本任务优先只测试和更新 CSV，不改代码。
 ```
 
 ### 备选任务
 
-1. 给 Hikari Guard Resonance 增加轻量视觉 / 文本反馈，但不要做正式 UI。
-2. 给 `EnemySkillData` 增加更明确的技能标签或 Guard Resonance 触发标记，为未来多个 Boss 技能做准备。
-3. 给 `PlayerTargeting` 增加 Shift+Tab 反向选敌，仍复用同一候选列表与敌对判定。
-4. 给伤害 / 治疗飘字增加对象池 `DamageNumberPool`，减少频繁 Instantiate / Destroy。
-5. 抽象 `PlayerMitigationVisualFeedback` 为通用 `PlayerSkillVisualController`。
-6. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
-7. 整理 NavMeshSurface LayerMask，只让 Terrain / Ground / Environment 参与 Bake。
-
+1. 给 `PlayerController` 增加 `fallGravityStartVelocity`，用于手动调整何时提前进入下落重力，减少跳跃最高点漂浮感。
+2. 对 EnemyAI 近战普通攻击做第二轮专门优化：攻击时减速 / 增加命中容错 / 使用近战判定盒；当前 Chase 中尝试攻击但体感有限。
+3. 给 Hikari Guard Resonance / Light Counter 增加轻量视觉或文本反馈，但不要做正式 UI。
+4. 给 `EnemySkillData` 增加更明确的技能标签或 Guard Resonance 触发标记，为未来多个 Boss 技能做准备。
+5. 给 `PlayerTargeting` 增加 Shift+Tab 反向选敌，仍复用同一候选列表与敌对判定。
+6. 给伤害 / 治疗飘字增加对象池 `DamageNumberPool`，减少频繁 Instantiate / Destroy。
+7. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
 
 ## 12. 本次有效变更摘要（2026-05-11）
 
@@ -2556,13 +2633,15 @@ EnemyBase
 - `TryGetReadySkillInRange(Transform target, out EnemySkillData skill)`
 - `TryStartSkill(EnemySkillData skill, Transform target)`
 - `CancelCasting(string reason)`
+- `InterruptCurrentCast()`：当前只是最小打断入口，尚未接入玩家打断技能。
 
 安全规则：
 
 - `skills == null` 或 `skills.Count == 0` 时不报错，返回无可用技能。
 - `skills` 中有 null 元素时跳过。
 - `skillType == None` 时不会执行。
-- 目标 null、缺少 `HealthComponent`、目标死亡、超出范围时不会造成伤害。
+- CastAttack 的 `Range` 只用于“是否可以开始读条”；读条开始后，玩家拉开距离不会取消读条，也不会导致读条完成时不结算。
+- 读条完成时仍会检查 caster / target 是否有效、是否死亡；caster 死亡、target null / 死亡、ReturnToSpawn、ForceDisengage、ResetToSpawn、OnDisable 或未来 Interrupt 会取消读条。
 - 无技能 / 技能不可用时，`EnemyAI` 会继续普通攻击。
 - `OnDisable()` 会清理读条状态，避免对象被禁用时残留 cast 状态。
 - `CastAttackRoutine` 在调用目标 `HealthComponent.TakeDamage(...)` 前记录 `LastDamageSkillData / LastDamageSkillTime`；普通攻击不写入该记录。
@@ -2607,6 +2686,58 @@ SkeletonBossEnemy_Variant.prefab
 已确认：不设置技能的小怪不会触发技能；配置读条重击的敌人可以正常读条、显示 CastBar，并在命中时造成伤害。
 
 ---
+
+
+## 3.10 Balance Baseline / 数值基准
+
+当前项目根目录新增并使用第一版 Tier 1 平衡资料：
+
+- `BALANCE_BASELINE.md`：说明 PDU / PHU / BU、Hikari 治疗模型、Enemy DPS Pressure、Encounter Budget 与测试原则。
+- `BalanceTables/content_tiers.csv`
+- `BalanceTables/enemy_balance.csv`
+- `BalanceTables/hikari_skills.csv`
+- `BalanceTables/player_skills.csv`
+- `BalanceTables/encounter_budget.csv`
+- `BalanceTables/encounter_tests.csv`
+
+当前 Tier 1 定义：
+
+```text
+1 PDU = 20 enemy damage
+1 PHU = 10 player damage
+1 BU = 5 Burden
+标准玩家 HP = 100 = 10 PHU
+标准玩家普通攻击 = 20 = 1 PDU
+```
+
+当前已落地的 Tier 1 敌人数值：
+
+```text
+SkeletonEnemy / SkeletonEnemy_Variant:
+- HP = 100 = 5 PDU
+- attackDamage = 10 = 1 PHU
+- attackCooldown = 2.0
+- DPS = 0.5 PHU/s
+- 无 CastAttack
+
+SkeletonBossEnemy_Variant:
+- HP = 400 = 20 PDU
+- attackDamage = 15 = 1.5 PHU
+- attackCooldown = 2.0
+- DPS = 0.75 PHU/s
+- CastAttack = 50 = 5 PHU
+- CastAttack castTime = 2.0
+- CastAttack cooldown = 10.0
+```
+
+维护规则：
+
+- 不要随手填写孤立 damage 数字；先决定 PDU / PHU / BU，再换算实际数值。
+- 敌人 HP / 玩家对敌输出 / Light Counter 使用 PDU。
+- 敌人对玩家伤害 / Hikari 治疗使用 PHU。
+- Hikari 光负荷使用 BU。
+- 遭遇难度应看 Threat、敌人总 DPS、敌人总 HP、玩家击杀速度、Hikari HPS、BU 增长/恢复与 Guard Resonance 触发机会。
+- `enemy_balance.csv` 中 current 字段用于记录 Unity 实际 Prefab / Asset 数值；目标字段用于设计基准。
 
 ## 16. TMP Dynamic Font Asset Git 修改问题
 
@@ -2788,4 +2919,11 @@ EnemySpawnArea 与装备替换闭环已由用户确认没有明显问题。
 1. 治疗反馈已接入通用血量系统：`HealthComponent` 新增 `Heal(...)` 与 `OnHealed`，`DamageNumberSpawner` 可通过 `healingPopupPrefab` 显示实际恢复量，`DamageNumberPopup_PlayerHealth.prefab` 已用于玩家治疗飘字。
 2. Hikari 支援原型已形成最小闭环：`HikariSupportController` 支持 Light Mend、Emergency Prayer、光负荷、高负荷治疗衰减、100% 过载停摆、60% 过载恢复，以及 Guard Resonance 降低光负荷。
 3. Guard Resonance 触发条件已收敛为“玩家 DamageReduction Active 期间承受敌人 `EnemySkillType.CastAttack` 伤害”；`EnemySkillController` 记录最近技能伤害来源，普通攻击不会触发守护共鸣。F1 Hikari Debug 已独立中文窗口显示并支持动态高度。
+---
+
+## 24. 本次有效变更摘要（2026-05-20）
+
+1. Hikari 高负荷收益已落地：`HikariSupportController` 支持 Light Counter。Guard Resonance 成功且触发前 Burden 为 80%～99% 时，对 CastAttack 攻击者造成 30 反伤；100% 过载时不触发反伤但仍可通过 Guard Resonance 降低 Burden。
+2. Tier 1 数值基准已文档化并部分落地：项目根目录新增 `BALANCE_BASELINE.md` 与 `BalanceTables/*.csv`。普通小怪基准为 HP 100 / 攻击 10 / CD 2.0；`SkeletonBossEnemy_Variant` 基准为 HP 400 / 攻击 15 / CD 2.0，`SK_CastAttack_HeavySlash.asset` 为 damage 50 / castTime 2.0 / cooldown 10.0 / range 2.5。
+3. 战斗与操作基础规则更新：CastAttack 只在开始读条时检查 range，读条中玩家拉开距离不会取消，完成时不因距离失败；Player 跳跃动画循环、落地必须先 Idle 的问题已修复，跳跃下落手感已通过额外重力第一版改善。
 
