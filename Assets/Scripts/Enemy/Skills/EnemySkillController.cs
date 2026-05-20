@@ -156,7 +156,7 @@ public class EnemySkillController : MonoBehaviour
     /// フレームごとに経過時間を加算し、UI が CurrentCastProgress を読み取れるようにする。
     /// 読条完了後にターゲット再検証を行い、命中条件を満たせば TakeDamage を呼ぶ。
     /// </summary>
-    private IEnumerator CastAttackRoutine(EnemySkillData skill, Transform target)
+private IEnumerator CastAttackRoutine(EnemySkillData skill, Transform target)
     {
         IsCasting             = true;
         _currentSkill         = skill;
@@ -166,35 +166,54 @@ public class EnemySkillController : MonoBehaviour
 
         Debug.Log($"[EnemySkillController] {gameObject.name}: 読条開始 [{skill.DisplayName}] castTime={skill.CastTime}s");
 
-        // フレームごとに経過時間を加算（UI 進度表示のため WaitForSeconds を使わない）
+        // 読条中：距離はチェックしない。caster 死亡または target 消失時のみ中断。
         while (_currentCastElapsed < _currentCastDuration)
         {
+            // caster 自身が死亡したら中断
+            if (_healthComponent != null && _healthComponent.IsDead)
+            {
+                Debug.Log($"[EnemySkillController] {gameObject.name}: 施法中断（caster 死亡）");
+                CleanupCast();
+                yield break;
+            }
+            // target が消えたら中断
+            if (target == null)
+            {
+                Debug.Log($"[EnemySkillController] {gameObject.name}: 施法中断（target が null）");
+                CleanupCast();
+                yield break;
+            }
             _currentCastElapsed += Time.deltaTime;
             yield return null;
         }
         _currentCastElapsed = _currentCastDuration; // 丸め誤差修正
 
-        // 読条完了 — ターゲット再検証
+        // 読条完了 — 距離チェックなし。target の生死と caster の生死のみ確認。
         bool hit = false;
         if (skill != null && target != null)
         {
-            var targetHealth = target.GetComponent<HealthComponent>();
-            if (targetHealth != null && !targetHealth.IsDead)
+            // caster 死亡時はダメージを与えない
+            if (_healthComponent != null && _healthComponent.IsDead)
             {
-                float dist = Vector3.Distance(transform.position, target.position);
-                if (dist <= skill.Range)
+                Debug.Log($"[EnemySkillController] {gameObject.name}: 読条完了時 caster 死亡 — ダメージなし");
+            }
+            else
+            {
+                var targetHealth = target.GetComponent<HealthComponent>();
+                if (targetHealth != null && !targetHealth.IsDead)
                 {
-                                        _lastDamageSkillData = skill;
+                    // Guard Resonance 判定のための記録を TakeDamage より前に記録
+                    _lastDamageSkillData = skill;
                     _lastDamageSkillTime  = Time.time;
                     targetHealth.TakeDamage(skill.Damage, transform);
-                    Debug.Log($"[EnemySkillController] {gameObject.name}: [{skill.DisplayName}] 命中！ダメージ={skill.Damage}");
+                    Debug.Log($"[EnemySkillController] {gameObject.name}: [{skill.DisplayName}] 命中！ダメージ={skill.Damage}（距離チェックなし）");
                     hit = true;
                 }
             }
         }
 
         if (!hit)
-            Debug.Log($"[EnemySkillController] {gameObject.name}: [{skill?.DisplayName}] ミス（対象範囲外または無効）");
+            Debug.Log($"[EnemySkillController] {gameObject.name}: [{skill?.DisplayName}] 不命中（target 死亡 / caster 死亡 / target null）");
 
         StartCooldown(skill);
         CleanupCast();
@@ -219,6 +238,16 @@ public class EnemySkillController : MonoBehaviour
         Debug.Log($"[EnemySkillController] {gameObject.name}: 施法キャンセル [{_currentSkill?.DisplayName}] 理由={reason}");
         CleanupCast();
     }
+
+/// <summary>
+    /// 現在の読条を打断する。将来の打断技能用の最小実装。
+    /// 打断時はクールダウンを開始しない。
+    /// </summary>
+    public void InterruptCurrentCast()
+    {
+        CancelCasting("Interrupted");
+    }
+
 
     // ─── 最近ダメージスキル記録 ────────────────────────────────
 

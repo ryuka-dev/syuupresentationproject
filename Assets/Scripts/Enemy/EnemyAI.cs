@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.AI;
@@ -469,13 +469,20 @@ public class EnemyAI : MonoBehaviour
     }
 
     // ─── 状态机 ──────────────────────────────────────────────
-    void UpdateState()
+void UpdateState()
     {
         if (currentState == EnemyState.ReturnToSpawn) return;
 
         if (currentTarget != null)
         {
             float dist = Vector3.Distance(transform.position, currentTarget.position);
+
+            // CastAttack 読条中は Attack 状態を維持。
+            // ターゲットが攻撃範囲外に出ても Chase に遷移しない。
+            if (currentState == EnemyState.Attack &&
+                _skillController != null && _skillController.IsCasting)
+                return;
+
             TransitionTo(dist <= attackRange ? EnemyState.Attack : EnemyState.Chase);
             return;
         }
