@@ -3150,6 +3150,14 @@ PrefabInstance:
       propertyPath: drops.Array.data[0].dropChance
       value: 1
       objectReference: {fileID: 0}
+    - target: {fileID: 7182466527157778218, guid: 823580420d398034f9b3cab77fd6ec54, type: 3}
+      propertyPath: maxHealth
+      value: 400
+      objectReference: {fileID: 0}
+    - target: {fileID: 7941615115755381772, guid: 823580420d398034f9b3cab77fd6ec54, type: 3}
+      propertyPath: attackDamage
+      value: 15
+      objectReference: {fileID: 0}
     - target: {fileID: 9002707520941745465, guid: 823580420d398034f9b3cab77fd6ec54, type: 3}
       propertyPath: m_LocalScale.x
       value: 1.5

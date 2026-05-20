@@ -15,7 +15,7 @@ MonoBehaviour:
   _skillId: cast_attack_heavy_slash
   _displayName: "\u8BFB\u6761\u91CD\u51FB"
   _skillType: 1
-  _damage: 60
+  _damage: 50
   _castTime: 2
-  _cooldown: 8
+  _cooldown: 10
   _range: 2.5
