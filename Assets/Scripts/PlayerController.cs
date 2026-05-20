@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(Rigidbody))]
@@ -10,6 +10,17 @@ public class PlayerController : MonoBehaviour
 
     [Header("跳跃")]
     public float jumpForce = 6f;
+
+    [Header("Jump Tuning")]
+    [Tooltip("下落阶段に追加する重力倍率。大きいほど下落が速い。デフォルト 2.5。")]
+    [SerializeField] private float fallGravityMultiplier = 2.5f;
+    [Tooltip("上昇面の追加重力倍率。1.0 は変更なし。")]
+    [SerializeField] private float riseGravityMultiplier = 1.0f;
+    [Tooltip("最大下落速度。过大なクラッシュを防ぐ。デフォルト 25。")]
+    [SerializeField] private float maxFallSpeed          = 25f;
+    [Tooltip("Y velocity がこの値以下になったら fallGravityMultiplier に切替。0=最高点到達後。正値=上昇中でも早めに切替。")]
+    [SerializeField, Range(-5f, 5f)] private float fallGravityStartVelocity = 0f;
+
     [Header("旋转")]
     [SerializeField] private float rotationSpeed = 12f;
 
@@ -137,6 +148,9 @@ void FixedUpdate()
 
         rb.linearVelocity = new Vector3(dir.x * currentSpeed, rb.linearVelocity.y, dir.z * currentSpeed);
 
+        // 水平速度設定後に追加重力を適用（Y 軸のみ変更）
+        ApplyJumpGravityTuning();
+
         if (dir.sqrMagnitude > 0.001f)
         {
             Quaternion targetRot = Quaternion.LookRotation(dir, Vector3.up);
@@ -151,4 +165,27 @@ void FixedUpdate()
             anim.SetBool ("IsSprinting", isSprinting);
         }
     }
+
+/// <summary>
+    /// 空中に居る間、下落と上昇に別々の追加重力を適用する。
+    /// FixedUpdate の最後に呼び出すこと。
+    /// 水平方向の速度は変更しない。
+    /// </summary>
+private void ApplyJumpGravityTuning()
+    {
+        if (isGrounded) return;
+
+        Vector3 vel      = rb.linearVelocity;
+        // fallGravityStartVelocity 以下なら下落重力、それ以上なら上昇重力を適用。
+        float multiplier = vel.y <= fallGravityStartVelocity
+            ? fallGravityMultiplier
+            : riseGravityMultiplier;
+
+        if (multiplier > 1f)
+            vel.y += Physics.gravity.y * (multiplier - 1f) * Time.fixedDeltaTime;
+
+        vel.y = Mathf.Max(vel.y, -maxFallSpeed);
+        rb.linearVelocity = vel;
+    }
+
 }

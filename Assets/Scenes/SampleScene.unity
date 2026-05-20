@@ -2930,6 +2930,10 @@ MonoBehaviour:
   moveSpeed: 5
   sprintSpeed: 10
   jumpForce: 6
+  fallGravityMultiplier: 2.5
+  riseGravityMultiplier: 1
+  maxFallSpeed: 25
+  fallGravityStartVelocity: 2.8
   rotationSpeed: 12
   cameraTransform: {fileID: 330585546}
 --- !u!114 &919417046
@@ -3373,6 +3377,24 @@ MonoBehaviour:
   emergencyPrayerHpThreshold: 0.35
   emergencyPrayerHealAmount: 45
   emergencyPrayerCooldown: 25
+  maxBurden: 100
+  currentBurden: 0
+  lightMendBurdenGain: 5
+  emergencyPrayerBurdenGain: 25
+  burdenRecoveryPerSecond: 1
+  enableBurdenRecovery: 1
+  overburdenThreshold: 0.8
+  overburdenHealingMultiplier: 0.5
+  guardResonanceEnabled: 1
+  guardResonanceBurdenReduction: 10
+  guardResonanceCooldown: 3
+  guardResonanceSkillHitWindow: 0.25
+  lightCounterEnabled: 1
+  lightCounterMinBurdenRatio: 0.8
+  lightCounterMaxBurdenRatio: 1
+  lightCounterDamage: 30
+  overloadThreshold: 1
+  overloadRecoveryThreshold: 0.6
   logDebugMessages: 1
 --- !u!65 &1046374387
 BoxCollider:
