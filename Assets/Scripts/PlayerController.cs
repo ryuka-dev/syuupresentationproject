@@ -21,6 +21,20 @@ public class PlayerController : MonoBehaviour
     private Animator  anim;
     private bool      isGrounded;
 
+    // ─── ジャンプ状態管理 ──────────────────────────────────────
+    /// <summary>
+    /// IsJumping を 1 フレームだけ true にして次フレームでクリアするフラグ。
+    /// Any State → Jump のトランジションが空中で再起動するのを防ぐ。
+    /// </summary>
+    private bool _clearIsJumpingNextFrame = false;
+    /// <summary>
+    /// 一度の離地中に跣躍を消費済みかどうか。著地確定後にリセット。
+    /// </summary>
+    private bool _jumpConsumed = false;
+    /// <summary>增分着地確認用：連続 N フレーム grounded で初めて着地確定。</summary>
+    private int  _groundedFrameCount    = 0;
+    private const int GroundedFrameThreshold = 2;
+
     void Awake()
     {
         rb   = GetComponent<Rigidbody>();
@@ -34,19 +48,43 @@ public class PlayerController : MonoBehaviour
 
 void Update()
     {
-        isGrounded = Physics.Raycast(
+        // ─── 着地検出（ちらつき防止のため N フレーム連続で確定） ──────────────
+        bool rawGrounded = Physics.Raycast(
             transform.position + Vector3.up * 0.2f,
             Vector3.down, 0.35f,
             Physics.AllLayers, QueryTriggerInteraction.Ignore);
 
+        if (rawGrounded)
+            _groundedFrameCount = Mathf.Min(_groundedFrameCount + 1, GroundedFrameThreshold);
+        else
+            _groundedFrameCount = 0;
+
+        isGrounded = (_groundedFrameCount >= GroundedFrameThreshold);
+
         var keyboard = Keyboard.current;
         if (keyboard == null) return;
 
-        if (isGrounded && anim != null)
-            anim.SetBool("IsJumping", false);
-
-        if (keyboard.spaceKey.wasPressedThisFrame && isGrounded)
+        // ─── IsJumping の 1 フレーム限定クリア ─────────────────────────
+        // 起蹜フレームの次のフレームで IsJumping を false に戻す。
+        // これにより Any State → Jump のトランジションが空中で再起動するループを防ぐ。
+        if (_clearIsJumpingNextFrame)
         {
+            if (anim != null) anim.SetBool("IsJumping", false);
+            _clearIsJumpingNextFrame = false;
+        }
+
+        // ─── 着地確定時：ジャンプ状態リセット ───────────────────────────
+        if (isGrounded)
+        {
+            _jumpConsumed = false;
+            if (anim != null) anim.SetBool("IsJumping", false);
+        }
+
+        // ─── ジャンプ入力：wasPressedThisFrame かつ着地確定かつ未消費の場合のみ ───
+        if (keyboard.spaceKey.wasPressedThisFrame && isGrounded && !_jumpConsumed)
+        {
+            _jumpConsumed            = true;
+            _clearIsJumpingNextFrame = true;  // 次フレームで IsJumping をクリア
             rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
             rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
             if (anim != null) anim.SetBool("IsJumping", true);
@@ -54,8 +92,8 @@ void Update()
 
         if (anim != null)
         {
-            anim.SetBool ("IsGrounded",      isGrounded);
-            anim.SetFloat("VerticalVelocity", rb.linearVelocity.y);
+            anim.SetBool ("IsGrounded",       isGrounded);
+            anim.SetFloat("VerticalVelocity",  rb.linearVelocity.y);
         }
     }
 
