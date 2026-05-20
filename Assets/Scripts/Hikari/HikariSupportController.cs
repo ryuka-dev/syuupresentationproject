@@ -94,6 +94,16 @@ public class HikariSupportController : MonoBehaviour
     [Tooltip("読条重撃記録と受傷時刻の許容差（秒）。これ以内ならスキル命中とみなす。")]
     [SerializeField] private float guardResonanceSkillHitWindow  = 0.25f;
 
+    [Header("Light Counter / \u9ad8\u8ca0\u8377\u5b88\u62a4\u53cd\u51fb")]
+    [Tooltip("\u5149\u53cd\u51fb\u3092\u6709\u52b9\u306b\u3059\u308b\u304b\u3002")]
+    [SerializeField] private bool lightCounterEnabled = true;
+    [Tooltip("Light Counter \u767a\u52d5\u306e\u6700\u4f4e Burden \u6bd4\u7387\u3002\u30c7\u30d5\u30a9\u30eb\u30c8 0.8 = 80%\u3002")]
+    [SerializeField, Range(0f, 1f)] private float lightCounterMinBurdenRatio = 0.8f;
+    [Tooltip("Light Counter \u767a\u52d5\u306e\u4e0a\u9650 Burden \u6bd4\u7387\uff08\u672a\u6e80\uff09\u3002\u30c7\u30d5\u30a9\u30eb\u30c8 1.0 = 100%\u672a\u6e80\uff08\u904e\u8f09\u6642\u306f\u767a\u52d5\u3057\u306a\u3044\uff09\u3002")]
+    [SerializeField, Range(0f, 1f)] private float lightCounterMaxBurdenRatio = 1.0f;
+    [Tooltip("\u5149\u53cd\u51fb\u306e\u56fa\u5b9a\u30c0\u30e1\u30fc\u30b8\u5024\u3002")]
+    [SerializeField] private float lightCounterDamage = 30f;
+
 
     
 [Header("Overload / 过载")]
@@ -398,14 +408,51 @@ private bool TryTriggerGuardResonance(Transform attacker)
         if (!HasActiveDamageReductionSkill())      return false;
         if (!IsGuardResonanceTriggerHit(attacker)) return false;
 
+        // Light Counter 判定は Burden 減少前に行う
+        bool shouldLightCounter = ShouldTriggerLightCounter();
+
         ReduceBurden(guardResonanceBurdenReduction, "Guard Resonance");
         _nextGuardResonanceTime = Time.time + guardResonanceCooldown;
 
         if (logDebugMessages)
             Debug.Log("[HikariSupport] Guard Resonance 発動 — Burden 軽減。");
 
+        if (shouldLightCounter)
+            TryTriggerLightCounter(attacker);
+
         return true;
     }
+
+/// <summary>
+    /// Light Counter 発動条件判定。Burden 80%~99% 区間のみ true。
+    /// </summary>
+    private bool ShouldTriggerLightCounter()
+    {
+        if (!lightCounterEnabled) return false;
+        if (maxBurden <= 0f) return false;
+        float burdenRatio = currentBurden / maxBurden;
+        if (burdenRatio < lightCounterMinBurdenRatio) return false;
+        if (burdenRatio >= lightCounterMaxBurdenRatio) return false;
+        return true;
+    }
+
+    /// <summary>
+    /// Light Counter 実行。Guard Resonance 成功後に呼び出す。
+    /// </summary>
+    private void TryTriggerLightCounter(Transform attacker)
+    {
+        if (attacker == null) return;
+        HealthComponent enemyHealth = attacker.GetComponent<HealthComponent>();
+        if (enemyHealth == null)
+            enemyHealth = attacker.GetComponentInParent<HealthComponent>();
+        if (enemyHealth == null) return;
+        if (enemyHealth.IsDead) return;
+
+        float burdenRatioBeforeReduction = currentBurden / maxBurden;
+        enemyHealth.TakeDamage(lightCounterDamage, transform);
+        Debug.Log($"[Hikari] Light Counter triggered! Damage: {lightCounterDamage} -> {enemyHealth.name} | BurdenRatio(before): {burdenRatioBeforeReduction * 100f:F1}%");
+    }
+
 
     /// <summary>
     /// 次の伤害が Guard Resonance トリガー条件を満たすか。
@@ -479,6 +526,10 @@ private void OnValidate()
         guardResonanceBurdenReduction = Mathf.Max(0f, guardResonanceBurdenReduction);
         guardResonanceCooldown        = Mathf.Max(0f, guardResonanceCooldown);
         guardResonanceSkillHitWindow  = Mathf.Max(0f, guardResonanceSkillHitWindow);
+        lightCounterDamage           = Mathf.Max(0f, lightCounterDamage);
+        lightCounterMinBurdenRatio   = Mathf.Clamp01(lightCounterMinBurdenRatio);
+        lightCounterMaxBurdenRatio   = Mathf.Clamp01(lightCounterMaxBurdenRatio);
+
     }
 
 
