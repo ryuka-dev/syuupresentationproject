@@ -1,0 +1,4 @@
+﻿tier_id,tier_name,chapter_or_area,standard_player_hp,standard_player_normal_attack,pdu_damage,phu_damage,bu_burden,max_burden,notes
+tier_1,Tier 1,第一章 / 第一版野外战斗测试,100,20,20,10,5,100,当前项目第一版基准。单位跟随内容等级，不跟随玩家实时属性。
+tier_2,Tier 2,未定,未定,未定,未定,未定,5,100,后续章节/区域用。
+tier_3,Tier 3,未定,未定,未定,未定,未定,5,100,后续章节/区域用。

@@ -1,0 +1,6 @@
+﻿skill_id,skill_name,tier_id,skill_type,heal_phu,heal_value,enemy_damage_pdu,enemy_damage_value,burden_delta_bu,burden_delta_value,cooldown_sec,trigger_condition,affected_by_overburden,blocked_by_overload,hps_phu_per_sec,efficiency_phu_per_bu,role,status,notes
+light_mend,Light Mend / 微光治愈,tier_1,Healing,1.5,15,0,0,1,5,5,Player HP < 80%,Yes,Yes,0.3,1.5,小治疗 / 常规维持,已实现/需核对 Inspector,不应该完全覆盖敌人持续 DPS。
+emergency_prayer,Emergency Prayer / 紧急祈愿,tier_1,Healing,4.5,45,0,0,5,25,25,Player HP < 35%,Yes,Yes,0.18,0.9,救命治疗 / 高代价救场,已实现/需核对 Inspector,效率低于 Light Mend，价值在救场。
+guard_resonance,Guard Resonance / 守护共鸣,tier_1,BurdenRecovery,0,0,0,0,-2,-10,3,DamageReduction active + incoming EnemySkillType.CastAttack,No,No,-,-,正确 Tank 行为带来的降负荷,已实现/已测试,不治疗玩家；普通攻击不触发。
+light_counter,Light Counter / 高负荷守护反击,tier_1,CounterDamage,0,0,1.5,30,0,0,随 Guard Resonance,Guard Resonance success + Burden 80%-99%,Requires high burden,Yes,-,-,高负荷危险收益,已实现/已测试,Burden=100% 时不触发，但 Guard Resonance 可降负荷。
+burden_natural_recovery,Burden Natural Recovery / 光负荷自然恢复,tier_1,PassiveRecovery,0,0,0,0,-0.2,-1 per second,Passive,Recovery enabled,No,No/需核对,-,-,普通战斗恢复压力,已实现/需核对战斗中开关,Boss 战后续可降低或关闭。

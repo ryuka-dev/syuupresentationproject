@@ -1,0 +1,6 @@
+﻿test_id,tier_id,enemy_composition,threat_total,estimated_dps_phu_per_sec,player_uses_damage_reduction,expected_hikari_behavior,expected_burden_result,expected_result,actual_result,actual_burden_end,actual_player_hp_end,status,notes
+T1-001,tier_1,1 normal enemy,1,0.4-0.5,No required,偶尔 Light Mend,低增长或自然恢复抵消,稳定胜利,未测试,未记录,未记录,待测试,安全遭遇基准。
+T1-002,tier_1,3 normal enemies,3,1.2-1.5,Optional,明显 Light Mend，可能接近 Emergency 条件,中等增长,胜利但有压力,未测试,未记录,未记录,待测试,标准多怪遭遇。
+T1-003,tier_1,1 SkeletonBossEnemy_Variant,3,0.8-1.0 + CastAttack,Yes for CastAttack,CastAttack 正确处理时 Guard Resonance,Burden 可下降；80-99% 时触发 Light Counter,核心机制验证成功,Light Counter 条件已单独成功测试,未记录,未记录,部分已测试,用于验证 GR / Light Counter。
+T1-004,tier_1,1 elite + 2 normal enemies,5,High,Required,频繁治疗，Emergency Prayer 可能触发,明显上升，可能进入高负荷,危险但可胜利,未测试,未记录,未记录,待测试,危险遭遇上限测试。
+T1-005,tier_1,6 normal enemies,6,约3.0,Required but not enough if misplayed,快速治疗，Emergency Prayer，高 Burden,高概率高负荷/过载,错误处理高概率死亡或撤退,未测试,未记录,未记录,待测试,过量拉怪测试。

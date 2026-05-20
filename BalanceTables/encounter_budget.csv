@@ -1,0 +1,5 @@
+﻿encounter_level,threat_min,threat_max,example_composition,expected_enemy_dps_phu_per_sec,target_experience,hikari_pressure,notes
+Safe,1,2,1-2 normal enemies,0.4-1.0,玩家可以稳定获胜；Hikari 偶尔治疗,低；Burden 基本可控,适合作为普通野外低压战斗。
+Standard,3,3,3 normal enemies / 1 elite,1.2-1.5 或精英技能压力,开始有压力；需要尽快击杀；Hikari 明显参与,中；长期硬吃会积累 Burden,当前核心基准遭遇。
+Dangerous,4,5,4-5 normal enemies / 1 elite + 1-2 normal enemies,2.0+ 或高技能压力,需要减伤、优先击杀、处理读条,高；Emergency Prayer 可能触发,玩家可以赢，但不能乱打。
+Overpull,6,∞,6+ normal enemies / 2 elites / 1 elite + 3+ normal enemies,3.0+,错误处理高概率死亡；需要撤退或极限操作,极高；快速进入高负荷/过载,主动选择高风险，不应稳定轻松获胜。

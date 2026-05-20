@@ -1,0 +1,5 @@
+﻿skill_id,skill_name,tier_id,input_slot,effect_type,damage_pdu,damage_value,damage_taken_multiplier,attack_power_multiplier,duration_sec,cooldown_sec,role,asset_path,status,notes
+normal_attack,Normal Attack / 普通攻击,tier_1,Slot1 / Key 1,Damage,1,20,-,-,-,攻击节奏未确认,玩家输出基准,PlayerSkillController + PlayerCombatStats,已实现/需核对攻击节奏,1 PDU = 无装备普通攻击一次。
+iron_bulwark,Iron Bulwark,tier_1,Slot2 / Key 2,DamageReduction,0,0,0.5,-,4,12,标准短 CD 减伤,Assets/Skills/Player/Skill_IronBulwark.asset,已确认自 PROJECT_STATE / 建议再次核对 asset,50 damage CastAttack 会被压到 25。
+stone_guard,Stone Guard,tier_1,未确认,DamageReduction,0,0,未确认,-,未确认,未确认,第二个减伤测试技能,Assets/Skills/Player/Skill_StoneGuard.asset,未确认,需读取 asset。
+attack_power_multiplier_test,AttackPowerMultiplier Test Skill,tier_1,未确认,AttackPowerMultiplier,-,-,-,未确认,未确认,未确认,普通攻击输出强化测试,未确认,未确认,当前存在但路径与参数未确认。
