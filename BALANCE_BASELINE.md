@@ -1,7 +1,8 @@
 # BALANCE_BASELINE.md
 
-最后更新：2026-05-20  
-文档用途：记录第一版战斗数值基准、单位系统、Hikari 治疗压力模型与遭遇预算。  
+最后更新：2026-05-21  
+文档用途：记录第一版战斗数值基准、单位系统、Hikari 光负荷模型与遭遇预算。  
+术语规则：Hikari 系统正式术语以 `GLOSSARY.md` 为准；本文件只在必要处保留英文 / 代码名作对照。  
 注意：本文件不是最终平衡表，而是用于当前原型阶段验证核心玩法是否成立的测试基准。
 
 ---
@@ -13,8 +14,8 @@
 - 玩家作为 Tank 承受伤害
 - Hikari 根据玩家状态自动治疗
 - Hikari 治疗会增加光负荷
-- 玩家正确开减伤承受敌人读条重击时，可以触发 Guard Resonance
-- Hikari 光负荷处于 80%～99% 时，Guard Resonance 可额外触发 Light Counter
+- 玩家正确开减伤承受敌人读条重击时，可以触发守护共鸣 / Guard Resonance
+- Hikari 光负荷处于 80%～99% 光溢出时，守护共鸣可额外触发溢光反震 / Overflow Counter
 
 为了避免后续伤害、治疗、反伤、敌人血量、敌人数量都变成“随手填数字”，需要建立第一版统一数值基准。
 
@@ -36,7 +37,7 @@
 
 ```text
 Tier 1 / 第一章 / 第一版野外战斗测试基准
-````
+```
 
 当前基准假设：
 
@@ -132,7 +133,7 @@ PDU 用于描述：
 
 * 玩家对敌人的普通攻击
 * 玩家技能伤害
-* Light Counter 反伤
+* 溢光反震 / Overflow Counter 反伤
 * 敌人 HP
 * Boss HP
 * 输出窗口收益
@@ -149,7 +150,7 @@ PDU 用于描述：
 
 ```text
 玩家普通攻击 = 1 PDU = 20 damage
-Light Counter = 1.5 PDU = 30 damage
+溢光反震 = 1.5 PDU = 30 damage
 普通怪 HP = 5 PDU = 100 HP
 精英怪 HP = 15～25 PDU = 300～500 HP
 小 Boss HP = 40～80 PDU = 800～1600 HP
@@ -214,18 +215,18 @@ maxBurden = 100 = 20 BU
 ## 7.2 当前关键阈值
 
 ```text
-稳定区间：0～15.8 BU = 0%～79%
-高负荷区间：16～19.8 BU = 80%～99%
-过载：20 BU = 100%
-过载恢复阈值：12 BU = 60%
+稳定导光：0～15.8 BU = 0%～79%
+光溢出：16～19.8 BU = 80%～99%
+导光封锁：20 BU = 100%
+导光恢复阈值：12 BU = 60%
 ```
 
 ## 7.3 当前光负荷行为
 
 ```text
-Light Mend = +1 BU = +5 Burden
-Emergency Prayer = +5 BU = +25 Burden
-Guard Resonance = -2 BU = -10 Burden
+微光治愈 / Light Mend = +1 BU = +5 Burden
+紧急祈愿 / Emergency Prayer = +5 BU = +25 Burden
+守护共鸣 / Guard Resonance = -2 BU = -10 Burden
 自然恢复速度 = 0.2 BU/s = 1 Burden/s
 ```
 
@@ -280,7 +281,7 @@ Guard Resonance = -2 BU = -10 Burden
 ```text
 玩家不开减伤吃读条重击会明显危险。
 玩家正确开减伤后，伤害明显下降。
-Hikari 因玩家正确承伤而触发 Guard Resonance。
+Hikari 因玩家正确承伤而触发守护共鸣。
 ```
 
 ---
@@ -294,8 +295,8 @@ Hikari 的治疗不是单纯看治疗量，而要同时看：
 光负荷代价 BU
 冷却时间
 触发条件
-是否受高负荷治疗衰减影响
-是否被过载禁止
+是否受光溢出时可控治疗效率下降影响
+是否被导光封锁禁止
 是否依赖自然恢复速度
 ```
 
@@ -303,7 +304,7 @@ Hikari 的治疗不是单纯看治疗量，而要同时看：
 
 # 11. Hikari 当前技能基准
 
-## 11.1 Light Mend / 微光治愈
+## 11.1 微光治愈 / Light Mend
 
 ```text
 治疗量：1.5 PHU = 15 HP
@@ -323,14 +324,14 @@ Hikari 的治疗不是单纯看治疗量，而要同时看：
 说明：
 
 ```text
-Light Mend 是相对高效的小治疗。
+微光治愈是相对高效的小治疗。
 它不应该完全覆盖敌人持续 DPS。
 它的作用是缓解压力，而不是让玩家站桩不死。
 ```
 
 ---
 
-## 11.2 Emergency Prayer / 紧急祈愿
+## 11.2 紧急祈愿 / Emergency Prayer
 
 ```text
 治疗量：4.5 PHU = 45 HP
@@ -350,14 +351,14 @@ Light Mend 是相对高效的小治疗。
 说明：
 
 ```text
-Emergency Prayer 的效率低于 Light Mend。
+紧急祈愿的效率低于微光治愈。
 它的价值不在持续治疗，而在救场。
-频繁触发 Emergency Prayer 代表玩家承伤过高，会快速推高 Hikari Burden。
+频繁触发紧急祈愿代表玩家承伤过高，会快速推高 Hikari 光负荷。
 ```
 
 ---
 
-## 11.3 Guard Resonance / 守护共鸣
+## 11.3 守护共鸣 / Guard Resonance
 
 ```text
 治疗量：0 PHU
@@ -372,45 +373,48 @@ Emergency Prayer 的效率低于 Light Mend。
 定位：
 
 ```text
-正确 Tank 行为带来的 Hikari 压力释放。
+正确 Tank 行为带来的 Hikari 光负荷释放。
 ```
 
 说明：
 
 ```text
-Guard Resonance 不治疗玩家。
+守护共鸣不治疗玩家。
 它不应该被普通小伤害触发。
 它用于奖励玩家正确处理关键攻击。
-一次 Guard Resonance 抵消两次 Light Mend 的光负荷。
-一次 Guard Resonance 相当于 10 秒自然恢复量。
+一次守护共鸣抵消两次微光治愈的光负荷。
+一次守护共鸣相当于 10 秒自然恢复量。
 ```
 
 ---
 
-## 11.4 Light Counter / 高负荷守护反击
+## 11.4 溢光反震 / Overflow Counter
 
 ```text
 伤害量：1.5 PDU = 30 enemy damage
 光负荷变化：0 BU
 触发条件：
-- Guard Resonance 成功
+- 守护共鸣成功
 - 玩家开启 DamageReduction
-- 玩家受到敌人 CastAttack
-- Hikari Burden 处于 80%～99%
+- 玩家受到敌人 CastAttack / 读条重击
+- Hikari 光负荷处于 80%～99% 光溢出
 ```
 
 定位：
 
 ```text
-高负荷危险收益。
+光溢出危险收益。
 ```
 
 说明：
 
 ```text
-Light Counter 是让 80%～99% 高负荷区间变成“可压线收益”的关键机制。
+溢光反震是让 80%～99% 光溢出区间变成“可压线收益”的关键机制。
 它比玩家普通攻击强，但不能代替玩家主要输出。
-100% 过载时不触发 Light Counter。
+100% 导光封锁时不触发溢光反震。
+
+实现备注：
+当前代码或旧文档中可能仍保留 Light Counter 命名，正式术语统一为溢光反震 / Overflow Counter。
 ```
 
 ---
@@ -427,9 +431,9 @@ Light Counter 是让 80%～99% 高负荷区间变成“可压线收益”的关�
 
 ```text
 1 BU 需要 5 秒自然恢复
-Light Mend +1 BU，大约 5 秒自然恢复抵消
-Emergency Prayer +5 BU，大约 25 秒自然恢复抵消
-Guard Resonance -2 BU，相当于 10 秒自然恢复
+微光治愈 +1 BU，大约 5 秒自然恢复抵消
+紧急祈愿 +5 BU，大约 25 秒自然恢复抵消
+守护共鸣 -2 BU，相当于 10 秒自然恢复
 ```
 
 ## 12.1 普通野外战斗
@@ -450,14 +454,14 @@ Guard Resonance -2 BU，相当于 10 秒自然恢复
 ```text
 降低自然恢复速度
 或关闭自然恢复
-或只允许通过 Guard Resonance 降低 BU
+或只允许通过守护共鸣降低 BU
 ```
 
 目的：
 
 ```text
 让玩家正确开减伤承受关键攻击变得更重要。
-避免长战斗中自然恢复过强，导致 Hikari Burden 压力消失。
+避免长战斗中自然恢复过强，导致 Hikari 光负荷压力消失。
 ```
 
 ---
@@ -485,7 +489,7 @@ vs
 vs
 玩家击杀速度
 vs
-Guard Resonance 降 BU 能力
+守护共鸣降 BU 能力
 ```
 
 Hikari 的治疗能力与敌人 DPS 是对抗关系。
@@ -500,7 +504,7 @@ Hikari HPS >= 敌人总 DPS
 
 ```text
 玩家正确操作后，实际承伤压力可以被 Hikari 勉强维持。
-玩家错误操作时，Hikari 会救场但 Burden 快速恶化。
+玩家错误操作时，Hikari 会救场但光负荷快速恶化。
 玩家过量拉怪时，Hikari 无法长期兜底。
 ```
 
@@ -571,7 +575,7 @@ CastAttack 读条建议 = 1.5～2.5 秒
 
 ```text
 第一版核心玩法验证敌人。
-用于测试 DamageReduction、Guard Resonance、Light Counter。
+用于测试 DamageReduction、守护共鸣、溢光反震。
 ```
 
 设计目标：
@@ -579,7 +583,7 @@ CastAttack 读条建议 = 1.5～2.5 秒
 ```text
 不开减伤吃 CastAttack 会明显危险。
 开减伤吃 CastAttack 会明显舒服。
-Hikari 高负荷时，正确处理 CastAttack 可以触发 Light Counter。
+Hikari 光溢出时，正确处理 CastAttack 可以触发溢光反震。
 ```
 
 ---
@@ -666,7 +670,7 @@ Threat 4～5
 必须使用减伤。
 必须优先击杀目标。
 Hikari 会频繁治疗。
-Emergency Prayer 可能触发。
+紧急祈愿可能触发。
 光负荷明显上升。
 玩家可以赢，但不能乱打。
 ```
@@ -691,7 +695,7 @@ Threat 6+
 
 ```text
 玩家错误处理时高概率死亡。
-Hikari 很快进入高负荷甚至过载。
+Hikari 很快进入光溢出甚至导光封锁。
 玩家如果硬拉，是主动选择高风险。
 ```
 
@@ -739,7 +743,7 @@ TTK = 敌人 HP / 玩家有效 DPS
 Hikari HPS
 BU 增长速度
 BU 自然恢复速度
-Guard Resonance 触发机会
+守护共鸣触发机会
 ```
 
 ---
@@ -749,8 +753,8 @@ Guard Resonance 触发机会
 当前 Tier 1 Hikari 理论持续治疗能力：
 
 ```text
-Light Mend = 0.3 PHU/s
-Emergency Prayer = 0.18 PHU/s，但它是救急技能，不应视为稳定 HPS
+微光治愈 / Light Mend = 0.3 PHU/s
+紧急祈愿 / Emergency Prayer = 0.18 PHU/s，但它是救急技能，不应视为稳定 HPS
 ```
 
 普通小怪压力示例：
@@ -776,10 +780,10 @@ Hikari 不应该能完全覆盖敌人总 DPS。
 敌人 DPS 稍高于 Hikari 持续 HPS，但玩家能通过击杀快速结束。
 
 标准战斗：
-Hikari 会明显介入，Burden 会累积，但玩家正确操作可以稳定获胜。
+Hikari 会明显介入，光负荷会累积，但玩家正确操作可以稳定获胜。
 
 危险战斗：
-Hikari 会频繁治疗，Emergency Prayer 可能触发，Burden 快速上升。
+Hikari 会频繁治疗，紧急祈愿可能触发，光负荷快速上升。
 
 过量战斗：
 Hikari 无法长期兜底，玩家需要撤退或接受高死亡风险。
@@ -806,9 +810,9 @@ Hikari 无法长期兜底，玩家需要撤退或接受高死亡风险。
 高 Burden 才触发
 每场战斗次数限制
 触发后短时间治疗封锁
-需要玩家先触发 Guard Resonance 才能解锁
-消耗 Revival Light
-触发后直接进入高负荷
+需要玩家先触发守护共鸣才解锁
+消耗复苏之光 / Revival Light
+触发后直接进入光溢出
 只在剧情 / 特殊状态可用
 ```
 
@@ -842,18 +846,18 @@ Tier 1 标准玩家普通攻击 = 20
 1 BU = 5 Burden
 maxBurden = 100 = 20 BU
 
-Light Mend = 15 HP = 1.5 PHU
-Light Mend Burden = +5 = +1 BU
+微光治愈 / Light Mend = 15 HP = 1.5 PHU
+微光治愈光负荷 = +5 Burden = +1 BU
 
-Emergency Prayer = 45 HP = 4.5 PHU
-Emergency Prayer Burden = +25 = +5 BU
+紧急祈愿 / Emergency Prayer = 45 HP = 4.5 PHU
+紧急祈愿光负荷 = +25 Burden = +5 BU
 
-Guard Resonance = -10 Burden = -2 BU
+守护共鸣 / Guard Resonance = -10 Burden = -2 BU
 
-Light Counter = 30 enemy damage = 1.5 PDU
-Light Counter 触发区间 = 80%～99% Burden
-Overload = 100 Burden = 20 BU
-Overload Recovery = 60 Burden = 12 BU
+溢光反震 / Overflow Counter = 30 enemy damage = 1.5 PDU
+溢光反震触发区间 = 80%～99% 光负荷 / Burden
+导光封锁 / Overload = 100 Burden = 20 BU
+导光恢复阈值 = 60 Burden = 12 BU
 ```
 
 ---
@@ -909,7 +913,7 @@ AttackPowerMultiplier 测试技能 asset 路径与具体倍率
 ```text
 普通怪几次攻击能打死？
 精英怪战斗持续多久？
-Light Counter 对战斗时长影响多少？
+溢光反震对战斗时长影响多少？
 玩家技能连携是否明显缩短 TTK？
 ```
 
@@ -934,7 +938,7 @@ Hikari 是否会被迫治疗？
 
 ```text
 一次治疗增加多少压力？
-一次 Guard Resonance 抵消多少压力？
+一次守护共鸣抵消多少压力？
 自然恢复速度是否过强？
 Boss 战是否应该关闭自然恢复？
 ```
@@ -956,7 +960,7 @@ Boss 战是否应该关闭自然恢复？
 玩家击杀速度
 Hikari 治疗频率
 Burden 累积速度
-Guard Resonance 触发机会
+守护共鸣触发机会
 ```
 
 ---
@@ -984,24 +988,24 @@ Guard Resonance 触发机会
 SkeletonBossEnemy_Variant 能稳定释放 CastAttack。
 玩家不开减伤吃 CastAttack 会明显危险。
 玩家开 Iron Bulwark 吃 CastAttack 后伤害明显降低。
-Guard Resonance 稳定触发。
+守护共鸣稳定触发。
 ```
 
 ---
 
-## 24.3 Hikari 高负荷测试
+## 24.3 Hikari 光溢出测试
 
 目标：
 
 ```text
-Burden < 80%：
-Guard Resonance 可触发，但 Light Counter 不触发。
+光负荷 < 80%：
+守护共鸣可触发，但溢光反震不触发。
 
-Burden 80%～99%：
-Guard Resonance 成功后 Light Counter 触发，造成 30 反伤。
+光负荷 80%～99%：
+守护共鸣成功后溢光反震触发，造成 30 反伤。
 
-Burden = 100%：
-Guard Resonance 可降低 Burden，但不触发 Light Counter。
+光负荷 = 100%：
+守护共鸣可降低光负荷，但不触发溢光反震。
 ```
 
 ---
@@ -1012,8 +1016,8 @@ Guard Resonance 可降低 Burden，但不触发 Light Counter。
 
 ```text
 玩家同时承受过多普通怪攻击时，Hikari 无法无限兜底。
-Burden 会快速上升。
-Emergency Prayer 会显著增加压力。
+光负荷会快速上升。
+紧急祈愿会显著增加压力。
 玩家需要通过击杀、减伤或撤退解决问题。
 ```
 
@@ -1025,10 +1029,10 @@ Emergency Prayer 会显著增加压力。
 
 ```text
 玩家正确操作：
-能承受危险攻击，降低 Hikari 压力，并在高负荷时获得反击收益。
+能承受危险攻击，降低 Hikari 光负荷，并在光溢出时获得反击收益。
 
 玩家错误操作：
-Hikari 会救场，但 Burden 会恶化。
+Hikari 会救场，但光负荷会恶化。
 
 玩家过量拉怪：
 Hikari 无法长期兜底，战斗会变得危险。
@@ -1037,5 +1041,5 @@ Hikari 无法长期兜底，战斗会变得危险。
 旧敌人不会自动变强，玩家会明显变得更安全、更强。
 
 Hikari 系统：
-不是普通奶量系统，而是治疗 PHU、光负荷 BU、敌人 DPS、玩家减伤之间的压力对抗系统。
+不是普通奶量系统，而是治疗 PHU、光负荷 BU、敌人 DPS、玩家减伤与溢光反震收益之间的压力对抗系统。
 ```
