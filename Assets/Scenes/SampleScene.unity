@@ -3854,7 +3854,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ae26e7f021419a842a4c52d175d3955f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SkeletonSpawner
-  skeletonPrefab: {fileID: 0}
+  skeletonPrefab: {fileID: 8523427318928488213, guid: eeb4515b33890cf469389670276e91e5, type: 3}
   playerTransform: {fileID: 919417043}
   spawnRadius: 10
   minDistance: 3
@@ -6744,7 +6744,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 34739f07bc788d34bacda5411d08c146, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::EnemySpawnPoint
-  enemyPrefab: {fileID: 1593989802227870837, guid: 229ca9ec0a1593848b3efc3eafd3a844, type: 3}
+  enemyPrefab: {fileID: 8523427318928488213, guid: eeb4515b33890cf469389670276e91e5, type: 3}
   respawnDelay: 5
   spawnOnStart: 1
 --- !u!4 &2125787474
@@ -6870,6 +6870,10 @@ PrefabInstance:
     - target: {fileID: 1593989802227870837, guid: 229ca9ec0a1593848b3efc3eafd3a844, type: 3}
       propertyPath: m_Name
       value: Skeleton_Enemy
+      objectReference: {fileID: 0}
+    - target: {fileID: 1593989802227870837, guid: 229ca9ec0a1593848b3efc3eafd3a844, type: 3}
+      propertyPath: m_IsActive
+      value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
