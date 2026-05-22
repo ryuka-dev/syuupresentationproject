@@ -17,7 +17,7 @@ public class SkeletonSpawner : MonoBehaviour
 
         // Prefab 包含所有组件，直接从 Resources 加载
         if (skeletonPrefab == null)
-            skeletonPrefab = Resources.Load<GameObject>("SkeletonEnemy");
+            skeletonPrefab = Resources.Load<GameObject>("SkeletonEnemy_Variant");
 
         if (skeletonPrefab == null)
             Debug.LogError("SkeletonSpawner: SkeletonEnemy prefab not found in Resources!");

@@ -17,7 +17,7 @@ MonoBehaviour:
   description: Wow
   icon: {fileID: 21300000, guid: 9c2f8b0a2f33f6046adc28ff41a1aa42, type: 3}
   inputSlot: 6
-  keyLabel: 4
+  keyLabel: 6
   cooldown: 1
   duration: 1
   effectType: 1

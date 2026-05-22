@@ -14,11 +14,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerSkillData
   skillId: whirlwind_slash
   skillName: "\u56DE\u65CB\u65A9"
-  description: "\u5BF9\u81EA\u8EAB\u5468\u56F4\u654C\u4EBA\u9020\u6210\u4E00\u6B21\u8303\u56F4\u4F24\u5BB3\u3002"
+  description: "\u5BF9\u81EA\u8EAB\u5468\u56F4\u654C\u4EBA\u9020\u6210\u4E00\u6B21\u8303\u56F4\u4F24\u5BB3\u3002\u7528\u4E8E\u9762\u5BF9\u591A\u4E2A\u654C\u4EBA\u65F6\u66FF\u4EE3\u5355\u4F53\u666E\u901A\u653B\u51FB\u3002"
   icon: {fileID: 0}
   inputSlot: 4
   keyLabel: 4
-  cooldown: 8
+  cooldown: 0
   duration: 0.1
   effectType: 3
   damageTakenMultiplier: 1
