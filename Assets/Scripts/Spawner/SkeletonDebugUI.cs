@@ -375,20 +375,21 @@ private System.Collections.Generic.List<string> BuildHikariDebugLines(HikariSupp
         lines.Add($"光负荷：{hikari.CurrentBurden:F1} / {hikari.MaxBurden:F1}");
         lines.Add($"光负荷比例：{hikari.BurdenRatio * 100f:F1}%");
         lines.Add($"光负荷已满：{(hikari.IsBurdenMaxed ? "是" : "否")}");
-        lines.Add($"高负荷状态：{(hikari.IsOverburdened ? "是" : "否")}");
-        lines.Add($"高负荷阈値：{hikari.OverburdenThreshold * 100f:F1}%");
-        lines.Add($"高负荷治疗倍率：{hikari.OverburdenHealingMultiplier * 100f:F1}%");
-        lines.Add($"过载状态：{(hikari.IsOverloaded ? "是" : "否")}");
-        lines.Add($"过载阈値：{hikari.OverloadThreshold * 100f:F1}%");
-        lines.Add($"过载恢复阈値：{hikari.OverloadRecoveryThreshold * 100f:F1}%");
-        lines.Add($"治疗可用：{(hikari.CanUseHealing ? "是" : "否")}");
+        lines.Add($"光溢出状态（80%~99%）：{(hikari.IsOverburdened ? "是" : "否")}");
+        lines.Add($"光溢出阈值（80%）：{hikari.OverburdenThreshold * 100f:F1}%");
+        lines.Add($"可控治疗效率（光溢出时）：{hikari.OverburdenHealingMultiplier * 100f:F1}%");
+        lines.Add($"导光封锁状态（100%）：{(hikari.IsOverloaded ? "是" : "否")}");
+        lines.Add($"导光封锁阈值（100%）：{hikari.OverloadThreshold * 100f:F1}%");
+        lines.Add($"导光恢复阈值（60%）：{hikari.OverloadRecoveryThreshold * 100f:F1}%");
+        lines.Add($"可控治疗可用（非导光封锁）：{(hikari.CanUseHealing ? "是" : "否")}");
         lines.Add($"自然下降：{(hikari.IsBurdenRecoveryEnabled ? "开启" : "关闭")}");
         lines.Add($"下降速度：{hikari.BurdenRecoveryPerSecond:F1} / 秒");
         lines.Add($"守护共鸣：{(hikari.GuardResonanceEnabled ? "开启" : "关闭")}");
-        lines.Add($"守护共鸣减负：{hikari.GuardResonanceBurdenReduction:F1}");
+        lines.Add($"守护共鸣 / Guard Resonance 降低光负荷：{hikari.GuardResonanceBurdenReduction:F1} ({hikari.GuardResonanceBurdenReduction / 5f:F1} BU)");
         lines.Add($"守护共鸣冷却：{hikari.GuardResonanceCooldown:F1} 秒");
         lines.Add($"守护共鸣剩余冷却：{hikari.GuardResonanceCooldownRemaining:F1} 秒");
-        lines.Add("守护共鸣触发条件：读条重击（CastAttack）");
+        lines.Add("守护共鸣 / Guard Resonance 触发条件：减伤 Active + 承受读条重击（CastAttack）");
+            lines.Add($"溢光反震 / Overflow Counter：光溢出（80%~99%）时守护共鸣触发额外反震 30 伤害");
         return lines;
         return lines;
     }
@@ -650,7 +651,7 @@ private void DrawHikariDebugWindow(float margin, float leftPanelWidth)
 
 private void DrawHikariDebugSection(HikariSupportController hikari)
     {
-        GUILayout.Label("--- Hikari 调试 ---",
+        GUILayout.Label("--- Hikari 支援系统 调试 ---",
             new GUIStyle(GUI.skin.label) { fontStyle = FontStyle.Bold });
         GUILayout.Space(4f);
 

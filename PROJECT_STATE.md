@@ -1,6 +1,6 @@
-﻿# PROJECT_STATE
+# PROJECT_STATE
 
-最后更新：2026-05-20  
+最后更新：2026-05-22  
 当前主要场景：`Assets/Scenes/SampleScene.unity`  
 Unity 版本：6000.4.3f1 (Unity 6)
 
@@ -40,7 +40,7 @@ Unity 版本：6000.4.3f1 (Unity 6)
 → Canvas 技能栏显示技能图标、持续时间与冷却
 → PlayerStatusEffectController 根据 Active 技能修正玩家受到的伤害 / 普通攻击输出伤害
 → 伤害 / 治疗飘字显示玩家打出的实际伤害、受到的实际伤害与实际恢复量
-→ HikariSupportController 根据玩家血量自动治疗，并用光负荷 / 过载 / 守护共鸣 / 高负荷反击形成保护反馈
+→ HikariSupportController 根据玩家血量自动治疗，并通过光负荷 / 光溢出 / 导光封锁 / 守护共鸣（Guard Resonance）/ 溢光反震（Overflow Counter）形成保护反馈
 → 敌人普通攻击 / 指定敌人释放读条技能；CastAttack 开始读条后不会被玩家拉开距离取消
 → 敌人死亡
 → 任务击杀进度增加
@@ -749,7 +749,7 @@ Guard Resonance / 守护共鸣 v0.1：
 - 使用 `guardResonanceSkillHitWindow = 0.25f` 避免普通攻击误用旧的 CastAttack 记录。
 - 不使用最终伤害数值判断 Guard Resonance 是否成功触发。
 
-Light Counter / 高负荷守护反击 v0.1：
+溢光反震 / Overflow Counter v0.1：
 
 ```text
 触发条件：
@@ -1975,7 +1975,7 @@ Cursor 当前规则：
 - ⚠️ Hikari 当前仍是临时 Cube 测试对象，不是正式角色 Prefab。
 - ⚠️ 尚未实现 Hikari 模型、动画、跟随、站位、受伤、死亡或正式 UI。
 - ⚠️ HikariSupportController 当前是硬编码少量支援行为，不是完整 HikariSkillManager / HikariSkillData 系统。
-- ⚠️ Hikari 的 Tier 1 数值已进入第一版基准表，但仍是原型平衡；正式 Boss / 多怪压力下还需要继续测试 PHU / BU / 冷却关系。
+- ⚠️ Hikari Tier 1 数值（微光治愈 +1 BU、紧急祈愿 +5 BU、守护共鸣 -2 BU、溢光反震 30 伤害）已进入基准表，但仍是原型平衡；正式 Boss / 多怪压力下还需继续测试 PHU / BU / 冷却关系。
 - ⚠️ Guard Resonance 当前只识别 `EnemySkillType.CastAttack`，未来若新增 Boss 技能类型，需要扩展触发条件或升级为正式 DamageContext / CombatHitInfo。
 - ⚠️ EnemySkillController 的 `LastDamageSkillData / LastDamageSkillTime` 是当前原型用技能来源追踪；如果未来普通攻击或多技能伤害更复杂，应升级为更正式的伤害上下文。
 
@@ -2260,6 +2260,51 @@ Cursor 当前规则：
 - 完整 Hikari AI
 - Boss 战最终版
 - 复杂仇恨表
+
+---
+
+## 25. 本次有效变更摘要（2026-05-22）
+
+### Hikari 术语统一 — 对齐 GLOSSARY.md
+
+本次任务完成了 Hikari 相关术语在 Debug UI、Console Log、Inspector Header/Tooltip、代码注释和项目文档中的全面统一。
+
+#### 修改的文件
+
+1. `Assets/Scripts/Hikari/HikariSupportController.cs`
+   - Inspector Header：`Overburden` → `光溢出状态 / Light Overflow`；`Light Counter / 高负荷守护反击` → `溢光反震 / Overflow Counter`；`Overload / 过载` → `导光封锁 / Channel Lockdown (100%)`
+   - Inspector Tooltip：全部更新为正式中文说明（光溢出阈值、可控治疗效率下降、导光封锁、导光恢复）
+   - Console Log：`过载状态` → `导光封锁`；`Light Counter triggered` → `溢光反震 / Overflow Counter 触发`；`Guard Resonance 発動` → `守护共鸣 / Guard Resonance 触发`
+   - 类级别注释：重写为中文正式术语（稳定导光 / 光溢出 / 导光封锁 / 导光恢复 / 守护共鸣 / 溢光反震）
+
+2. `Assets/Scripts/Spawner/SkeletonDebugUI.cs`
+   - Hikari Debug 窗口：`高负荷状态` → `光溢出状态（80%~99%）`；`过载状态` → `导光封锁状态（100%）`；`过载恢复阈值` → `导光恢复阈值（60%）`；`治疗可用` → `可控治疗可用（非导光封锁）`；守护共鸣行增加溢光反震说明
+
+3. `GAME_DESIGN_NOTES.md`
+   - `从过载状态恢复治疗能力` → `从导光封锁中恢复可控治疗能力`
+
+4. `PROJECT_STATE.md`（本文件）
+   - 核心循环描述、光负荷规则、Completed Features、Known Issues、变更摘要 24 均更新为正式术语
+
+#### 当前正式术语（以 GLOSSARY.md 为准）
+
+| 正式中文名 | 英文 / 代码名 | 阈值 |
+|---|---|---|
+| 光负荷 | Burden | — |
+| 稳定导光 | Stable Channeling | 0%~79% |
+| 光溢出 | Light Overflow | 80%~99% |
+| 导光封锁 | Channel Lockdown | 100% |
+| 导光恢复 | Channel Recovery | <= 60% |
+| 守护共鸣 | Guard Resonance | — |
+| 溢光反震 | Overflow Counter | 光溢出时 |
+| 微光治愈 | Light Mend | — |
+| 紧急祈愿 | Emergency Prayer | — |
+
+#### 代码层保留的旧变量名（暂不重命名，避免 Inspector 序列化丢失）
+
+以下字段名保留旧英文命名：`currentBurden`、`maxBurden`、`isOverloaded`、`overburdenHealingMultiplier`、`lightCounterEnabled`、`lightCounterDamage`。
+游戏内显示、Debug 文案、注释和设计文档已全部改为 GLOSSARY.md 正式术语。
+
 
 ---
 
@@ -2923,7 +2968,7 @@ EnemySpawnArea 与装备替换闭环已由用户确认没有明显问题。
 
 ## 24. 本次有效变更摘要（2026-05-20）
 
-1. Hikari 高负荷收益已落地：`HikariSupportController` 支持 Light Counter。Guard Resonance 成功且触发前 Burden 为 80%～99% 时，对 CastAttack 攻击者造成 30 反伤；100% 过载时不触发反伤但仍可通过 Guard Resonance 降低 Burden。
+1. 溢光反震 / Overflow Counter 已落地：`HikariSupportController` 在守护共鸣成功且光溢出（80%~99%）时，对 CastAttack 攻击者造成 30 失控光伤害（1.5 PDU）；导光封锁（100%）时不触发溢光反震，但守护共鸣仍可降低光负荷。
 2. Tier 1 数值基准已文档化并部分落地：项目根目录新增 `BALANCE_BASELINE.md` 与 `BalanceTables/*.csv`。普通小怪基准为 HP 100 / 攻击 10 / CD 2.0；`SkeletonBossEnemy_Variant` 基准为 HP 400 / 攻击 15 / CD 2.0，`SK_CastAttack_HeavySlash.asset` 为 damage 50 / castTime 2.0 / cooldown 10.0 / range 2.5。
 3. 战斗与操作基础规则更新：CastAttack 只在开始读条时检查 range，读条中玩家拉开距离不会取消，完成时不因距离失败；Player 跳跃动画循环、落地必须先 Idle 的问题已修复，跳跃下落手感已通过额外重力第一版改善。
 

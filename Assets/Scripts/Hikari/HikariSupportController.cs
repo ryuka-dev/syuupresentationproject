@@ -1,26 +1,29 @@
 using UnityEngine;
 
 /// <summary>
-/// Hikari サポートコントローラー（最小版・Step 2）
+/// Hikari 支援控制器（原型版）
 ///
-/// 担当技能：
-///   微光治愈 / Light Mend       — 自動小回復（HP 80% 未満で発動、冷却 5 秒）
-///   紧急祈愿 / Emergency Prayer  — 自動救急大回復（HP 35% 未満で発動、冷却 25 秒）
+/// 负责技能：
+///   微光治愈 / Light Mend       — 自动小治疗（玩家 HP < 80% 触发，冷却 5 秒，+1 BU 光负荷）
+///   紧急祈愿 / Emergency Prayer  — 自动救命大治疗（玩家 HP < 35% 触发，冷却 25 秒，+5 BU 光负荷）
 ///
-/// 優先ルール：Emergency Prayer > Light Mend
-///   - EP 発動フレームは Light Mend をスキップ。
-///   - EP 冷却中かつ HP < 80% なら Light Mend が補完する。
+/// 优先规则：Emergency Prayer > Light Mend
 ///
-/// 飘字表示は HealthComponent.OnHealed → DamageNumberSpawner の既存イベントチェーンに委任。
-/// 本スクリプト内では直接 currentHealth を操作しない。
-/// </summary>
+/// 光负荷阶段（Burden / 光负荷）：
+///   0%~79%   → 稳定导光：正常治疗
+///   80%~99%  → 光溢出：可控治疗效率下降，溢光反震 / Overflow Counter 可触发
+///   100%     → 导光封锁：Light Mend / Emergency Prayer 停止
+///   ≤60%     → 导光恢复：从导光封锁中恢复
 ///
-/// 担当技能：
-///   微光治愈 / Light Mend  — 自動小回復
-///   プレイヤー HP が一定比率を下回ると、一定クールダウンで自動的に Heal() を呼び出す。
+/// 守护共鸣 / Guard Resonance：
+///   玩家 DamageReduction Active + 承受 CastAttack → 光负荷 -10（-2 BU）
 ///
-/// 飘字表示は HealthComponent.OnHealed → DamageNumberSpawner の既存イベントチェーンに委任。
-/// 本スクリプト内では直接 currentHealth を操作しない。
+/// 溢光反震 / Overflow Counter：
+///   光溢出状态（80%~99%）下守护共鸣成功触发时，对攻击者造成失控光伤害。
+///   导光封锁（100%）时不触发。
+///
+/// 治疗飘字通过 HealthComponent.OnHealed → DamageNumberSpawner 事件链处理。
+/// 本脚本内不直接操作 currentHealth。
 /// </summary>
 public class HikariSupportController : MonoBehaviour
 {
@@ -77,11 +80,11 @@ public class HikariSupportController : MonoBehaviour
     [SerializeField] private bool enableBurdenRecovery = true;
 
     
-[Header("Overburden / 高負荷想態")]
-    [Tooltip("Burden Ratio がこの居値以上になると Overburden 状態になります（0〜1）。デフォルト 0.8 = 80% 以上。")]
+[Header("光溢出状态 / Light Overflow (80%~99%)")]
+    [Tooltip("光负荷比例达到此阈值后进入光溢出状态（0~1）。默认 0.8 = 80% 以上进入光溢出。")]
     [SerializeField, Range(0f, 1f)] private float overburdenThreshold = 0.8f;
 
-    [Tooltip("Overburden 状態の治療量倍率。デフォルト 0.5 = 50%。")]
+    [Tooltip("光溢出状态下，可控治疗效率下降倍率。默认 0.5 = 可控治疗效率降至 50%。")]
     [SerializeField, Range(0f, 1f)] private float overburdenHealingMultiplier = 0.5f;
 
     [Header("Guard Resonance / 守护共鸣")]
@@ -94,23 +97,23 @@ public class HikariSupportController : MonoBehaviour
     [Tooltip("読条重撃記録と受傷時刻の許容差（秒）。これ以内ならスキル命中とみなす。")]
     [SerializeField] private float guardResonanceSkillHitWindow  = 0.25f;
 
-    [Header("Light Counter / \u9ad8\u8ca0\u8377\u5b88\u62a4\u53cd\u51fb")]
-    [Tooltip("\u5149\u53cd\u51fb\u3092\u6709\u52b9\u306b\u3059\u308b\u304b\u3002")]
+    [Header("溢光反震 / Overflow Counter")]
+    [Tooltip("是否启用溢光反震 / Overflow Counter。")]
     [SerializeField] private bool lightCounterEnabled = true;
-    [Tooltip("Light Counter \u767a\u52d5\u306e\u6700\u4f4e Burden \u6bd4\u7387\u3002\u30c7\u30d5\u30a9\u30eb\u30c8 0.8 = 80%\u3002")]
+    [Tooltip("溢光反震触发的最低光负荷比例。默认 0.8 = 80%。光溢出区间（80%~99%）内触发。")]
     [SerializeField, Range(0f, 1f)] private float lightCounterMinBurdenRatio = 0.8f;
     [Tooltip("Light Counter \u767a\u52d5\u306e\u4e0a\u9650 Burden \u6bd4\u7387\uff08\u672a\u6e80\uff09\u3002\u30c7\u30d5\u30a9\u30eb\u30c8 1.0 = 100%\u672a\u6e80\uff08\u904e\u8f09\u6642\u306f\u767a\u52d5\u3057\u306a\u3044\uff09\u3002")]
     [SerializeField, Range(0f, 1f)] private float lightCounterMaxBurdenRatio = 1.0f;
-    [Tooltip("\u5149\u53cd\u51fb\u306e\u56fa\u5b9a\u30c0\u30e1\u30fc\u30b8\u5024\u3002")]
+    [Tooltip("溢光反震对攻击者造成的固定伤害值。")]
     [SerializeField] private float lightCounterDamage = 30f;
 
 
     
-[Header("Overload / 过载")]
-    [Tooltip("Burden Ratio がこの居値以上になると過载状態になります（0〜1）。デフォルト 1.0 = 100%。")]
+[Header("导光封锁 / Channel Lockdown (100%)")]
+    [Tooltip("光负荷达到此比例时进入导光封锁（0~1）。默认 1.0 = 100% 时进入导光封锁，可控治疗停止。")]
     [SerializeField, Range(0f, 1f)] private float overloadThreshold = 1f;
 
-    [Tooltip("過载解除の基準となる Burden Ratio。デフォルト 0.6 = 60% 以下で解除。")]
+    [Tooltip("导光恢复阈值：光负荷下降到此比例以下时，从导光封锁中恢复治疗能力。默认 0.6 = 60% 以下导光恢复。")]
     [SerializeField, Range(0f, 1f)] private float overloadRecoveryThreshold = 0.6f;
 
 
@@ -246,7 +249,7 @@ private bool TryUseLightMend()
         if (!enableLightMend) return false;
         if (_isOverloaded)
         {
-            if (logDebugMessages) Debug.Log("[HikariSupport] Light Mend スキップ: 過载状態");
+            if (logDebugMessages) Debug.Log("[HikariSupport] 微光治愈 跳过：导光封锁中（光负荷 100%）");
             return false;
         }
         if (Time.time < _nextLightMendTime) return false;
@@ -274,7 +277,7 @@ private bool TryUseEmergencyPrayer()
         if (!enableEmergencyPrayer) return false;
         if (_isOverloaded)
         {
-            if (logDebugMessages) Debug.Log("[HikariSupport] Emergency Prayer スキップ: 過载状態");
+            if (logDebugMessages) Debug.Log("[HikariSupport] 紧急祈愿 跳过：导光封锁中（光负荷 100%）");
             return false;
         }
         if (Time.time < _nextEmergencyPrayerTime) return false;
@@ -382,13 +385,13 @@ public void DebugResetBurden()
         {
             _isOverloaded = true;
             if (logDebugMessages)
-                Debug.Log("[HikariSupport] Hikari overloaded. Healing disabled.");
+                Debug.Log("[HikariSupport] 进入导光封锁 — 可控治疗停止（Light Mend / Emergency Prayer 不触发）。");
         }
         else if (_isOverloaded && BurdenRatio <= overloadRecoveryThreshold)
         {
             _isOverloaded = false;
             if (logDebugMessages)
-                Debug.Log("[HikariSupport] Hikari recovered from overload. Healing enabled.");
+                Debug.Log("[HikariSupport] 导光恢复 — 光负荷降至 60% 以下，可控治疗恢复。");
         }
     }
 
@@ -415,7 +418,7 @@ private bool TryTriggerGuardResonance(Transform attacker)
         _nextGuardResonanceTime = Time.time + guardResonanceCooldown;
 
         if (logDebugMessages)
-            Debug.Log("[HikariSupport] Guard Resonance 発動 — Burden 軽減。");
+            Debug.Log("[HikariSupport] 守护共鸣 / Guard Resonance 触发 — 光负荷减少。");
 
         if (shouldLightCounter)
             TryTriggerLightCounter(attacker);
@@ -450,7 +453,7 @@ private bool TryTriggerGuardResonance(Transform attacker)
 
         float burdenRatioBeforeReduction = currentBurden / maxBurden;
         enemyHealth.TakeDamage(lightCounterDamage, transform);
-        Debug.Log($"[Hikari] Light Counter triggered! Damage: {lightCounterDamage} -> {enemyHealth.name} | BurdenRatio(before): {burdenRatioBeforeReduction * 100f:F1}%");
+        Debug.Log($"[Hikari] 溢光反震 / Overflow Counter 触发！对 {enemyHealth.name} 造成 {lightCounterDamage} 点失控光伤害 | 光负荷（触发前）：{burdenRatioBeforeReduction * 100f:F1}%");
     }
 
 
