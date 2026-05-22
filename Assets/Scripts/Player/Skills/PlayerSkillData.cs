@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 /// <summary>
 /// 玩家技能输入槽位。
@@ -29,6 +29,7 @@ public enum PlayerSkillEffectType
     None,
     DamageReduction,
     AttackPowerMultiplier,
+    AreaDamage,
 }
 
 /// <summary>
@@ -70,7 +71,11 @@ public class PlayerSkillData : ScriptableObject
     [SerializeField] private float                 damageTakenMultiplier = 1f;
     [SerializeField] private float                 attackPowerMultiplier = 1f;
 
-    [Header("视觉表现")]
+        [Header("AOE 伤害参数（EffectType = AreaDamage 时有效）")]
+    [SerializeField] private float areaRadius            = 3f;
+    [SerializeField] private float areaDamageMultiplier  = 0.8f;
+
+[Header("视觉表现")]
     [SerializeField] private PlayerSkillVisualType visualType = PlayerSkillVisualType.None;
 
     // ─── 公开只读属性 ─────────────────────────────────────────────
@@ -86,7 +91,9 @@ public class PlayerSkillData : ScriptableObject
     public PlayerSkillEffectType EffectType            => effectType;
     public float                 DamageTakenMultiplier => damageTakenMultiplier;
     public float                 AttackPowerMultiplier => attackPowerMultiplier;
-    public PlayerSkillVisualType VisualType            => visualType;
+        public float                 AreaRadius            => areaRadius;
+    public float                 AreaDamageMultiplier  => areaDamageMultiplier;
+public PlayerSkillVisualType VisualType            => visualType;
 
     // ─── OnValidate ───────────────────────────────────────────────
 
@@ -103,5 +110,8 @@ public class PlayerSkillData : ScriptableObject
 
         damageTakenMultiplier = Mathf.Clamp(damageTakenMultiplier, 0f, 1f);
         if (attackPowerMultiplier < 0f) attackPowerMultiplier = 0f;
+        if (areaRadius           < 0f) areaRadius           = 0f;
+        if (areaDamageMultiplier < 0f) areaDamageMultiplier = 0f;
+
     }
 }

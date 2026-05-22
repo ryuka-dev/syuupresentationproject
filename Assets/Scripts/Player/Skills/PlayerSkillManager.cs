@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Collections.Generic;
@@ -117,6 +118,15 @@ public class PlayerSkillManager : MonoBehaviour
     private PlayerSkillRuntimeState lastPressedSkillState;
 
     /// <summary>最後にキーを押した技能の RuntimeState。一度も押していなければ null。</summary>
+
+    // ─── 技能成功发动事件 ────────────────────────────────────────
+
+    /// <summary>
+    /// 技能が成功して発動した直後に発火するイベント。
+    /// 冷却中・Already Active 時の入力では発火しない。
+    /// </summary>
+    public event Action<PlayerSkillRuntimeState> OnSkillActivated;
+
     public PlayerSkillRuntimeState LastPressedSkillState => lastPressedSkillState;
 
     // ─── 公开查询 API ─────────────────────────────────────────────
@@ -235,6 +245,7 @@ private void HandleSkillInput()
 
         if (state.TryActivate())
         {
+            OnSkillActivated?.Invoke(state);
             if (logSkillActivation)
                 Debug.Log($"[PlayerSkillManager] Activated skill: {state.SkillData.SkillName} ({state.SkillData.SkillId})");
             return true;

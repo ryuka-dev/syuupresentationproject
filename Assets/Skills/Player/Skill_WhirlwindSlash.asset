@@ -10,17 +10,17 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 90bf24020f4e1cb4c8c7417a83149f7b, type: 3}
-  m_Name: Skill_WoW
+  m_Name: Skill_WhirlwindSlash
   m_EditorClassIdentifier: Assembly-CSharp::PlayerSkillData
-  skillId: Wow
-  skillName: Wow
-  description: Wow
-  icon: {fileID: 21300000, guid: 9c2f8b0a2f33f6046adc28ff41a1aa42, type: 3}
-  inputSlot: 6
+  skillId: whirlwind_slash
+  skillName: "\u56DE\u65CB\u65A9"
+  description: "\u5BF9\u81EA\u8EAB\u5468\u56F4\u654C\u4EBA\u9020\u6210\u4E00\u6B21\u8303\u56F4\u4F24\u5BB3\u3002"
+  icon: {fileID: 0}
+  inputSlot: 4
   keyLabel: 4
-  cooldown: 1
-  duration: 1
-  effectType: 1
+  cooldown: 8
+  duration: 0.1
+  effectType: 3
   damageTakenMultiplier: 1
   attackPowerMultiplier: 1
   areaRadius: 3
