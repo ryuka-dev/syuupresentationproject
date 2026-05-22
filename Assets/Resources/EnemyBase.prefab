@@ -23,6 +23,7 @@ GameObject:
   - component: {fileID: -3159519137589924971}
   - component: {fileID: -4995931253774540930}
   - component: {fileID: 3484341557614078609}
+  - component: {fileID: 3979949907274559752}
   m_Layer: 9
   m_Name: EnemyBase
   m_TagString: Untagged
@@ -314,8 +315,21 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DamageNumberSpawner
   popupPrefab: {fileID: 176171211726505972, guid: ea90e1085da05b94db2db5f947457cd8, type: 3}
+  healingPopupPrefab: {fileID: 0}
   popupOffset: {x: 0, y: 2, z: 0}
   randomHorizontalOffset: 0.25
+--- !u!114 &3979949907274559752
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1593989802227870837}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4b51a9a09a49a8546b7191d26a3df732, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyPlayerCollisionIgnore
 --- !u!1 &8379728281680734945
 GameObject:
   m_ObjectHideFlags: 0
