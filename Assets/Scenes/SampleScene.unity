@@ -3008,9 +3008,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a738c1d3d23e52243b2a49f6c8e6f060, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerSkillController
-  normalAttackDamage: 20
-  normalAttackRange: 2
-  normalAttackCooldown: 1
 --- !u!114 &919417056
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3131,7 +3128,6 @@ MonoBehaviour:
   - {fileID: 11400000, guid: b26a4bde9ce8d634b95b743135f5b8e9, type: 2}
   - {fileID: 11400000, guid: e36c90b83337f214cb0b64a56901ff56, type: 2}
   - {fileID: 11400000, guid: 65b99ffb9b2b76341be6ca54560fdf69, type: 2}
-  - {fileID: 11400000, guid: 900c66afd0dda65478f927c151db6a0e, type: 2}
   logSkillActivation: 1
   runtimeStates: []
 --- !u!114 &919417070
@@ -3190,10 +3186,14 @@ MonoBehaviour:
   m_GameObject: {fileID: 919417038}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 1c73ed0cd956910459fc76efbdd3b444, type: 3}
+  m_Script: {fileID: 11500000, guid: 6583af93304a53842a6690d4be02be93, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PlayerDamageSkillExecutor
-  logAoeDamage: 1
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerBasicAttackController
+  fallbackNormalAttackDamage: 20
+  normalAttackRange: 2
+  basicAttackRecast: 1
+  areaBasicAttackRadius: 3
+  areaBasicAttackDamageMultiplier: 0.4
 --- !u!1 &971681417
 GameObject:
   m_ObjectHideFlags: 0
