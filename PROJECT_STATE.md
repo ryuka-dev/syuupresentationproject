@@ -35,9 +35,9 @@ Unity 版本：6000.4.3f1 (Unity 6)
 玩家移动
 → 鼠标左键点击或 Tab 从屏幕左到右循环选中敌人
 → 当前目标头顶显示倒三角指示器
-→ 按 1 使用普通攻击
-→ 按 PlayerSkillManager 注册的技能键使用玩家技能（当前至少 Slot2 / Slot3，另有攻击强化测试技能，具体资产路径未确认）
-→ Canvas 技能栏显示技能图标、持续时间与冷却
+→ 按 1 使用单体普通攻击，按 4 使用 AOE 普通攻击；二者共享基础攻击冷却
+→ 按 PlayerSkillManager 注册的技能键使用玩家技能（当前主要用于 Slot2 / Slot3 / Slot5 / Slot6 等技能栏技能）
+→ Canvas 技能栏显示 PlayerSkillManager 注册技能的图标、持续时间与冷却
 → PlayerStatusEffectController 根据 Active 技能修正玩家受到的伤害 / 普通攻击输出伤害
 → 伤害 / 治疗飘字显示玩家打出的实际伤害、受到的实际伤害与实际恢复量
 → HikariSupportController 根据玩家血量自动治疗，并通过光负荷 / 光溢出 / 导光封锁 / 守护共鸣（Guard Resonance）/ 溢光反震（Overflow Counter）形成保护反馈
@@ -390,23 +390,81 @@ _pitch -= delta.y * rotationSpeed;
 
 ### `PlayerSkillController.cs`
 
-按数字键 1 使用普通攻击。
+路径：`Assets/Scripts/Player/PlayerSkillController.cs`
+
+当前职责：玩家技能 / 动作输入调度器。
+
+- 使用 New Input System 读取键盘输入。
+- 按 1 时调用同一 Player 上的 `PlayerBasicAttackController.TrySingleTargetAttack()`。
+- 按 4 时调用同一 Player 上的 `PlayerBasicAttackController.TryAreaBasicAttack()`。
+- 不再直接计算伤害。
+- 不再直接调用 `HealthComponent.TakeDamage(...)`。
+- 不再直接执行 `Physics.OverlapSphere`。
+- 不再维护普通攻击 / AOE 普通攻击冷却。
+
+注意：
+
+- `PlayerSkillController` 当前仍会在玩家死亡时被 `PlayerDeathHandler` 禁用。
+- 如果未来新增其他基础动作输入，可在这里做输入分发，但具体效果应下放到对应 Controller / Executor。
+- 不要把大量攻击执行逻辑重新塞回 `PlayerSkillController`。
+
+
+### `PlayerBasicAttackController.cs`
+
+路径：`Assets/Scripts/Player/PlayerBasicAttackController.cs`
+
+基础攻击执行器，挂载在 Player 上。
 
 当前职责：
 
-- 读取 `PlayerTargeting.CurrentTarget`
-- 验证目标有效性
-- 读取 `PlayerCombatStats.CurrentNormalAttackDamage` 作为普通攻击基础伤害
-- 通过同一 Player 上的 `PlayerStatusEffectController.ModifyOutgoingNormalAttackDamage(...)` 应用 Active 技能的普通攻击输出倍率
-- 调用 `HealthComponent.TakeDamage(finalDamage, transform)`
-- 触发 `Attack` Trigger 播放攻击动画
+- 管理基础攻击共享冷却。
+- 执行 1 键单体普通攻击。
+- 执行 4 键 AOE 普通攻击。
+- 统一计算普通攻击最终伤害。
+- 负责 AOE 搜索、敌我判断、去重、伤害结算与攻击动画触发。
 
-当前逻辑变化：
+关键字段：
 
-- 不再直接读取 `PlayerEquipment.EquippedCore.AttackPowerBonus`。
-- 不再写死 Core 装备 +10 伤害。
-- 若 Player 上没有 `PlayerCombatStats`，回退使用原本 `normalAttackDamage`。
-- 若 Player 上没有 `PlayerStatusEffectController`，普通攻击伤害不做技能输出倍率修正。
+- `basicAttackRecast = 1.0f`
+- `areaBasicAttackRadius = 3.0f`
+- `areaBasicAttackDamageMultiplier = 0.4f`
+- `fallbackNormalAttackDamage = 20f`
+
+当前行为：
+
+```text
+1 键单体普通攻击
+→ 检查基础攻击冷却
+→ 读取 PlayerTargeting.CurrentTarget
+→ 验证目标有效、敌对、未死亡、距离在 normalAttackRange 内
+→ 读取 PlayerCombatStats.CurrentNormalAttackDamage
+→ 使用 PlayerStatusEffectController.ModifyOutgoingNormalAttackDamage(...) 应用 AttackPowerMultiplier
+→ 调用 HealthComponent.TakeDamage(finalDamage, transform)
+→ 触发 Attack Trigger
+→ 启动基础攻击冷却
+
+4 键 AOE 普通攻击
+→ 检查同一个基础攻击冷却
+→ 以玩家当前位置为中心 Physics.OverlapSphere
+→ 半径 areaBasicAttackRadius，当前 3m
+→ 从 Collider 向父级查找 HealthComponent / FactionComponent
+→ 只命中敌对且未死亡目标
+→ 使用 HashSet<HealthComponent> 避免多 Collider 重复命中
+→ AOE 伤害 = 单体普通攻击最终伤害 * areaBasicAttackDamageMultiplier，当前 0.4
+→ 调用 HealthComponent.TakeDamage(aoeDamage, transform)
+→ 触发 Attack Trigger
+→ 启动基础攻击冷却
+```
+
+说明：
+
+- 1 键与 4 键共享 `basicAttackRecast`，当前默认约 1 秒。
+- 按 1 成功后立刻按 4 不会发动；按 4 成功后立刻按 1 不会发动。
+- AOE 普通攻击定位是“多个敌人时替代单体普通攻击的基础攻击变体”，不是独立 CD 技能。
+- AOE 普通攻击不显示在 `PlayerSkillBarCanvasUI` 中。
+- 由于 AOE 伤害基于普通攻击最终伤害计算，当前 AttackPowerMultiplier 技能会同时影响单体普通攻击与 AOE 普通攻击。
+- 当前没有完整 GCD / shared recast 系统；`PlayerBasicAttackController` 是基础攻击共享冷却的过渡实现。
+
 
 ### `PlayerDeathHandler.cs`
 
@@ -433,9 +491,9 @@ _pitch -= delta.y * rotationSpeed;
 当前包含：
 
 - `PlayerSkillInputSlot`：`None / Slot1 ... Slot9`
-- `PlayerSkillEffectType`：当前至少 `None / DamageReduction / AttackPowerMultiplier`
+- `PlayerSkillEffectType`：当前至少 `None / DamageReduction / AttackPowerMultiplier / AreaDamage`
 - `PlayerSkillVisualType`：当前至少 `None / DefenseRing`
-- 字段：`skillId`、`skillName`、`description`、`icon`、`inputSlot`、`keyLabel`、`cooldown`、`duration`、`effectType`、`damageTakenMultiplier`、`attackPowerMultiplier`、`visualType`
+- 字段：`skillId`、`skillName`、`description`、`icon`、`inputSlot`、`keyLabel`、`cooldown`、`duration`、`effectType`、`damageTakenMultiplier`、`attackPowerMultiplier`、`areaRadius`、`areaDamageMultiplier`、`visualType`
 
 当前已确认资产：
 
@@ -455,6 +513,13 @@ _pitch -= delta.y * rotationSpeed;
   - `effectType = AttackPowerMultiplier`
   - 会在 Active 期间提高普通攻击最终伤害。
   - 具体资产路径 / 参数未确认，以下次读取项目文件或 Inspector 为准。
+- `Assets/Skills/Player/Skill_WhirlwindSlash.asset`
+  - 当前文件保留，但已从 Player 的 `PlayerSkillManager.skills` 移除。
+  - 当前 4 键 AOE 普通攻击由 `PlayerBasicAttackController` 直接实现，不通过该资产发动。
+  - 该资产可作为未来把 AOE 技能重新纳入技能系统时的参考，当前不属于有效技能栏技能。
+
+
+
 
 #### `PlayerSkillManager.cs`
 
@@ -467,13 +532,19 @@ _pitch -= delta.y * rotationSpeed;
 - 使用 New Input System 将 `PlayerSkillInputSlot` 映射到 `Keyboard.current.digit1Key ... digit9Key`。
 - 管理每个技能的 Active / Cooldown / Ready 状态。
 - 记录 `LastPressedSkillState`，即最后一次按下的技能；冷却中按下也会更新。
+- 在技能成功发动时触发 `OnSkillActivated` 事件，供未来瞬发技能效果执行器订阅。
 - 只管理输入、持续时间、冷却与运行时状态，不直接执行伤害或视觉效果。
 
 重要规则：
 
 - `PlayerSkillManager.skills` 的顺序是正式技能栏显示顺序。
 - 新增技能应优先创建 `PlayerSkillData` 资产，再加入 Player 上 `PlayerSkillManager.skills` 数组。
-- 当前普通攻击 `1` 仍由 `PlayerSkillController` 管理；技能系统主要管理 Slot2 之后的技能。
+- 当前普通攻击 `1` 与 AOE 普通攻击 `4` 不由 `PlayerSkillManager` 管理，而由 `PlayerSkillController` 分发到 `PlayerBasicAttackController`。
+- 当前不要让 Skill Slot1 与普通攻击冲突。
+- 当前回旋斩 / Whirlwind Slash 已从 `PlayerSkillManager.skills` 移除，不作为独立 CD 技能显示。
+
+
+
 
 #### `PlayerStatusEffectController.cs`
 
@@ -489,12 +560,26 @@ _pitch -= delta.y * rotationSpeed;
 - 当前多个 AttackPowerMultiplier 技能同时 Active 时也使用乘算叠加：
   - 例如 `1.5 * 1.2 = 1.8`
 - `HealthComponent` 通过它统一修正玩家受到的伤害。
-- `PlayerSkillController` 通过 `ModifyOutgoingNormalAttackDamage(float baseDamage)` 修正玩家普通攻击最终伤害。
+- `PlayerBasicAttackController` 通过 `ModifyOutgoingNormalAttackDamage(float baseDamage)` 修正单体普通攻击与 AOE 普通攻击的最终伤害。
 
 注意：
 
 - 当前没有完整 Buff 优先级、覆盖规则、持续状态列表或 `StatModifier`。
 - 目前支持的玩家技能效果仍是最小原型：`DamageReduction` 与 `AttackPowerMultiplier`。
+
+#### `PlayerDamageSkillExecutor.cs`
+
+路径：`Assets/Scripts/Player/Skills/PlayerDamageSkillExecutor.cs`
+
+当前状态：
+
+- 脚本已存在，用于作为未来 `PlayerSkillManager.OnSkillActivated` 的瞬发伤害执行器原型。
+- 当前 Player 上已移除该组件。
+- 当前 4 键 AOE 普通攻击不通过该脚本执行，而是由 `PlayerBasicAttackController` 执行。
+- 如果未来新增真正的技能栏攻击技能（例如扇形斩、目标点 AOE、直线攻击、投射物），可考虑让该类或后续 Executor 订阅 `PlayerSkillManager.OnSkillActivated`，但不要让它自己读取键盘、管理冷却或生成 UI。
+
+
+
 
 #### `PlayerSkillCanvasUI.cs`
 
@@ -1509,7 +1594,8 @@ Trigger 检测玩家进入后更新玩家最近复活点。
 - HealthComponent
 - WorldHealthBar
 - PlayerTargeting
-- PlayerSkillController
+- PlayerSkillController（输入调度）
+- PlayerBasicAttackController（1 键单体普通攻击 / 4 键 AOE 普通攻击 / 基础攻击共享冷却）
 - PlayerDeathHandler
 - PlayerRespawnPointTracker
 - PlayerInventory
@@ -1614,6 +1700,7 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 - `EnemySkillController.skills` 默认为空，表示普通敌人默认无技能。
 - `EnemyCastBarUI` 默认可保留；没有读条时不显示。
 - `DamageNumberSpawner` 用于敌人受伤时显示玩家打出的实际伤害数字。
+- `EnemyPlayerCollisionIgnore` 用于忽略 Player 与 Enemy 之间的非 Trigger Collider 物理碰撞，避免互相推动或玩家站在敌人头上。
 - 具体敌人通过 Prefab Variant 覆写模型、掉落、视野绑定、体型、技能等配置。
 
 #### `Assets/Resources/SkeletonEnemy_Variant.prefab`
@@ -1655,6 +1742,7 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 - FactionComponent
 - FOVDetector
 - NavMeshAgent
+- EnemyPlayerCollisionIgnore
 
 当前 NavMeshAgent 主要参数：
 
@@ -1729,8 +1817,11 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 - 鼠标右键：按住并移动鼠标时旋转相机
 - 鼠标左键 + 右键：向当前相机前方移动，等价于前进输入
 - 鼠标左键 + 右键 + Shift：向当前相机前方跑步
-- 普通攻击：键盘 1
-- 玩家技能槽：由 `PlayerSkillManager` 读取 `PlayerSkillData.inputSlot`，映射到键盘数字键 1～9；当前已用于 Slot2 / Slot3 等测试技能
+- 单体普通攻击：键盘 1
+- AOE 普通攻击：键盘 4
+  - 与 1 键单体普通攻击共享 `PlayerBasicAttackController.basicAttackRecast`，当前默认 1.0 秒。
+  - 当前 AOE 半径 3m，伤害为普通攻击最终伤害的 0.4 倍。
+- 玩家技能槽：由 `PlayerSkillManager` 读取 `PlayerSkillData.inputSlot`，映射到键盘数字键 1～9；当前主要用于 Slot2 / Slot3 / Slot5 / Slot6 等技能栏技能
 - 跳跃：Space
   - `IsJumping` 只作为起跳帧信号，不代表整个空中状态。
   - 跳跃落地后会根据 `Speed / IsSprinting` 直接进入 Idle / RunForward / Sprint。
@@ -1769,7 +1860,7 @@ Cursor 当前规则：
 - `PlayerSkillManager` 使用 New Input System 的 `Keyboard.current.digit1Key ... digit9Key`。
 - `PlayerSkillData.inputSlot` 决定技能按键槽。
 - `keyLabel` 只用于 UI 显示。
-- 当前普通攻击仍由 `PlayerSkillController` 的键盘 1 管理；不要在未统一前让 Skill Slot1 与普通攻击冲突。
+- 当前 1 键单体普通攻击与 4 键 AOE 普通攻击由 `PlayerSkillController` 读取输入，并分发给 `PlayerBasicAttackController`。不要在未统一前让 Skill Slot1 与普通攻击冲突；4 键当前也不是 PlayerSkillManager 的回旋斩技能。
 
 相机灵敏度：
 
@@ -1804,6 +1895,7 @@ Cursor 当前规则：
 - ✅ EnemyAI Agent 不可用时保留 Rigidbody fallback
 - ✅ FOV 视野检测系统
 - ✅ 阵营系统
+- ✅ Player ↔ Enemy 非 Trigger Collider 物理碰撞忽略：玩家与敌人不再互相推动，玩家不能站在敌人头上
 - ✅ 血量系统
 - ✅ 世界空间血条显示
 - ✅ 敌人攻击动画 + Animation Event 伤害触发
@@ -1815,6 +1907,9 @@ Cursor 当前规则：
 - ✅ 上半身 / 下半身动画分离
 - ✅ 玩家普通攻击伤害读取 PlayerCombatStats
 - ✅ 玩家普通攻击可通过 `AttackPowerMultiplier` 技能效果临时提高最终伤害
+- ✅ `PlayerBasicAttackController` 基础攻击执行器第一版：1 键单体普通攻击、4 键 AOE 普通攻击
+- ✅ 单体普通攻击与 AOE 普通攻击共享基础攻击冷却，当前默认 1.0 秒
+- ✅ AOE 普通攻击第一版：玩家周围 3m，伤害为普通攻击最终伤害的 0.4 倍，并使用 HashSet 避免多 Collider 重复命中
 - ✅ Tab 键从屏幕左侧到右侧循环选中屏幕内敌对目标
 - ✅ 当前目标头顶倒三角指示器第一版
 - ✅ 敌人技能系统第一版（EnemySkillData / EnemySkillController）
@@ -1834,6 +1929,7 @@ Cursor 当前规则：
 - ✅ `PlayerSkillData` 玩家技能数据资产第一版
 - ✅ `PlayerSkillManager` 统一管理注册技能的输入、Active、Cooldown、Ready 状态
 - ✅ `PlayerSkillManager.LastPressedSkillState` 记录最后按过的技能，冷却中按下也会更新
+- ✅ `PlayerSkillManager.OnSkillActivated` 事件已加入，可供未来瞬发技能效果执行器订阅
 - ✅ `PlayerStatusEffectController` 根据 Active 技能统一修正玩家受到的伤害
 - ✅ `PlayerStatusEffectController` 可根据 Active 技能修正玩家普通攻击输出伤害
 - ✅ DamageReduction 技能效果第一版
@@ -1925,6 +2021,7 @@ Cursor 当前规则：
 
 - ✅ F1 OnGUI Debug 面板
 - ✅ 当前目标敌人显示与 ResetToSpawn
+- ✅ Debug 召唤骷髅已改用 `SkeletonEnemy_Variant`，避免旧 `SkeletonEnemy` 缺少成熟组件导致伤害飘字等行为不一致
 - ✅ Core 装备测试按钮
 - ✅ 从背包装备第一个 Core
 - ✅ 卸下 Core 到背包
@@ -1962,13 +2059,14 @@ Cursor 当前规则：
 
 ### 玩家技能系统限制
 
-- ⚠️ 当前玩家技能系统 v0.1 只支持最小 DamageReduction / AttackPowerMultiplier 流程。
+- ⚠️ 当前玩家技能系统 v0.1 主要支持 DamageReduction / AttackPowerMultiplier；`AreaDamage` 字段与 `PlayerDamageSkillExecutor` 已存在但当前未挂载到 Player，也未作为正式技能栏攻击技能使用。
 - ⚠️ 尚未实现正式 Buff / StatusEffect 数据结构、优先级、覆盖规则、图标状态列表或效果取消事件。
 - ⚠️ 多个 DamageReduction / AttackPowerMultiplier 当前按乘算叠加，尚未设计同类覆盖、上限或职业平衡规则。
 - ⚠️ `PlayerMitigationVisualFeedback` 当前仍是 Iron Bulwark 专用视觉反馈，尚未抽象为通用 Skill Visual 系统。
 - ⚠️ `PlayerSkillHudUI` 是 OnGUI 调试 HUD，不是正式玩家 UI。
 - ⚠️ `PlayerSkillManager.skills` 当前通过 Inspector 注册，尚未实现技能学习、解锁、保存、拖拽或热键自定义。
-- ⚠️ 普通攻击仍由 `PlayerSkillController` 独立处理，尚未统一进 `PlayerSkillManager`；不要让 Slot1 与普通攻击冲突。
+- ⚠️ 当前没有正式 GCD / shared recast UI；基础攻击共享冷却只在 `PlayerBasicAttackController` 内部处理，不显示在 SkillBar。
+- ⚠️ 基础攻击（1 键单体 / 4 键 AOE）当前由 `PlayerSkillController` 分发到 `PlayerBasicAttackController`，尚未统一进 `PlayerSkillManager` 或正式 GCD 系统；不要让 Slot1 与普通攻击冲突，也不要把 4 键回旋斩误加回 `PlayerSkillManager.skills`。
 
 ### Hikari 支援系统限制
 
@@ -2090,6 +2188,7 @@ Cursor 当前规则：
 - `Assets/Scripts/Enemy/EnemyWorldManager.cs`
 - `Assets/Scripts/Enemy/EnemySpawnPoint.cs`
 - `Assets/Scripts/Enemy/EnemyDeathHandler.cs`
+- `Assets/Scripts/Enemy/EnemyPlayerCollisionIgnore.cs`
 - `Assets/Scripts/Enemy/FactionSystem.cs`
 - `Assets/Scripts/Enemy/Skills/EnemySkillData.cs`
 - `Assets/Scripts/Enemy/Skills/EnemySkillController.cs`
@@ -2103,6 +2202,7 @@ Cursor 当前规则：
 - `Assets/Scripts/UI/DamageNumberPopup.cs`
 - `Assets/Scripts/UI/DamageNumberSpawner.cs`
 - `Assets/Scripts/Player/PlayerSkillController.cs`
+- `Assets/Scripts/Player/PlayerBasicAttackController.cs`
 - `Assets/Scripts/Player/PlayerDeathHandler.cs`
 - `Assets/Scripts/Player/PlayerRespawnPointTracker.cs`
 - `Assets/Scripts/Player/PlayerInventory.cs`
@@ -2115,11 +2215,13 @@ Cursor 当前规则：
 - `Assets/Scripts/Player/Skills/PlayerSkillData.cs`
 - `Assets/Scripts/Player/Skills/PlayerSkillManager.cs`
 - `Assets/Scripts/Player/Skills/PlayerStatusEffectController.cs`
+- `Assets/Scripts/Player/Skills/PlayerDamageSkillExecutor.cs`
 - `Assets/Scripts/Player/PlayerSkillCanvasUI.cs`
 - `Assets/Scripts/Player/PlayerSkillBarCanvasUI.cs`
 - `Assets/Scripts/Player/PlayerSkillHudUI.cs`
 - `Assets/Scripts/Player/PlayerMitigationVisualFeedback.cs`
 - `Assets/Scripts/Spawner/SkeletonDebugUI.cs`
+- `Assets/Scripts/Spawner/SkeletonSpawner.cs`
 - `Assets/Scripts/Level/SavePoint.cs`
 
 ### 核心资产
@@ -2148,6 +2250,7 @@ Cursor 当前规则：
 - `Assets/Fonts/09_SourceHanSansSC/TMP/SourceHanSansSC-Medium_TMP.asset`
 - `Assets/Skills/Player/Skill_IronBulwark.asset`
 - `Assets/Skills/Player/Skill_StoneGuard.asset`
+- `Assets/Skills/Player/Skill_WhirlwindSlash.asset`：当前保留但未注册到 PlayerSkillManager.skills，不作为有效技能栏技能
 - `Assets/Art/UI/SkillIcons/Skill_IronBulwark.png`
 - `Assets/Art/UI/SkillIcons/`：玩家技能图标目录
 
@@ -2159,6 +2262,9 @@ Cursor 当前规则：
 - `EnemyAI.OnAttackHit()` 是普通攻击 Animation Event，方法名不可改。
 - `EnemySkillController.LastDamageSkillData / LastDamageSkillTime` 当前用于 Guard Resonance 判断 CastAttack；普通攻击不要写入该记录，避免误触发。
 - Hikari Guard Resonance 依赖 `PlayerSkillManager.RuntimeStates` 与 `PlayerSkillEffectType.DamageReduction`，不要让 Slot1 普通攻击与玩家技能系统冲突。
+- `PlayerSkillController` 当前是输入调度器，不应重新堆入伤害计算、AOE 搜索或基础攻击冷却逻辑；这些应保留在 `PlayerBasicAttackController`。
+- 4 键 AOE 普通攻击当前不是 `PlayerSkillManager` 技能栏技能，不要把 `Skill_WhirlwindSlash.asset` 误加回 Player 的 `PlayerSkillManager.skills`，除非正式重做基础攻击 / GCD / 热栏系统。
+- `PlayerBasicAttackController.basicAttackRecast` 同时限制 1 键单体普通攻击与 4 键 AOE 普通攻击；调整它会同时改变两者节奏。
 - Hikari Debug 窗口高度依赖 `BuildHikariDebugLines()` 与 `GUIStyle.CalcHeight()`；新增显示行时要更新 Build 方法，不要重新写固定高度。
 - `EnemySkillController.InterruptCurrentCast()` 是未来打断技能的最小入口；当前未接入玩家技能，不要误当作完整打断系统。
 - CastAttack 的 range 只用于开始读条；读条中和读条完成时不因玩家拉开距离取消或失败。
@@ -2306,40 +2412,45 @@ Cursor 当前规则：
 游戏内显示、Debug 文案、注释和设计文档已全部改为 GLOSSARY.md 正式术语。
 
 
+
 ---
+
+## 26. 最近一次有效变更（2026-05-24）
+
+1. Player 与 Enemy 的非 Trigger Collider 物理碰撞已通过 `EnemyPlayerCollisionIgnore` 忽略：玩家和敌人不再互相推动，玩家不能站在敌人头上。
+2. 基础攻击结构已拆分：`PlayerSkillController` 作为输入调度器，`PlayerBasicAttackController` 负责 1 键单体普通攻击、4 键 AOE 普通攻击、共享 `basicAttackRecast = 1.0f`、AOE 半径 3m、AOE 伤害倍率 0.4。
+3. Debug 召唤骷髅已改用 `SkeletonEnemy_Variant`；`Skill_WhirlwindSlash.asset` 保留但不再注册到 `PlayerSkillManager.skills`，回旋斩当前不是独立技能栏技能。
 
 ## 11. Next Suggested Tasks
 
 ### ⭐ 最推荐的下一个小任务
 
-**基于 `BalanceTables/encounter_tests.csv` 做第一轮遭遇测试记录。**
+**给基础攻击共享冷却增加最小 Debug / UI 可视化。**
 
-推荐顺序：
+目标：
 
 ```text
-T1-003：1 只 SkeletonBossEnemy_Variant
-T1-002：3 只普通小怪
-T1-004：1 精英 + 2 普通
-T1-005：6 只普通小怪
+显示 PlayerBasicAttackController 当前基础攻击冷却是否可用、剩余时间、1 键 / 4 键共享状态。
+先做 Debug 显示或简单 HUD，不做完整 GCD UI。
 ```
 
-验收目标：
+理由：
 
 ```text
-记录 actual_result / actual_burden_end / actual_player_hp_end / notes。
-确认 Tier 1 普通小怪、精英怪、Hikari 治疗、Guard Resonance、Light Counter 在多怪压力下是否仍然成立。
-本任务优先只测试和更新 CSV，不改代码。
+当前 1 键单体普通攻击与 4 键 AOE 普通攻击已经共享 basicAttackRecast，但没有任何可视化。
+下一步先验证节奏、手感和冷却状态，避免后续技能扩展时误判输入或冷却问题。
 ```
 
 ### 备选任务
 
-1. 给 `PlayerController` 增加 `fallGravityStartVelocity`，用于手动调整何时提前进入下落重力，减少跳跃最高点漂浮感。
-2. 对 EnemyAI 近战普通攻击做第二轮专门优化：攻击时减速 / 增加命中容错 / 使用近战判定盒；当前 Chase 中尝试攻击但体感有限。
-3. 给 Hikari Guard Resonance / Light Counter 增加轻量视觉或文本反馈，但不要做正式 UI。
-4. 给 `EnemySkillData` 增加更明确的技能标签或 Guard Resonance 触发标记，为未来多个 Boss 技能做准备。
+1. 基于 `BalanceTables/encounter_tests.csv` 做第一轮遭遇测试记录：重点测试 3 只普通小怪、1 精英 + 2 普通、6 只普通小怪下的 AOE 普通攻击收益、Hikari 光负荷和玩家 HP。
+2. 明确 Player 技能长期分层：`PlayerSkillManager` 管注册 / 冷却 / UI，`PlayerBasicAttackController` 管基础攻击，未来攻击技能使用独立 Executor，不要塞回 `PlayerSkillController`。
+3. 设计第一版正式 GCD / shared recast 方案，但暂不实现完整热栏系统。
+4. 给 Hikari Guard Resonance / Overflow Counter 增加轻量视觉或文本反馈，但不要做正式 UI。
 5. 给 `PlayerTargeting` 增加 Shift+Tab 反向选敌，仍复用同一候选列表与敌对判定。
 6. 给伤害 / 治疗飘字增加对象池 `DamageNumberPool`，减少频繁 Instantiate / Destroy。
 7. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
+
 
 ## 12. 本次有效变更摘要（2026-05-11）
 
