@@ -1,6 +1,6 @@
 # GLOSSARY.md
 
-最后更新：2026-05-21  
+最后更新：2026-05-25  
 文档用途：统一项目内中文 / 英文 / 代码 / UI / Debug / 设计文档中的术语，避免同一概念在不同文件中被写成不同名字。  
 注意：本文件只负责“术语怎么叫、是什么意思、不要怎么叫”。具体玩法实现以 `PROJECT_STATE.md` 为准，长期设计方向以 `GAME_DESIGN_NOTES.md` 为准，数值基准以 `BALANCE_BASELINE.md` 为准。
 
@@ -564,6 +564,45 @@ Hikari 的本质是：
 
 “高负荷反击”可以作为旧名记录，但正式名建议统一为“溢光反震”。
 
+## 守护反击 / Radiant Riposte
+
+正式中文名：
+
+- 守护反击
+
+英文 / 代码名：
+
+- Radiant Riposte
+- GuardCounter
+- PlayerSkillEffectType.GuardCounter
+
+含义：
+
+- 玩家用指定减伤技能成功承受敌人 CastAttack 并触发守护共鸣后，获得一次限时反击机会。
+
+当前触发 / 授权规则：
+
+- 守护共鸣本身可以由任意 DamageReduction Active + CastAttack 命中触发。
+- 守护反击的释放资格只由 `PlayerSkillData.GrantsGuardCounter == true` 的减伤技能授予。
+- 当前 Iron Bulwark 授予守护反击；Stone Guard 不授予守护反击。
+
+当前 Tier 1 效果：
+
+- Guard Resonance 成功后获得 10 秒 Ready 窗口。
+- 10 秒内按 Slot5，对触发 Guard Resonance 的 attacker 造成 3 PDU。
+- 目标死亡 / 丢失 / 无 HealthComponent 时不能打出。
+- 超出 Ranged 标准距离 20m 时不能打出，但 Ready 不消耗。
+
+不推荐叫法：
+
+- 普通反伤
+- 自动反击
+- 冷却好了就按的爆发技能
+
+说明：
+
+守护反击是“成功处理机制后的手动奖励”，不是普通 CD 伤害技能。
+
 ---
 
 # 5. Hikari 剧情 / 世界观术语
@@ -749,6 +788,33 @@ Hikari 系统关联：
 如果后续 UI 需要中文正式名，推荐用“钢铁壁垒”。  
 “铁壁”较短，适合 Debug 或技能栏简称。
 
+## Stone Guard
+
+当前中文候选：
+
+- 石肤守护
+- 石之守护
+
+英文 / 代码名：
+
+- Stone Guard
+
+当前定位：
+
+- 持续压力用减伤技能。
+- 用于承接 Hikari 的治疗窗口，提高被治疗效率。
+
+当前规则：
+
+- 属于 DamageReduction。
+- 可触发守护共鸣并降低 Hikari 光负荷。
+- 当前不授予守护反击。
+- 当前 `HealingReceivedMultiplier = 1.5`，Active 期间受到 Hikari 治疗时显示 `GUARD HEAL` 提示。
+
+说明：
+
+Stone Guard 的核心定位不是爆发反击，而是“稳住血线 + 接治疗”。
+
 ## CastAttack / 读条重击
 
 正式中文名：
@@ -779,6 +845,108 @@ Hikari 系统关联：
 
 “技能攻击”太泛。“读条重击”更适合第一版精英怪 / 小 Boss 测试。
 
+## Basic Attack / BasicMeleeAttack
+
+正式中文名：
+
+- 基础攻击
+- 普通近战攻击
+
+英文 / 代码名：
+
+- Basic Attack
+- BasicMeleeAttack
+- PlayerSkillEffectType.BasicMeleeAttack
+
+含义：
+
+- 玩家 Slot1 的基础近战攻击。
+- 当前作为 `PlayerSkillData` 注册到 `PlayerSkillManager`，由 `PlayerBasicAttackController` 执行。
+
+当前标准距离：
+
+- Melee = 3m
+
+说明：
+
+Basic Attack 不应再作为 `PlayerSkillController` 的特判输入处理。
+
+## Area Attack / BasicAreaAttack
+
+正式中文名：
+
+- 范围基础攻击
+- AOE 普攻
+
+英文 / 代码名：
+
+- Area Attack
+- BasicAreaAttack
+- PlayerSkillEffectType.BasicAreaAttack
+
+含义：
+
+- 玩家 Slot4 的基础 AOE 攻击。
+- 当前作为 `PlayerSkillData` 注册到 `PlayerSkillManager`，由 `PlayerBasicAttackController` 执行。
+- 与 Basic Attack 共享基础攻击冷却。
+
+当前标准距离：
+
+- Area = 5m
+
+## 技能距离类型 / PlayerSkillRangeType
+
+英文 / 代码名：
+
+- PlayerSkillRangeType
+
+当前标准：
+
+| 类型 | 含义 | 距离 |
+|---|---|---:|
+| Self | 自身释放 | 0m |
+| Melee | 一般近战 | 3m |
+| Area | 一般 AOE 范围 | 5m |
+| Ranged | 一般远距离 | 20m |
+| Custom | 自定义 | customRange |
+
+说明：
+
+技能距离应优先通过 `PlayerSkillData.EffectiveRange` 读取，避免在执行器里分散硬编码。
+
+## 条件锁定 / Condition Locked
+
+英文 / 代码名：
+
+- Condition Locked
+
+含义：
+
+- 技能存在于技能栏中，但当前不满足使用条件。
+
+当前代表：
+
+- Radiant Riposte 平时显示灰色遮罩，表示未获得 GuardCounter Ready。
+
+不要和什么混淆：
+
+- Cooldown：技能使用后等待恢复。
+- Condition Locked：技能条件未满足，不是冷却。
+
+## 条件触发可用 / Proc Ready
+
+英文 / 代码名：
+
+- Proc Ready
+
+含义：
+
+- 通过机制处理获得的限时可用状态。
+
+当前代表：
+
+- Radiant Riposte 在 Guard Resonance 授权后进入 10 秒 Ready，技能格发光并显示剩余时间。
+
 ## 压线贪
 
 正式中文名：
@@ -806,6 +974,54 @@ Hikari 系统关联：
 备注：
 
 这是 Hikari 系统当前最核心的玩法目标之一。不要把光负荷设计成纯惩罚条。
+
+## CircleAoE / 圆形 AoE
+
+正式中文名：
+
+- 圆形 AoE
+
+英文 / 代码名：
+
+- CircleAoE
+- EnemySkillType.CircleAoE
+
+含义：
+
+- 以 Boss / 敌人为中心的圆形伤害范围。
+- 当前第一版要求玩家远离 Boss 到范围外躲避。
+
+当前规则：
+
+- 有读条。
+- 读条期间显示圆形范围提示。
+- 读条结束后提示消失，并按 XZ 平面距离判定一次伤害。
+- 当前不触发守护共鸣 / 守护反击。
+
+## 月环 / DonutAoE / Moon Ring
+
+正式中文名：
+
+- 月环
+
+英文 / 代码名：
+
+- DonutAoE
+- Moon Ring
+- EnemySkillType.DonutAoE
+
+含义：
+
+- 以 Boss 为中心的环形 AoE。Boss 脚下内圈安全，外侧圆环为伤害区。
+- 玩家需要贴近 Boss 或离开外圈来躲避，当前主要表达“贴近 Boss 安全”的 FF14 式机制语言。
+
+当前规则：
+
+- `distance <= innerRadius`：安全。
+- `innerRadius < distance <= outerRadius`：命中。
+- `distance > outerRadius`：安全。
+- 提示应渲染为真正的环形，只渲染伤害区域；内圈安全区不应有颜色。
+- 当前不触发守护共鸣 / 守护反击。
 
 ---
 
@@ -1143,6 +1359,7 @@ Hikari 系统关联：
 - 紧急祈愿 / Emergency Prayer
 - 守护共鸣 / Guard Resonance
 - 溢光反震 / Overflow Counter
+- 守护反击 / Radiant Riposte
 - 导光 / Light Channeling
 - 灯 / Lamp
 - 光容器 / Vessel of Light
@@ -1151,6 +1368,14 @@ Hikari 系统关联：
 - 减伤 / Damage Reduction
 - 读条重击 / CastAttack
 - 压线贪 / Playing the Edge
+- Basic Attack / BasicMeleeAttack
+- Area Attack / BasicAreaAttack
+- 技能距离类型 / PlayerSkillRangeType
+- 条件锁定 / Condition Locked
+- 条件触发可用 / Proc Ready
+- 圆形 AoE / CircleAoE
+- 月环 / DonutAoE / Moon Ring
+- 战斗文字来源标签 / CombatTextSourceLabel
 - PDU / Player Damage Unit
 - PHU / Player Health Unit
 - BU / Burden Unit
