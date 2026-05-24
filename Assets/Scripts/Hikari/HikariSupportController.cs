@@ -146,7 +146,7 @@ public class HikariSupportController : MonoBehaviour
     /// 引数は本次 CastAttack を実行した攻撃者の Transform（null の場合あり）。
     /// 外部コントローラー（PlayerGuardCounterController など）が購読して反撃機会を管理する。
     /// </summary>
-    public event System.Action<Transform> OnGuardResonanceTriggered;
+    public event System.Action<Transform, bool> OnGuardResonanceTriggered;
 
     
 public bool  IsBurdenRecoveryEnabled  => enableBurdenRecovery;
@@ -426,7 +426,8 @@ private bool TryTriggerGuardResonance(Transform attacker)
         if (logDebugMessages)
             Debug.Log("[HikariSupport] 守护共鸣 / Guard Resonance 触发 — 光负荷减少。");
 
-        OnGuardResonanceTriggered?.Invoke(attacker);
+        bool grantsGuardCounter = HasCounterGrantingDamageReductionSkill();
+        OnGuardResonanceTriggered?.Invoke(attacker, grantsGuardCounter);
 
         if (shouldLightCounter)
             TryTriggerLightCounter(attacker);
@@ -512,6 +513,25 @@ private bool TryTriggerGuardResonance(Transform attacker)
             if (!state.IsActive)           continue;
             if (state.SkillData == null)   continue;
             if (state.SkillData.EffectType == PlayerSkillEffectType.DamageReduction)
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Active な DamageReduction スキルの中に GrantsGuardCounter == true のものがあれば true。
+    /// Radiant Riposte の授権判定に使用する。skillId で判断しない。
+    /// </summary>
+    private bool HasCounterGrantingDamageReductionSkill()
+    {
+        if (_playerSkillManager == null) return false;
+        foreach (var state in _playerSkillManager.RuntimeStates)
+        {
+            if (state == null)           continue;
+            if (!state.IsActive)         continue;
+            if (state.SkillData == null) continue;
+            if (state.SkillData.EffectType == PlayerSkillEffectType.DamageReduction
+                && state.SkillData.GrantsGuardCounter)
                 return true;
         }
         return false;

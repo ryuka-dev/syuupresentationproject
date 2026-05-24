@@ -16,6 +16,7 @@ MonoBehaviour:
   skillName: Stone Guard
   description: "\u8F7B\u91CF\u51CF\u4F24"
   icon: {fileID: 21300000, guid: 9c2f8b0a2f33f6046adc28ff41a1aa42, type: 3}
+  localizationKey: 
   inputSlot: 3
   keyLabel: 3
   cooldown: 20
@@ -26,4 +27,5 @@ MonoBehaviour:
   areaRadius: 3
   areaDamageMultiplier: 0.8
   healingReceivedMultiplier: 1.5
+  grantsGuardCounter: 0
   visualType: 1

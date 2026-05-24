@@ -117,6 +117,7 @@ public class PlayerSkillManager : MonoBehaviour
     // 最後に対応キーを押した技能の RuntimeState（冷却中でも更新される）
     private PlayerSkillRuntimeState lastPressedSkillState;
     private PlayerGuardCounterController _guardCounterController;
+    private HealthComponent                  _playerHealth;
 
     /// <summary>最後にキーを押した技能の RuntimeState。一度も押していなければ null。</summary>
 
@@ -173,6 +174,7 @@ public class PlayerSkillManager : MonoBehaviour
     {
         BuildRuntimeStates();
         _guardCounterController = GetComponent<PlayerGuardCounterController>();
+        _playerHealth = GetComponent<HealthComponent>();
     }
 
     private void Update()
@@ -225,6 +227,9 @@ public class PlayerSkillManager : MonoBehaviour
 
 private void HandleSkillInput()
     {
+        // 死亡時はスキル入力を無視する（全スキル共通）
+        if (_playerHealth != null && _playerHealth.IsDead) return;
+
         var kb = Keyboard.current;
         if (kb == null) return;
 

@@ -3,13 +3,17 @@
 /// <summary>
 /// 守護反击 / Radiant Riposte コントローラー。
 ///
-/// 守护共鸣 / Guard Resonance 成功時に反撃機会を取得する。
+/// Guard Resonance 成功時に反撃機会を取得する。
 /// 入力は PlayerSkillManager が分発し、TryUseCounter(skillData) で実行する。
 /// このスクリプト自身はキーボードを直接読まない。
 ///
-/// 接続: HikariSupportController.OnGuardResonanceTriggered イベントを購読。
-/// 伤害: PlayerCombatStats.BaseNormalAttackDamage * counterDamagePdu（PDU 換算）。
-/// 伤害来源名: TryUseCounter に渡された PlayerSkillData.SkillName / LocalizationKey。
+/// 授権ルール:
+///   Guard Resonance イベントの grantsGuardCounter == true の場合のみ Ready を更新。
+///   false の場合（Stone Guard のみで Guard Resonance）は Ready を変更しない。
+///
+/// 死亡ガード:
+///   HealthComponent.OnDied を購読して死亡時に ClearCounter する。
+///   CanUseCounter / TryUseCounter で IsDead を確認する。
 /// </summary>
 public class PlayerGuardCounterController : MonoBehaviour
 {
@@ -30,9 +34,10 @@ public class PlayerGuardCounterController : MonoBehaviour
 
     // ─── 運行時状態 ──────────────────────────────────────────────
 
-    private bool      _isReady;
-    private float     _remainingWindow;
-    private Transform _counterTarget;
+    private bool             _isReady;
+    private float            _remainingWindow;
+    private Transform        _counterTarget;
+    private HealthComponent  _playerHealth;   // 自身 HealthComponent（死亡チェック用）
 
     // ─── Unity ライフサイクル ──────────────────────────────────────
 
@@ -42,21 +47,24 @@ public class PlayerGuardCounterController : MonoBehaviour
             combatStats = GetComponent<PlayerCombatStats>();
         if (combatStats == null)
             Debug.LogWarning("[RadiantRiposte] PlayerCombatStats not found.");
+
+        _playerHealth = GetComponent<HealthComponent>();
     }
 
     private void Start()
     {
         ResolveHikariSupport();
+        SubscribeToPlayerDeath();
     }
 
     private void OnDestroy()
     {
         UnsubscribeFromHikari();
+        UnsubscribeFromPlayerDeath();
     }
 
     private void Update()
     {
-        // 有効時間カウントダウンのみ（キーボード入力は PlayerSkillManager が担当）
         if (_isReady)
         {
             _remainingWindow -= Time.deltaTime;
@@ -70,33 +78,57 @@ public class PlayerGuardCounterController : MonoBehaviour
 
     // ─── Guard Resonance イベントハンドラ ─────────────────────────
 
-    private void HandleGuardResonanceTriggered(Transform attacker)
+    /// <summary>
+    /// HikariSupportController.OnGuardResonanceTriggered(attacker, grantsGuardCounter) のハンドラ。
+    /// grantsGuardCounter == true の場合のみ Ready を更新・刷新する。
+    /// false（Stone Guard のみ）の場合は既存の Ready 状態を変えない。
+    /// </summary>
+    private void HandleGuardResonanceTriggered(Transform attacker, bool grantsGuardCounter)
     {
+        if (!grantsGuardCounter)
+        {
+            Debug.Log("[RadiantRiposte] Guard Resonance 触发（grantsGuardCounter=false）— Radiant Riposte は更新しない。");
+            return;
+        }
+
         _isReady         = true;
         _counterTarget   = attacker;
         _remainingWindow = counterWindowSeconds;
-        Debug.Log($"[RadiantRiposte] Radiant Riposte Ready — 攻击者: {(attacker != null ? attacker.name : "null")} | 有效时间: {counterWindowSeconds}s");
+        Debug.Log($"[RadiantRiposte] Radiant Riposte Ready（Iron Bulwark 授権）— 攻击者: {(attacker != null ? attacker.name : "null")} | 有效时间: {counterWindowSeconds}s");
+    }
+
+    // ─── 死亡ハンドラ ────────────────────────────────────────────
+
+    private void HandlePlayerDied()
+    {
+        if (!_isReady) return;
+        Debug.Log("[RadiantRiposte] 玩家死亡 — Radiant Riposte Ready 清除。");
+        ClearCounter();
     }
 
     // ─── 公開状態プロパティ ───────────────────────────────────────
 
+    /// <summary>プレイヤーが生存しているか。</summary>
+    private bool IsPlayerAlive => _playerHealth == null || !_playerHealth.IsDead;
+
     /// <summary>反撃機会が 10 秒窓内にあるか。</summary>
     public bool IsCounterReady => _isReady;
 
-    /// <summary>残り有効時間（秒）。IsCounterReady が false なら 0。</summary>
+    /// <summary>残り有効時間（秒）。</summary>
     public float CounterRemainingTime => _remainingWindow;
 
-    /// <summary>最大有効時間（秒）。Inspector で設定。</summary>
+    /// <summary>最大有効時間（秒）。</summary>
     public float CounterWindowSeconds => counterWindowSeconds;
 
     /// <summary>
     /// 今すぐ反撃を実行できるか。
-    /// IsCounterReady かつ目標が生存している場合のみ true。
+    /// IsCounterReady かつプレイヤー生存 かつ目標が生存している場合のみ true。
     /// </summary>
     public bool CanUseCounter
     {
         get
         {
+            if (!IsPlayerAlive)           return false;
             if (!_isReady || _counterTarget == null) return false;
             var h = _counterTarget.GetComponent<HealthComponent>()
                  ?? _counterTarget.GetComponentInParent<HealthComponent>();
@@ -104,10 +136,8 @@ public class PlayerGuardCounterController : MonoBehaviour
         }
     }
 
-    // 後方互換プロパティ（旧コードが参照している場合向け）
-    /// <summary>IsCounterReady の別名。</summary>
+    // 後方互換プロパティ
     public bool IsReady => _isReady;
-    /// <summary>CounterRemainingTime の別名。</summary>
     public float RemainingWindow => _remainingWindow;
 
     // ─── 公開実行メソッド ─────────────────────────────────────────
@@ -119,6 +149,14 @@ public class PlayerGuardCounterController : MonoBehaviour
     /// </summary>
     public bool TryUseCounter(PlayerSkillData skillData)
     {
+        // 死亡チェック（二重ガード）
+        if (!IsPlayerAlive)
+        {
+            Debug.Log("[RadiantRiposte] 玩家已死亡 — 反撃不可。");
+            ClearCounter();
+            return false;
+        }
+
         if (!CanUseCounter)
         {
             if (_isReady && _counterTarget == null)
@@ -128,9 +166,9 @@ public class PlayerGuardCounterController : MonoBehaviour
             }
             else if (_isReady)
             {
-                var h = _counterTarget.GetComponent<HealthComponent>()
-                     ?? _counterTarget.GetComponentInParent<HealthComponent>();
-                if (h != null && h.IsDead)
+                var hCheck = _counterTarget.GetComponent<HealthComponent>()
+                          ?? _counterTarget.GetComponentInParent<HealthComponent>();
+                if (hCheck != null && hCheck.IsDead)
                 {
                     Debug.Log("[RadiantRiposte] 攻击者已死亡，反撃失败。Ready 清除。");
                     ClearCounter();
@@ -145,7 +183,6 @@ public class PlayerGuardCounterController : MonoBehaviour
         float basePdu = combatStats != null ? combatStats.BaseNormalAttackDamage : 20f;
         float damage  = basePdu * counterDamagePdu;
 
-        // 伤害来源名は PlayerSkillData から生成（ハードコードなし）
         var sourceLabel = new CombatTextSourceLabel
         {
             localizationKey = skillData != null ? skillData.LocalizationKey : "skill.player.radiant_riposte.name",
@@ -153,7 +190,6 @@ public class PlayerGuardCounterController : MonoBehaviour
         };
 
         targetHealth.TakeDamage(damage, transform, sourceLabel);
-
         Debug.Log($"[RadiantRiposte] 守護反击命中！ 目标: {targetHealth.name} | 伤害: {damage} ({counterDamagePdu} PDU) | 来源: {sourceLabel.GetDisplayText()}");
 
         ClearCounter();
@@ -188,5 +224,17 @@ public class PlayerGuardCounterController : MonoBehaviour
     {
         if (hikariSupport != null)
             hikariSupport.OnGuardResonanceTriggered -= HandleGuardResonanceTriggered;
+    }
+
+    private void SubscribeToPlayerDeath()
+    {
+        if (_playerHealth != null)
+            _playerHealth.OnDied += HandlePlayerDied;
+    }
+
+    private void UnsubscribeFromPlayerDeath()
+    {
+        if (_playerHealth != null)
+            _playerHealth.OnDied -= HandlePlayerDied;
     }
 }

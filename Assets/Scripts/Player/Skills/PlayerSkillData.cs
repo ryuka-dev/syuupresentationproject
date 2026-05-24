@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 /// <summary>
 /// 玩家技能输入槽位。
@@ -79,6 +79,10 @@ public class PlayerSkillData : ScriptableObject
     [SerializeField, Min(0f)]
     private float healingReceivedMultiplier = 1f;
 
+    [Header("Guard Counter")]
+    [Tooltip("true の場合、このスキルが Active 時に Guard Resonance が成功すると Radiant Riposte Ready を付与する。\nデフォルト false。Iron Bulwark のみ true に設定する。")]
+    [SerializeField] private bool grantsGuardCounter = false;
+
     [Header("视觉表现")]
     [SerializeField] private PlayerSkillVisualType visualType = PlayerSkillVisualType.None;
 
@@ -100,6 +104,7 @@ public class PlayerSkillData : ScriptableObject
     public float                 AreaDamageMultiplier      => areaDamageMultiplier;
     public float                 HealingReceivedMultiplier => healingReceivedMultiplier;
     public PlayerSkillVisualType VisualType                => visualType;
+    public bool                 GrantsGuardCounter        => grantsGuardCounter;
 
     // ─── OnValidate ───────────────────────────────────────────────
 

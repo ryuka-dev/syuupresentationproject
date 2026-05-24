@@ -16,6 +16,7 @@ MonoBehaviour:
   skillName: Iron Bulwark
   description: "\u77ED\u65F6\u95F4\u964D\u4F4E\u53D7\u5230\u7684\u4F24\u5BB3\uFF0C\u7528\u4E8E\u627F\u53D7\u654C\u4EBA\u7684\u5F3A\u529B\u653B\u51FB\u3002"
   icon: {fileID: 21300000, guid: 9912ea245f6acd84491e21695256c270, type: 3}
+  localizationKey: 
   inputSlot: 2
   keyLabel: 2
   cooldown: 12
@@ -26,4 +27,5 @@ MonoBehaviour:
   areaRadius: 3
   areaDamageMultiplier: 0.8
   healingReceivedMultiplier: 1
+  grantsGuardCounter: 1
   visualType: 1
