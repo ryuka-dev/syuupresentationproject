@@ -1,9 +1,8 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// 玩家技能输入槽位。
 /// PlayerSkillManager 会根据槽位映射到 New Input System 的对应按键。
-/// 不直接依赖旧 UnityEngine.Input 或 KeyCode。
 /// </summary>
 public enum PlayerSkillInputSlot
 {
@@ -21,8 +20,7 @@ public enum PlayerSkillInputSlot
 
 /// <summary>
 /// 玩家技能效果类型。
-/// 第一版只支持 Iron Bulwark 的 DamageReduction。
-/// 后续添加新类型时在此 enum 扩展。
+/// GuardCounter: 条件型反击技能，由 PlayerGuardCounterController 控制可用状态。
 /// </summary>
 public enum PlayerSkillEffectType
 {
@@ -30,12 +28,11 @@ public enum PlayerSkillEffectType
     DamageReduction,
     AttackPowerMultiplier,
     AreaDamage,
+    GuardCounter,
 }
 
 /// <summary>
 /// 玩家技能视觉表现类型。
-/// DefenseRing 对应 Iron Bulwark 的脚下防御光环。
-/// 第一版只存数据，不接入视觉逻辑。
 /// </summary>
 public enum PlayerSkillVisualType
 {
@@ -46,7 +43,6 @@ public enum PlayerSkillVisualType
 /// <summary>
 /// 玩家技能静态数据 ScriptableObject。
 /// 只保存技能参数，不持有运行时状态，不引用 Player 或 Scene 对象。
-/// 通过 Create > Game > Player Skill Data 创建资产。
 /// </summary>
 [CreateAssetMenu(fileName = "NewPlayerSkillData", menuName = "Game/Player Skill Data")]
 public class PlayerSkillData : ScriptableObject
@@ -57,6 +53,10 @@ public class PlayerSkillData : ScriptableObject
     [TextArea]
     [SerializeField] private string description;
     [SerializeField] private Sprite icon;
+
+    [Header("本地化")]
+    [Tooltip("将来接入 Localization 系统时使用的 Key。当前 GetDisplayText() 返回 skillName。")]
+    [SerializeField] private string localizationKey = "";
 
     [Header("输入设置")]
     [SerializeField] private PlayerSkillInputSlot inputSlot = PlayerSkillInputSlot.None;
@@ -71,34 +71,35 @@ public class PlayerSkillData : ScriptableObject
     [SerializeField] private float                 damageTakenMultiplier = 1f;
     [SerializeField] private float                 attackPowerMultiplier = 1f;
 
-        [Header("AOE 伤害参数（EffectType = AreaDamage 时有效）")]
-    [SerializeField] private float areaRadius            = 3f;
-    [SerializeField] private float areaDamageMultiplier  = 0.8f;
+    [Header("AOE 伤害参数（EffectType = AreaDamage 时有效）")]
+    [SerializeField] private float areaRadius           = 3f;
+    [SerializeField] private float areaDamageMultiplier = 0.8f;
+
     [Header("治疗参数")]
     [SerializeField, Min(0f)]
     private float healingReceivedMultiplier = 1f;
 
-
-[Header("视觉表现")]
+    [Header("视觉表现")]
     [SerializeField] private PlayerSkillVisualType visualType = PlayerSkillVisualType.None;
 
     // ─── 公开只读属性 ─────────────────────────────────────────────
 
-    public string                SkillId               => skillId;
-    public string                SkillName             => skillName;
-    public string                Description           => description;
-    public Sprite                Icon                  => icon;
-    public PlayerSkillInputSlot  InputSlot             => inputSlot;
-    public string                KeyLabel              => keyLabel;
-    public float                 Cooldown              => cooldown;
-    public float                 Duration              => duration;
-    public PlayerSkillEffectType EffectType            => effectType;
-    public float                 DamageTakenMultiplier => damageTakenMultiplier;
-    public float                 AttackPowerMultiplier => attackPowerMultiplier;
-        public float                 AreaRadius            => areaRadius;
-    public float                 AreaDamageMultiplier  => areaDamageMultiplier;
-public float                 HealingReceivedMultiplier => healingReceivedMultiplier;
-public PlayerSkillVisualType VisualType            => visualType;
+    public string                SkillId                   => skillId;
+    public string                SkillName                 => skillName;
+    public string                Description               => description;
+    public Sprite                Icon                      => icon;
+    public string                LocalizationKey           => localizationKey;
+    public PlayerSkillInputSlot  InputSlot                 => inputSlot;
+    public string                KeyLabel                  => keyLabel;
+    public float                 Cooldown                  => cooldown;
+    public float                 Duration                  => duration;
+    public PlayerSkillEffectType EffectType                => effectType;
+    public float                 DamageTakenMultiplier     => damageTakenMultiplier;
+    public float                 AttackPowerMultiplier     => attackPowerMultiplier;
+    public float                 AreaRadius                => areaRadius;
+    public float                 AreaDamageMultiplier      => areaDamageMultiplier;
+    public float                 HealingReceivedMultiplier => healingReceivedMultiplier;
+    public PlayerSkillVisualType VisualType                => visualType;
 
     // ─── OnValidate ───────────────────────────────────────────────
 
@@ -114,10 +115,9 @@ public PlayerSkillVisualType VisualType            => visualType;
         if (duration < 0f) duration = 0f;
 
         damageTakenMultiplier = Mathf.Clamp(damageTakenMultiplier, 0f, 1f);
-        if (attackPowerMultiplier < 0f) attackPowerMultiplier = 0f;
-        if (areaRadius           < 0f) areaRadius           = 0f;
-        if (areaDamageMultiplier < 0f) areaDamageMultiplier = 0f;
+        if (attackPowerMultiplier    < 0f) attackPowerMultiplier    = 0f;
+        if (areaRadius              < 0f) areaRadius              = 0f;
+        if (areaDamageMultiplier    < 0f) areaDamageMultiplier    = 0f;
         if (healingReceivedMultiplier < 0f) healingReceivedMultiplier = 0f;
-
     }
 }

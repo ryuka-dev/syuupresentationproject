@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 90bf24020f4e1cb4c8c7417a83149f7b, type: 3}
+  m_Name: Skill_RadiantRiposte
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerSkillData
+  skillId: radiant_riposte
+  skillName: Radiant Riposte
+  description: "Guard Resonance \u6210\u529F\u540E\uFF0C10 \u79D2\u5185\u53EF\u53D1\u52A8\u7684\u53CD\u51FB\u3002\u5BF9\u89E6\u53D1
+    CastAttack \u7684\u654C\u4EBA\u9020\u6210 3PDU \u4F24\u5BB3\u3002"
+  icon: {fileID: 21300000, guid: 9c2f8b0a2f33f6046adc28ff41a1aa42, type: 3}
+  localizationKey: skill.player.radiant_riposte.name
+  inputSlot: 5
+  keyLabel: 5
+  cooldown: 0
+  duration: 0
+  effectType: 4
+  damageTakenMultiplier: 1
+  attackPowerMultiplier: 1
+  areaRadius: 3
+  areaDamageMultiplier: 0.8
+  healingReceivedMultiplier: 1
+  visualType: 0

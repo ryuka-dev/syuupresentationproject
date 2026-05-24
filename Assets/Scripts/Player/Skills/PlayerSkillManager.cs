@@ -116,6 +116,7 @@ public class PlayerSkillManager : MonoBehaviour
 
     // 最後に対応キーを押した技能の RuntimeState（冷却中でも更新される）
     private PlayerSkillRuntimeState lastPressedSkillState;
+    private PlayerGuardCounterController _guardCounterController;
 
     /// <summary>最後にキーを押した技能の RuntimeState。一度も押していなければ null。</summary>
 
@@ -171,6 +172,7 @@ public class PlayerSkillManager : MonoBehaviour
     private void Awake()
     {
         BuildRuntimeStates();
+        _guardCounterController = GetComponent<PlayerGuardCounterController>();
     }
 
     private void Update()
@@ -234,7 +236,17 @@ private void HandleSkillInput()
             {
                 // 冷却中でも「最後に押した技能」として記録する
                 lastPressedSkillState = state;
-                TryActivateSkill(state);
+                // GuardCounter: 反撃実行を PlayerGuardCounterController に委譲。冷却なし。
+                if (state.SkillData.EffectType == PlayerSkillEffectType.GuardCounter)
+                {
+                    if (_guardCounterController != null)
+                        _guardCounterController.TryUseCounter(state.SkillData);
+                    // GuardCounter は普通の TryActivate / Cooldown に入れない
+                }
+                else
+                {
+                    TryActivateSkill(state);
+                }
             }
         }
     }
