@@ -1,6 +1,6 @@
 # BALANCE_BASELINE.md
 
-最后更新：2026-05-21  
+最后更新：2026-05-25  
 文档用途：记录第一版战斗数值基准、单位系统、Hikari 光负荷模型与遭遇预算。  
 术语规则：Hikari 系统正式术语以 `GLOSSARY.md` 为准；本文件只在必要处保留英文 / 代码名作对照。  
 注意：本文件不是最终平衡表，而是用于当前原型阶段验证核心玩法是否成立的测试基准。
@@ -150,6 +150,7 @@ PDU 用于描述：
 
 ```text
 玩家普通攻击 = 1 PDU = 20 damage
+Radiant Riposte / 守护反击 = 3 PDU = 60 damage
 溢光反震 = 1.5 PDU = 30 damage
 普通怪 HP = 5 PDU = 100 HP
 精英怪 HP = 15～25 PDU = 300～500 HP
@@ -248,40 +249,143 @@ maxBurden = 100 = 20 BU
 玩家普通攻击应作为所有玩家输出技能的最小参照单位。
 ```
 
+## 8.1 玩家技能标准距离
+
+当前第一版技能距离统一使用 `PlayerSkillRangeType`：
+
+| 类型 | 用途 | 距离 |
+|---|---|---:|
+| Self | 自身释放技能 | 0m |
+| Melee | 一般近战攻击距离 | 3m |
+| Area | 一般玩家 AOE 范围 | 5m |
+| Ranged | 一般远距离攻击 | 20m |
+| Custom | 个别技能特殊范围 | customRange |
+
+当前玩家技能对应：
+
+```text
+Basic Attack = Melee = 3m
+Iron Bulwark = Self = 0m
+Stone Guard = Self = 0m
+Area Attack = Area = 5m
+Radiant Riposte = Ranged = 20m
+```
+
+说明：
+
+```text
+技能执行器应优先读取 PlayerSkillData.EffectiveRange。
+不要在不同脚本里分散写死 3m / 5m / 20m。
+```
+
 ---
 
-# 9. 玩家减伤技能基准
+# 9. 玩家技能基准
 
-## 9.1 Iron Bulwark
+## 9.1 Basic Attack / BasicMeleeAttack
+
+```text
+类型：BasicMeleeAttack
+距离：Melee = 3m
+伤害：1 PDU = 20 enemy damage（Tier 1 无装备基准）
+冷却：与 Area Attack 共享基础攻击冷却，当前由 PlayerBasicAttackController.basicAttackRecast 控制
+```
+
+说明：
+
+```text
+Basic Attack 是所有玩家输出技能的最小参照单位。
+当前已注册为 PlayerSkillData，由 PlayerSkillManager 分发，PlayerBasicAttackController 执行。
+```
+
+## 9.2 Area Attack / BasicAreaAttack
+
+```text
+类型：BasicAreaAttack
+距离：Area = 5m
+伤害倍率：0.4 × 当前普通攻击最终伤害
+冷却：与 Basic Attack 共享基础攻击冷却
+```
+
+说明：
+
+```text
+Area Attack 是基础攻击变体，不是独立爆发技能。
+按 1 或 4 成功后，1 / 4 都应显示同一个共享冷却。
+```
+
+## 9.3 Iron Bulwark
 
 当前定位：
 
 ```text
-标准短 CD 减伤技能
+短窗口强减伤技能。
+用于承受 CastAttack，并授予 Radiant Riposte / 守护反击机会。
 ```
 
 当前基准：
 
 ```text
 类型：DamageReduction
-受到伤害倍率：0.5
-持续时间：4 秒
-冷却：12 秒
-```
-
-效果示例：
-
-```text
-精英 CastAttack = 5 PHU = 50 damage
-使用 Iron Bulwark 后 = 2.5 PHU = 25 damage
+距离：Self = 0m
+grantsGuardCounter = true
+当前持续时间、冷却、减伤倍率以 Skill_IronBulwark.asset Inspector 为准。
 ```
 
 设计目标：
 
 ```text
 玩家不开减伤吃读条重击会明显危险。
-玩家正确开减伤后，伤害明显下降。
-Hikari 因玩家正确承伤而触发守护共鸣。
+玩家正确开 Iron Bulwark 后，伤害明显下降，Hikari 触发守护共鸣，并获得 10 秒 Radiant Riposte 窗口。
+```
+
+## 9.4 Stone Guard
+
+当前定位：
+
+```text
+持续压力用减伤 + 接 Hikari 治疗窗口。
+```
+
+当前基准：
+
+```text
+类型：DamageReduction
+距离：Self = 0m
+grantsGuardCounter = false
+healingReceivedMultiplier = 1.5
+当前持续时间、冷却、减伤倍率以 Skill_StoneGuard.asset Inspector 为准。
+```
+
+设计目标：
+
+```text
+Stone Guard 可以触发守护共鸣并降低光负荷，但不授予 Radiant Riposte。
+Stone Guard Active 期间被 Hikari 治疗时，应明显提高治疗收益。
+```
+
+## 9.5 Radiant Riposte / 守护反击
+
+当前定位：
+
+```text
+成功处理 CastAttack 后获得的手动反击奖励。
+```
+
+当前基准：
+
+```text
+类型：GuardCounter
+距离：Ranged = 20m
+伤害：3 PDU = 60 enemy damage
+窗口：Guard Resonance 授权后 10 秒
+冷却：无普通 cooldown；限制来自 Guard Resonance 授权窗口
+```
+
+设计目标：
+
+```text
+玩家不是“亮了就按”，而是正确用 Iron Bulwark 承受关键攻击后，获得一次明确输出奖励。
 ```
 
 ---
@@ -586,6 +690,51 @@ CastAttack 读条建议 = 1.5～2.5 秒
 Hikari 光溢出时，正确处理 CastAttack 可以触发溢光反震。
 ```
 
+
+## 15.3 Boss AoE 技能基准
+
+### CircleAoE / Boss Shockwave
+
+```text
+技能资产：Assets/Skills/Enemy/SK_CircleAoE_BossShockwave.asset
+类型：CircleAoE
+伤害：30 player damage = 3 PHU
+读条：2.5 秒
+冷却：12 秒
+半径：5m
+处理方式：远离 Boss 到范围外
+```
+
+说明：
+
+```text
+读条期间显示圆形地面提示。
+读条结束提示消失后，只按 XZ 平面距离判定一次伤害。
+不触发 Guard Resonance / Radiant Riposte。
+```
+
+### DonutAoE / Moon Ring / 月环
+
+```text
+技能资产：Assets/Skills/Enemy/SK_DonutAoE_MoonRing.asset
+类型：DonutAoE
+伤害：35 player damage = 3.5 PHU
+读条：3.0 秒
+冷却：14 秒
+内圈安全半径：2.8m
+外圈半径：7.0m
+处理方式：贴近 Boss 到内圈安全区，或离开外圈之外
+```
+
+说明：
+
+```text
+提示使用 DonutAoETelegraphController 程序化生成真环形 Mesh。
+只渲染伤害环区域，内圈安全区不渲染。
+读条结束后按 inner < distance <= outer 判定一次伤害。
+不触发 Guard Resonance / Radiant Riposte。
+```
+
 ---
 
 # 16. Encounter Budget / 遭遇预算
@@ -858,6 +1007,14 @@ maxBurden = 100 = 20 BU
 溢光反震触发区间 = 80%～99% 光负荷 / Burden
 导光封锁 / Overload = 100 Burden = 20 BU
 导光恢复阈值 = 60 Burden = 12 BU
+
+玩家技能标准距离：Self = 0m, Melee = 3m, Area = 5m, Ranged = 20m
+Basic Attack = 1 PDU = 20 enemy damage, range = 3m
+Area Attack = 0.4 × 当前普通攻击最终伤害, range = 5m
+Radiant Riposte = 3 PDU = 60 enemy damage, range = 20m, window = 10s
+
+CircleAoE / Boss Shockwave = 30 player damage, castTime = 2.5s, radius = 5m
+DonutAoE / Moon Ring = 35 player damage, castTime = 3.0s, inner = 2.8m, outer = 7.0m
 ```
 
 ---
@@ -1029,7 +1186,7 @@ SkeletonBossEnemy_Variant 能稳定释放 CastAttack。
 
 ```text
 玩家正确操作：
-能承受危险攻击，降低 Hikari 光负荷，并在光溢出时获得反击收益。
+能承受危险攻击，降低 Hikari 光负荷，获得 Radiant Riposte 等处理奖励，并在光溢出时获得额外反击收益。
 
 玩家错误操作：
 Hikari 会救场，但光负荷会恶化。
