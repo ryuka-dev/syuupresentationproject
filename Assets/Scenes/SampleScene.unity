@@ -3179,8 +3179,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerSkillManager
   skills:
+  - {fileID: 11400000, guid: 46124cb49713d4942b2cfe61e44e998d, type: 2}
   - {fileID: 11400000, guid: 069070b5ecee0574fb042b7859fde373, type: 2}
   - {fileID: 11400000, guid: b26a4bde9ce8d634b95b743135f5b8e9, type: 2}
+  - {fileID: 11400000, guid: 10f9ee01c82a06941ba5897c975cbdc2, type: 2}
   - {fileID: 11400000, guid: 017ad94744434b049875d1d31b6e1e77, type: 2}
   logSkillActivation: 1
   runtimeStates: []

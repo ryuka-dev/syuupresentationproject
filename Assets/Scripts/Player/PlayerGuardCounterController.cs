@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 /// <summary>
 /// 守護反击 / Radiant Riposte コントローラー。
@@ -175,6 +175,22 @@ public class PlayerGuardCounterController : MonoBehaviour
                 }
             }
             return false;
+        }
+
+        // 距離チェック: skillData.EffectiveRange（Ranged = 20m）を超えていたら打てない。
+        // Ready は消費しない。プレイヤーが近づいてから再び試みることができる。
+        if (skillData != null)
+        {
+            float maxRange = skillData.EffectiveRange;
+            if (maxRange > 0f)
+            {
+                float dist = Vector3.Distance(transform.position, _counterTarget.position);
+                if (dist > maxRange)
+                {
+                    Debug.Log($"[RadiantRiposte] 攻击者が射程外 ({dist:F1}m > {maxRange}m) — 反撃失败。Ready は保持。");
+                    return false; // Ready 消費しない
+                }
+            }
         }
 
         var targetHealth = _counterTarget.GetComponent<HealthComponent>()

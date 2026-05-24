@@ -67,10 +67,13 @@ public class PlayerBasicAttackController : MonoBehaviour
             Debug.LogWarning("[PlayerBasicAttackController] Animator not found.");
     }
 
-    // ─── 公开 API（由 PlayerSkillController 调用） ────────────────
+    /// <summary>基礎攻撃の残りクールダウン秒数。0 以下なら使用可能。</summary>
+    public float BasicAttackCooldownRemaining => Mathf.Max(0f, _nextBasicAttackAllowedTime - Time.time);
+    /// <summary>基礎攻撃クールダウンの総時間（秒）。Inspector の basicAttackRecast と同値。</summary>
+    public float BasicAttackCooldownDuration  => basicAttackRecast;
+    /// <summary>基礎攻撃が現在使用可能かどうか。</summary>
+    public bool  IsBasicAttackReady           => Time.time >= _nextBasicAttackAllowedTime;
 
-    /// <summary>基础攻击冷却是否可用。</summary>
-    public bool IsBasicAttackReady() => Time.time >= _nextBasicAttackAllowedTime;
 
     /// <summary>
     /// 尝试对当前目标执行单体普通攻击。
@@ -80,7 +83,7 @@ public class PlayerBasicAttackController : MonoBehaviour
     public bool TrySingleTargetAttack()
     {
         // 冷却中
-        if (!IsBasicAttackReady())
+        if (!IsBasicAttackReady)
         {
             Debug.Log($"[PlayerBasicAttackController] Normal attack on cooldown ({(_nextBasicAttackAllowedTime - Time.time):F1}s remaining).");
             return false;
@@ -146,6 +149,87 @@ public class PlayerBasicAttackController : MonoBehaviour
         TriggerAttackAnimation();
         return true;
     }
+    // ─── SkillData 版攻撃メソッド（PlayerSkillManager から呼ばれる） ──
+
+    /// <summary>
+    /// PlayerSkillManager から Slot1 入力時に呼ばれる単体普通攻撃。
+    /// skillData.EffectiveRange（= Melee = 3m）を距離上限に使用する。
+    /// skillData が null の場合は旧 normalAttackRange にフォールバック。
+    /// </summary>
+    public bool TryExecuteBasicMeleeAttack(PlayerSkillData skillData)
+    {
+        float range = skillData != null ? skillData.EffectiveRange : normalAttackRange;
+
+        if (!IsBasicAttackReady)
+        {
+            Debug.Log($"[PlayerBasicAttackController] Normal attack on cooldown ({BasicAttackCooldownRemaining:F1}s remaining).");
+            return false;
+        }
+        if (_targeting == null || _targeting.CurrentTarget == null)
+        {
+            Debug.Log("[PlayerBasicAttackController] No target selected.");
+            return false;
+        }
+        Transform target = _targeting.CurrentTarget;
+        var health = target.GetComponentInChildren<HealthComponent>() ?? target.GetComponent<HealthComponent>();
+        if (health == null || health.IsDead) return false;
+        var targetFaction = target.GetComponent<FactionComponent>();
+        if (targetFaction == null) return false;
+        if (_selfFaction != null && !_selfFaction.ShouldAttack(targetFaction.faction)) return false;
+        float dist = Vector3.Distance(transform.position, target.position);
+        if (dist > range)
+        {
+            Debug.Log($"[PlayerBasicAttackController] Target out of range ({dist:F1}/{range}m).");
+            return false;
+        }
+        float finalDamage = CalculateNormalAttackDamage();
+        StartBasicAttackRecast();
+        health.TakeDamage(finalDamage, transform);
+        Debug.Log($"[PlayerBasicAttackController] Melee hit: {target.name}, damage={finalDamage:F1}");
+        TriggerAttackAnimation();
+        return true;
+    }
+
+    /// <summary>
+    /// PlayerSkillManager から Slot4 入力時に呼ばれる AOE 普通攻撃。
+    /// skillData.EffectiveRange（= Area = 5m）を AOE 半径に使用する。
+    /// skillData.AreaDamageMultiplier が正の値なら採用し、それ以外は areaBasicAttackDamageMultiplier にフォールバック。
+    /// skillData が null の場合は旧フィールド値にフォールバック。
+    /// </summary>
+    public bool TryExecuteBasicAreaAttack(PlayerSkillData skillData)
+    {
+        if (!IsBasicAttackReady)
+        {
+            Debug.Log($"[PlayerBasicAttackController] AOE attack on cooldown ({BasicAttackCooldownRemaining:F1}s remaining).");
+            return false;
+        }
+        float radius = skillData != null ? skillData.EffectiveRange : areaBasicAttackRadius;
+        float mult   = (skillData != null && skillData.AreaDamageMultiplier > 0f)
+                       ? skillData.AreaDamageMultiplier
+                       : areaBasicAttackDamageMultiplier;
+        float normalDamage = CalculateNormalAttackDamage();
+        float aoeDamage    = normalDamage * mult;
+        var hits    = Physics.OverlapSphere(transform.position, radius);
+        var damaged = new HashSet<HealthComponent>();
+        int hitCount = 0;
+        foreach (var col in hits)
+        {
+            if (col == null) continue;
+            var health = col.GetComponentInParent<HealthComponent>();
+            if (health == null || !damaged.Add(health)) continue;
+            if (health.gameObject == gameObject || health.IsDead) continue;
+            var tf = col.GetComponentInParent<FactionComponent>();
+            if (tf == null || _selfFaction == null) continue;
+            if (!_selfFaction.ShouldAttack(tf.faction)) continue;
+            health.TakeDamage(aoeDamage, transform);
+            hitCount++;
+        }
+        StartBasicAttackRecast();
+        Debug.Log($"[PlayerBasicAttackController] AOE executed. radius={radius}m, aoeDmg={aoeDamage:F1}, hits={hitCount}");
+        TriggerAttackAnimation();
+        return true;
+    }
+
 
     /// <summary>
     /// 尝试对玩家周围 areaBasicAttackRadius 范围内所有敌对目标执行 AOE 普通攻击。
@@ -155,7 +239,7 @@ public class PlayerBasicAttackController : MonoBehaviour
     public bool TryAreaBasicAttack()
     {
         // 冷却中
-        if (!IsBasicAttackReady())
+        if (!IsBasicAttackReady)
         {
             Debug.Log($"[PlayerBasicAttackController] AOE attack on cooldown ({(_nextBasicAttackAllowedTime - Time.time):F1}s remaining).");
             return false;

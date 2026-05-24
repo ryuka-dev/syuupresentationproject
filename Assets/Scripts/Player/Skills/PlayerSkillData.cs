@@ -1,26 +1,17 @@
-using UnityEngine;
+﻿using UnityEngine;
 
-/// <summary>
-/// 玩家技能输入槽位。
-/// PlayerSkillManager 会根据槽位映射到 New Input System 的对应按键。
-/// </summary>
+/// <summary>玩家技能输入槽位。</summary>
 public enum PlayerSkillInputSlot
 {
     None,
-    Slot1,
-    Slot2,
-    Slot3,
-    Slot4,
-    Slot5,
-    Slot6,
-    Slot7,
-    Slot8,
-    Slot9,
+    Slot1, Slot2, Slot3, Slot4, Slot5,
+    Slot6, Slot7, Slot8, Slot9,
 }
 
 /// <summary>
 /// 玩家技能效果类型。
-/// GuardCounter: 条件型反击技能，由 PlayerGuardCounterController 控制可用状态。
+/// BasicMeleeAttack / BasicAreaAttack: 普通攻击系，由 PlayerBasicAttackController 执行。
+/// GuardCounter: 条件型反击，由 PlayerGuardCounterController 执行。
 /// </summary>
 public enum PlayerSkillEffectType
 {
@@ -29,15 +20,32 @@ public enum PlayerSkillEffectType
     AttackPowerMultiplier,
     AreaDamage,
     GuardCounter,
+    BasicMeleeAttack,
+    BasicAreaAttack,
 }
 
-/// <summary>
-/// 玩家技能视觉表现类型。
-/// </summary>
+/// <summary>玩家技能视觉表现类型。</summary>
 public enum PlayerSkillVisualType
 {
     None,
     DefenseRing,
+}
+
+/// <summary>
+/// 技能有效距离の种类。
+///   Self   = 0m   (自身施放，无距离限制)
+///   Melee  = 3m   (近战单体攻击)
+///   Area   = 5m   (范围攻击半径)
+///   Ranged = 20m  (远程技能)
+///   Custom = customRange (Inspector 设定)
+/// </summary>
+public enum PlayerSkillRangeType
+{
+    Self,
+    Melee,
+    Area,
+    Ranged,
+    Custom,
 }
 
 /// <summary>
@@ -55,7 +63,7 @@ public class PlayerSkillData : ScriptableObject
     [SerializeField] private Sprite icon;
 
     [Header("本地化")]
-    [Tooltip("将来接入 Localization 系统时使用的 Key。当前 GetDisplayText() 返回 skillName。")]
+    [Tooltip("将来接入 Localization 系统时使用的 Key。")]
     [SerializeField] private string localizationKey = "";
 
     [Header("输入设置")]
@@ -71,7 +79,7 @@ public class PlayerSkillData : ScriptableObject
     [SerializeField] private float                 damageTakenMultiplier = 1f;
     [SerializeField] private float                 attackPowerMultiplier = 1f;
 
-    [Header("AOE 伤害参数（EffectType = AreaDamage 时有效）")]
+    [Header("AOE 伤害参数（EffectType = AreaDamage / BasicAreaAttack 时有效）")]
     [SerializeField] private float areaRadius           = 3f;
     [SerializeField] private float areaDamageMultiplier = 0.8f;
 
@@ -80,8 +88,12 @@ public class PlayerSkillData : ScriptableObject
     private float healingReceivedMultiplier = 1f;
 
     [Header("Guard Counter")]
-    [Tooltip("true の場合、このスキルが Active 時に Guard Resonance が成功すると Radiant Riposte Ready を付与する。\nデフォルト false。Iron Bulwark のみ true に設定する。")]
+    [Tooltip("true の場合、このスキルが Active 時に Guard Resonance が成功すると Radiant Riposte Ready を付与する。")]
     [SerializeField] private bool grantsGuardCounter = false;
+
+    [Header("距离设置")]
+    [SerializeField] private PlayerSkillRangeType rangeType   = PlayerSkillRangeType.Self;
+    [SerializeField, Min(0f)] private float       customRange = 0f;
 
     [Header("视觉表现")]
     [SerializeField] private PlayerSkillVisualType visualType = PlayerSkillVisualType.None;
@@ -103,8 +115,24 @@ public class PlayerSkillData : ScriptableObject
     public float                 AreaRadius                => areaRadius;
     public float                 AreaDamageMultiplier      => areaDamageMultiplier;
     public float                 HealingReceivedMultiplier => healingReceivedMultiplier;
+    public bool                  GrantsGuardCounter        => grantsGuardCounter;
+    public PlayerSkillRangeType  RangeType                 => rangeType;
+    public float                 CustomRange               => customRange;
     public PlayerSkillVisualType VisualType                => visualType;
-    public bool                 GrantsGuardCounter        => grantsGuardCounter;
+
+    /// <summary>
+    /// 技能の有効距離（m）。RangeType に基づいた標準距離を返す。
+    /// Self=0 / Melee=3 / Area=5 / Ranged=20 / Custom=customRange
+    /// </summary>
+    public float EffectiveRange => rangeType switch
+    {
+        PlayerSkillRangeType.Self   => 0f,
+        PlayerSkillRangeType.Melee  => 3f,
+        PlayerSkillRangeType.Area   => 5f,
+        PlayerSkillRangeType.Ranged => 20f,
+        PlayerSkillRangeType.Custom => customRange,
+        _                           => 0f
+    };
 
     // ─── OnValidate ───────────────────────────────────────────────
 
@@ -112,17 +140,17 @@ public class PlayerSkillData : ScriptableObject
     {
         if (string.IsNullOrEmpty(skillId))
             Debug.LogWarning($"[PlayerSkillData] {name}: skillId is empty.");
-
         if (string.IsNullOrEmpty(skillName))
             Debug.LogWarning($"[PlayerSkillData] {name}: skillName is empty.");
 
         if (cooldown < 0f) cooldown = 0f;
         if (duration < 0f) duration = 0f;
 
-        damageTakenMultiplier = Mathf.Clamp(damageTakenMultiplier, 0f, 1f);
+        damageTakenMultiplier     = Mathf.Clamp(damageTakenMultiplier, 0f, 1f);
         if (attackPowerMultiplier    < 0f) attackPowerMultiplier    = 0f;
         if (areaRadius              < 0f) areaRadius              = 0f;
         if (areaDamageMultiplier    < 0f) areaDamageMultiplier    = 0f;
         if (healingReceivedMultiplier < 0f) healingReceivedMultiplier = 0f;
+        if (customRange             < 0f) customRange             = 0f;
     }
 }

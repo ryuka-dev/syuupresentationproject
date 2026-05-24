@@ -28,4 +28,6 @@ MonoBehaviour:
   areaDamageMultiplier: 0.8
   healingReceivedMultiplier: 1
   grantsGuardCounter: 1
+  rangeType: 0
+  customRange: 0
   visualType: 1
