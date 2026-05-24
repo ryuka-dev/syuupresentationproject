@@ -1,6 +1,6 @@
 # PROJECT_STATE
 
-最后更新：2026-05-22  
+最后更新：2026-05-25  
 当前主要场景：`Assets/Scenes/SampleScene.unity`  
 Unity 版本：6000.4.3f1 (Unity 6)
 
@@ -35,9 +35,10 @@ Unity 版本：6000.4.3f1 (Unity 6)
 玩家移动
 → 鼠标左键点击或 Tab 从屏幕左到右循环选中敌人
 → 当前目标头顶显示倒三角指示器
-→ 按 1 使用单体普通攻击，按 4 使用 AOE 普通攻击；二者共享基础攻击冷却
-→ 按 PlayerSkillManager 注册的技能键使用玩家技能（当前主要用于 Slot2 / Slot3 / Slot5 / Slot6 等技能栏技能）
-→ Canvas 技能栏显示 PlayerSkillManager 注册技能的图标、持续时间与冷却
+→ 按 PlayerSkillManager 注册的技能键使用玩家技能：当前 1/2/3/4/5 均注册为 PlayerSkillData
+→ 1 为 Basic Attack（3m 近战），4 为 Area Attack（5m AOE），二者由 PlayerBasicAttackController 执行并共享基础攻击冷却
+→ 2/3 为减伤技能，5 为 Radiant Riposte / 守护反击（GuardCounter，20m）
+→ Canvas 技能栏显示 PlayerSkillManager.skills 中所有注册技能；基础攻击共享冷却、减伤冷却、GuardCounter 条件锁定 / Ready 均有对应显示
 → PlayerStatusEffectController 根据 Active 技能修正玩家受到的伤害 / 普通攻击输出伤害
 → 伤害 / 治疗飘字显示玩家打出的实际伤害、受到的实际伤害与实际恢复量
 → HikariSupportController 根据玩家血量自动治疗，并通过光负荷 / 光溢出 / 导光封锁 / 守护共鸣（Guard Resonance）/ 溢光反震（Overflow Counter）形成保护反馈
@@ -392,22 +393,12 @@ _pitch -= delta.y * rotationSpeed;
 
 路径：`Assets/Scripts/Player/PlayerSkillController.cs`
 
-当前职责：玩家技能 / 动作输入调度器。
+当前状态：
 
-- 使用 New Input System 读取键盘输入。
-- 按 1 时调用同一 Player 上的 `PlayerBasicAttackController.TrySingleTargetAttack()`。
-- 按 4 时调用同一 Player 上的 `PlayerBasicAttackController.TryAreaBasicAttack()`。
-- 不再直接计算伤害。
-- 不再直接调用 `HealthComponent.TakeDamage(...)`。
-- 不再直接执行 `Physics.OverlapSphere`。
-- 不再维护普通攻击 / AOE 普通攻击冷却。
-
-注意：
-
-- `PlayerSkillController` 当前仍会在玩家死亡时被 `PlayerDeathHandler` 禁用。
-- 如果未来新增其他基础动作输入，可在这里做输入分发，但具体效果应下放到对应 Controller / Executor。
-- 不要把大量攻击执行逻辑重新塞回 `PlayerSkillController`。
-
+- 该脚本仍保留在 Player 上，主要用于兼容 `PlayerDeathHandler` 的禁用流程。
+- 1 / 4 的输入处理已移除，不再由它分发到 `PlayerBasicAttackController`。
+- 当前玩家技能输入统一由 `PlayerSkillManager` 读取 `PlayerSkillData.inputSlot` 处理。
+- 不要把普通攻击、AOE 搜索、冷却、伤害结算重新塞回 `PlayerSkillController`。
 
 ### `PlayerBasicAttackController.cs`
 
@@ -417,54 +408,70 @@ _pitch -= delta.y * rotationSpeed;
 
 当前职责：
 
-- 管理基础攻击共享冷却。
-- 执行 1 键单体普通攻击。
-- 执行 4 键 AOE 普通攻击。
-- 统一计算普通攻击最终伤害。
-- 负责 AOE 搜索、敌我判断、去重、伤害结算与攻击动画触发。
+- 执行 `PlayerSkillEffectType.BasicMeleeAttack`（Slot1 Basic Attack）。
+- 执行 `PlayerSkillEffectType.BasicAreaAttack`（Slot4 Area Attack）。
+- 管理 1 / 4 共享的基础攻击冷却。
+- 统一计算基础攻击最终伤害。
+- 负责目标验证、AOE 搜索、敌我判断、去重、伤害结算与攻击动画触发。
+- 不负责读取键盘输入；输入由 `PlayerSkillManager` 分发。
 
-关键字段：
+关键字段 / 属性：
 
 - `basicAttackRecast = 1.0f`
-- `areaBasicAttackRadius = 3.0f`
 - `areaBasicAttackDamageMultiplier = 0.4f`
 - `fallbackNormalAttackDamage = 20f`
+- `BasicAttackCooldownRemaining`
+- `BasicAttackCooldownDuration`
+- `IsBasicAttackReady`
 
-当前行为：
+当前执行入口：
+
+```csharp
+TryExecuteBasicMeleeAttack(PlayerSkillData skillData)
+TryExecuteBasicAreaAttack(PlayerSkillData skillData)
+```
+
+当前距离规则来自 `PlayerSkillData.EffectiveRange`：
 
 ```text
-1 键单体普通攻击
-→ 检查基础攻击冷却
+Basic Attack = Melee = 3m
+Area Attack  = Area  = 5m
+```
+
+行为：
+
+```text
+Slot1 Basic Attack
+→ PlayerSkillManager 读取 1 键
+→ 分发到 PlayerBasicAttackController.TryExecuteBasicMeleeAttack(skillData)
+→ 检查基础攻击共享冷却
 → 读取 PlayerTargeting.CurrentTarget
-→ 验证目标有效、敌对、未死亡、距离在 normalAttackRange 内
+→ 验证目标有效、敌对、未死亡、距离 <= skillData.EffectiveRange
 → 读取 PlayerCombatStats.CurrentNormalAttackDamage
-→ 使用 PlayerStatusEffectController.ModifyOutgoingNormalAttackDamage(...) 应用 AttackPowerMultiplier
+→ 使用 PlayerStatusEffectController.ModifyOutgoingNormalAttackDamage(...) 应用攻击倍率
 → 调用 HealthComponent.TakeDamage(finalDamage, transform)
 → 触发 Attack Trigger
-→ 启动基础攻击冷却
+→ 启动基础攻击共享冷却
 
-4 键 AOE 普通攻击
-→ 检查同一个基础攻击冷却
+Slot4 Area Attack
+→ PlayerSkillManager 读取 4 键
+→ 分发到 PlayerBasicAttackController.TryExecuteBasicAreaAttack(skillData)
+→ 检查基础攻击共享冷却
 → 以玩家当前位置为中心 Physics.OverlapSphere
-→ 半径 areaBasicAttackRadius，当前 3m
-→ 从 Collider 向父级查找 HealthComponent / FactionComponent
+→ 半径 = skillData.EffectiveRange，当前 5m
 → 只命中敌对且未死亡目标
 → 使用 HashSet<HealthComponent> 避免多 Collider 重复命中
-→ AOE 伤害 = 单体普通攻击最终伤害 * areaBasicAttackDamageMultiplier，当前 0.4
-→ 调用 HealthComponent.TakeDamage(aoeDamage, transform)
+→ AOE 伤害 = 普通攻击最终伤害 * skillData.AreaDamageMultiplier（当前 0.4；异常时 fallback 到 controller 字段）
 → 触发 Attack Trigger
-→ 启动基础攻击冷却
+→ 启动基础攻击共享冷却
 ```
 
 说明：
 
-- 1 键与 4 键共享 `basicAttackRecast`，当前默认约 1 秒。
+- 1 与 4 不进入 `PlayerSkillManager` 的普通技能 Cooldown；共享冷却由 `PlayerBasicAttackController` 管理。
+- `PlayerSkillCanvasUI` 对 BasicMeleeAttack / BasicAreaAttack 读取该 Controller 的共享冷却并同步显示到 Slot1 / Slot4。
 - 按 1 成功后立刻按 4 不会发动；按 4 成功后立刻按 1 不会发动。
-- AOE 普通攻击定位是“多个敌人时替代单体普通攻击的基础攻击变体”，不是独立 CD 技能。
-- AOE 普通攻击不显示在 `PlayerSkillBarCanvasUI` 中。
-- 由于 AOE 伤害基于普通攻击最终伤害计算，当前 AttackPowerMultiplier 技能会同时影响单体普通攻击与 AOE 普通攻击。
-- 当前没有完整 GCD / shared recast 系统；`PlayerBasicAttackController` 是基础攻击共享冷却的过渡实现。
-
+- 当前基础攻击系统是未来 GCD / shared recast 的过渡实现。
 
 ### `PlayerDeathHandler.cs`
 
@@ -478,9 +485,35 @@ _pitch -= delta.y * rotationSpeed;
 - 复活时只恢复玩家自身，不额外重置敌人
 
 
-### Player Skill System v0.1
+### Player Skill System v0.2
 
-当前玩家技能已经从单个减伤原型，整理为最小统一技能系统。
+当前玩家技能系统已从“少量减伤技能 + 独立普通攻击输入”推进到统一技能栏输入框架。
+
+总体职责分层：
+
+```text
+PlayerSkillData
+→ 技能静态数据：按键槽、显示名、图标、类型、距离、倍率、冷却、持续时间、反击授权等
+
+PlayerSkillManager
+→ 读取 PlayerSkillManager.skills
+→ 生成 RuntimeStates
+→ 读取 Slot1～Slot9 输入
+→ 分发到对应执行器
+→ 管理普通 Active / Cooldown 技能状态
+→ 不直接写具体伤害逻辑
+
+PlayerBasicAttackController
+→ 执行 Slot1 Basic Attack 与 Slot4 Area Attack
+→ 管理二者共享基础攻击冷却
+
+PlayerGuardCounterController
+→ 执行 Slot5 Radiant Riposte / 守护反击
+→ 管理 Guard Resonance 后 10 秒反击窗口
+
+PlayerStatusEffectController
+→ 读取 Active 技能并修正玩家受到伤害、普通攻击输出、被治疗效率
+```
 
 #### `PlayerSkillData.cs`
 
@@ -491,35 +524,79 @@ _pitch -= delta.y * rotationSpeed;
 当前包含：
 
 - `PlayerSkillInputSlot`：`None / Slot1 ... Slot9`
-- `PlayerSkillEffectType`：当前至少 `None / DamageReduction / AttackPowerMultiplier / AreaDamage`
+- `PlayerSkillEffectType`：当前至少包含：
+  - `None`
+  - `DamageReduction`
+  - `AttackPowerMultiplier`
+  - `AreaDamage`
+  - `GuardCounter`
+  - `BasicMeleeAttack`
+  - `BasicAreaAttack`
+- `PlayerSkillRangeType`：
+  - `Self = 0m`
+  - `Melee = 3m`
+  - `Area = 5m`
+  - `Ranged = 20m`
+  - `Custom = customRange`
 - `PlayerSkillVisualType`：当前至少 `None / DefenseRing`
-- 字段：`skillId`、`skillName`、`description`、`icon`、`inputSlot`、`keyLabel`、`cooldown`、`duration`、`effectType`、`damageTakenMultiplier`、`attackPowerMultiplier`、`areaRadius`、`areaDamageMultiplier`、`visualType`
+- 主要字段：`skillId`、`skillName`、`localizationKey`、`description`、`icon`、`inputSlot`、`keyLabel`、`cooldown`、`duration`、`effectType`、`rangeType`、`customRange`、`damageTakenMultiplier`、`attackPowerMultiplier`、`healingReceivedMultiplier`、`areaRadius`、`areaDamageMultiplier`、`grantsGuardCounter`、`visualType`
+- `EffectiveRange`：根据 `rangeType` 返回当前标准距离。
 
-当前已确认资产：
+当前有效玩家技能资产：
 
-- `Assets/Skills/Player/Skill_IronBulwark.asset`
-  - `skillId = iron_bulwark`
-  - `inputSlot = Slot2`
-  - `keyLabel = 2`
-  - `cooldown = 12`
-  - `duration = 4`
-  - `effectType = DamageReduction`
-  - `damageTakenMultiplier = 0.5`
-  - `visualType = DefenseRing`
-- `Assets/Skills/Player/Skill_StoneGuard.asset`
-  - 当前作为第二个 DamageReduction 测试技能使用；详细参数以 Inspector 为准。
-- 攻击强化测试技能资产
-  - 当前已创建并注册到 Player 的 `PlayerSkillManager.skills`，Play Mode 测试正常。
-  - `effectType = AttackPowerMultiplier`
-  - 会在 Active 期间提高普通攻击最终伤害。
-  - 具体资产路径 / 参数未确认，以下次读取项目文件或 Inspector 为准。
+```text
+Assets/Skills/Player/Skill_BasicAttack.asset
+- skillId = basic_attack
+- inputSlot = Slot1
+- keyLabel = 1
+- effectType = BasicMeleeAttack
+- rangeType = Melee
+- EffectiveRange = 3m
+
+Assets/Skills/Player/Skill_IronBulwark.asset
+- skillId = iron_bulwark
+- inputSlot = Slot2
+- keyLabel = 2
+- effectType = DamageReduction
+- rangeType = Self
+- grantsGuardCounter = true
+- 当前冷却 / 持续 / 减伤倍率以 Inspector 为准
+
+Assets/Skills/Player/Skill_StoneGuard.asset
+- inputSlot = Slot3
+- keyLabel = 3
+- effectType = DamageReduction
+- rangeType = Self
+- grantsGuardCounter = false
+- healingReceivedMultiplier = 1.5
+- 当前冷却 / 持续 / 减伤倍率以 Inspector 为准
+
+Assets/Skills/Player/Skill_BasicAreaAttack.asset
+- skillId = basic_area_attack
+- inputSlot = Slot4
+- keyLabel = 4
+- effectType = BasicAreaAttack
+- rangeType = Area
+- EffectiveRange = 5m
+- areaDamageMultiplier = 0.4
+
+Assets/Skills/Player/Skill_RadiantRiposte.asset
+- skillId = radiant_riposte
+- skillName = Radiant Riposte
+- localizationKey = skill.player.radiant_riposte.name
+- inputSlot = Slot5
+- keyLabel = 5
+- effectType = GuardCounter
+- rangeType = Ranged
+- EffectiveRange = 20m
+- cooldown = 0
+- duration = 0
+```
+
+保留但当前不属于有效技能栏技能的资产：
+
 - `Assets/Skills/Player/Skill_WhirlwindSlash.asset`
-  - 当前文件保留，但已从 Player 的 `PlayerSkillManager.skills` 移除。
-  - 当前 4 键 AOE 普通攻击由 `PlayerBasicAttackController` 直接实现，不通过该资产发动。
-  - 该资产可作为未来把 AOE 技能重新纳入技能系统时的参考，当前不属于有效技能栏技能。
-
-
-
+- 普通增伤测试技能 asset（当前不注册到 PlayerSkillManager.skills）
 
 #### `PlayerSkillManager.cs`
 
@@ -530,21 +607,23 @@ _pitch -= delta.y * rotationSpeed;
 - 持有 `PlayerSkillData[] skills`。
 - Play Mode 中根据 `skills` 生成 `RuntimeStates`。
 - 使用 New Input System 将 `PlayerSkillInputSlot` 映射到 `Keyboard.current.digit1Key ... digit9Key`。
-- 管理每个技能的 Active / Cooldown / Ready 状态。
-- 记录 `LastPressedSkillState`，即最后一次按下的技能；冷却中按下也会更新。
-- 在技能成功发动时触发 `OnSkillActivated` 事件，供未来瞬发技能效果执行器订阅。
-- 只管理输入、持续时间、冷却与运行时状态，不直接执行伤害或视觉效果。
+- 管理普通 Active / Cooldown 技能状态。
+- 记录 `LastPressedSkillState`。
+- 在普通技能成功发动时触发 `OnSkillActivated`。
+- 分发特殊技能类型到对应执行器：
+  - `BasicMeleeAttack` → `PlayerBasicAttackController.TryExecuteBasicMeleeAttack(skillData)`
+  - `BasicAreaAttack` → `PlayerBasicAttackController.TryExecuteBasicAreaAttack(skillData)`
+  - `GuardCounter` → `PlayerGuardCounterController.TryUseCounter(skillData)`
+  - 其他普通技能 → `TryActivateSkill(state)`
+- 玩家死亡时不处理技能输入。
 
 重要规则：
 
 - `PlayerSkillManager.skills` 的顺序是正式技能栏显示顺序。
-- 新增技能应优先创建 `PlayerSkillData` 资产，再加入 Player 上 `PlayerSkillManager.skills` 数组。
-- 当前普通攻击 `1` 与 AOE 普通攻击 `4` 不由 `PlayerSkillManager` 管理，而由 `PlayerSkillController` 分发到 `PlayerBasicAttackController`。
-- 当前不要让 Skill Slot1 与普通攻击冲突。
-- 当前回旋斩 / Whirlwind Slash 已从 `PlayerSkillManager.skills` 移除，不作为独立 CD 技能显示。
-
-
-
+- 当前 SampleScene Player 的技能栏顺序为：Basic Attack / Iron Bulwark / Stone Guard / Area Attack / Radiant Riposte。
+- BasicMeleeAttack / BasicAreaAttack 不进入 PlayerSkillManager 普通冷却；其共享冷却由 `PlayerBasicAttackController` 管理。
+- GuardCounter 不进入普通冷却；其可用状态来自 `PlayerGuardCounterController`。
+- 不要把实际攻击伤害、AOE 搜索、反击伤害计算塞进 `PlayerSkillManager`。
 
 #### `PlayerStatusEffectController.cs`
 
@@ -555,17 +634,55 @@ _pitch -= delta.y * rotationSpeed;
 - 读取 `PlayerSkillManager.RuntimeStates`。
 - 对 Active 且 `EffectType == DamageReduction` 的技能应用受到伤害倍率。
 - 对 Active 且 `EffectType == AttackPowerMultiplier` 的技能应用普通攻击输出倍率。
-- 当前多个 DamageReduction 技能同时 Active 时使用乘算叠加：
-  - 例如 `0.5 * 0.8 = 0.4`
-- 当前多个 AttackPowerMultiplier 技能同时 Active 时也使用乘算叠加：
-  - 例如 `1.5 * 1.2 = 1.8`
-- `HealthComponent` 通过它统一修正玩家受到的伤害。
-- `PlayerBasicAttackController` 通过 `ModifyOutgoingNormalAttackDamage(float baseDamage)` 修正单体普通攻击与 AOE 普通攻击的最终伤害。
+- 对 Active 技能的 `HealingReceivedMultiplier` 应用被治疗倍率。
+- 多个倍率当前均使用乘算叠加。
+- `HealthComponent` 通过它统一修正玩家受到的伤害与被治疗量。
+- `PlayerBasicAttackController` 通过 `ModifyOutgoingNormalAttackDamage(float baseDamage)` 修正 Slot1 / Slot4 的最终伤害。
 
 注意：
 
 - 当前没有完整 Buff 优先级、覆盖规则、持续状态列表或 `StatModifier`。
-- 目前支持的玩家技能效果仍是最小原型：`DamageReduction` 与 `AttackPowerMultiplier`。
+- `HealingReceivedMultiplier` 是独立附加参数，不依赖 `EffectType == DamageReduction`；默认 1f 不影响技能。
+- Stone Guard 当前使用该字段形成“中等减伤 + 接 Hikari 治疗窗口”的定位。
+
+#### `PlayerGuardCounterController.cs`
+
+路径：`Assets/Scripts/Player/PlayerGuardCounterController.cs`
+
+Radiant Riposte / 守护反击执行器，挂载在 Player 上。
+
+职责：
+
+- 监听 `HikariSupportController.OnGuardResonanceTriggered(attacker, grantsGuardCounter)`。
+- 只有 `grantsGuardCounter == true` 时进入 Radiant Riposte Ready。
+- 保存触发 Guard Resonance 的 attacker。
+- 维护 10 秒反击窗口；再次收到授予反击的 Guard Resonance 时刷新目标与 10 秒时间。
+- 暴露 `IsCounterReady`、`CounterRemainingTime`、`CounterWindowSeconds`、`CanUseCounter`。
+- 由 `PlayerSkillManager` 在 Slot5 输入时调用 `TryUseCounter(PlayerSkillData skillData)`。
+- 不再直接读取键盘。
+- 玩家死亡时清除 Ready；死亡后不能反击。
+
+规则：
+
+```text
+Iron Bulwark Active 承受 CastAttack
+→ Guard Resonance 成功
+→ grantsGuardCounter = true
+→ Radiant Riposte Ready 10 秒
+
+Stone Guard Active 承受 CastAttack
+→ Guard Resonance 成功，光负荷下降
+→ grantsGuardCounter = false
+→ 不授予 Radiant Riposte
+
+Radiant Riposte
+→ 只能攻击触发 Guard Resonance 的 attacker
+→ 不 fallback 到当前目标或最近敌人
+→ attacker 死亡 / 丢失 / 无 HealthComponent 时不能打出并清除 Ready
+→ 距离超过 skillData.EffectiveRange（当前 20m）时不能打出，但 Ready 保留到倒计时结束
+→ 成功命中造成 3 PDU（当前 Tier 1 = 60 damage）
+→ 伤害来源名来自 PlayerSkillData.LocalizationKey / SkillName，经 CombatTextSourceLabel 传入飘字系统
+```
 
 #### `PlayerDamageSkillExecutor.cs`
 
@@ -575,11 +692,8 @@ _pitch -= delta.y * rotationSpeed;
 
 - 脚本已存在，用于作为未来 `PlayerSkillManager.OnSkillActivated` 的瞬发伤害执行器原型。
 - 当前 Player 上已移除该组件。
-- 当前 4 键 AOE 普通攻击不通过该脚本执行，而是由 `PlayerBasicAttackController` 执行。
+- 当前 Slot1 / Slot4 由 `PlayerBasicAttackController` 执行；Slot5 由 `PlayerGuardCounterController` 执行。
 - 如果未来新增真正的技能栏攻击技能（例如扇形斩、目标点 AOE、直线攻击、投射物），可考虑让该类或后续 Executor 订阅 `PlayerSkillManager.OnSkillActivated`，但不要让它自己读取键盘、管理冷却或生成 UI。
-
-
-
 
 #### `PlayerSkillCanvasUI.cs`
 
@@ -591,7 +705,10 @@ _pitch -= delta.y * rotationSpeed;
 
 - 通过 `Initialize(PlayerSkillManager manager, PlayerSkillRuntimeState state)` 绑定具体技能。
 - 从 `PlayerSkillData` 自动设置技能名、按键文本、图标。
-- 根据 `PlayerSkillRuntimeState` 显示 READY / ACTIVE / COOLDOWN。
+- 根据技能类型显示不同状态：
+  - 普通技能：READY / ACTIVE / COOLDOWN
+  - BasicMeleeAttack / BasicAreaAttack：读取 `PlayerBasicAttackController` 的共享基础攻击冷却，同步显示 Slot1 / Slot4 冷却
+  - GuardCounter：平时显示 Condition Locked 灰色遮罩；Ready 时显示发光 / 外圈提示与 10 秒剩余时间
 - 冷却时显示遮罩与倒计时。
 
 #### `PlayerSkillBarCanvasUI.cs`
@@ -609,6 +726,16 @@ SkillSlotTemplate 只作为隐藏模板
 → 顺序 = PlayerSkillManager.skills 顺序
 ```
 
+当前 SampleScene Player 技能栏顺序：
+
+```text
+Slot1 Basic Attack
+Slot2 Iron Bulwark
+Slot3 Stone Guard
+Slot4 Area Attack
+Slot5 Radiant Riposte
+```
+
 布局规则：
 
 - `SkillBar` 锚点固定右下角。
@@ -622,10 +749,7 @@ SkillSlotTemplate 只作为隐藏模板
 
 OnGUI 技能调试 HUD。
 
-当前显示 `PlayerSkillManager.LastPressedSkillState`，用于调试最后按过的技能：
-
-- 未按过技能：显示 `No skill pressed yet`
-- 按下 Slot2 / Slot3 / Slot4 等：显示对应技能名、Key、SkillId、Status、Active Remaining、Cooldown Remaining、EffectType 与 Damage Taken Multiplier
+当前显示 `PlayerSkillManager.LastPressedSkillState`，用于调试最后按过的技能。
 
 该脚本仍是 OnGUI 调试用途，不是正式 UI。
 
@@ -652,9 +776,6 @@ Iron Bulwark 视觉反馈原型。
 - `PlayerSkillCanvasUI` / `PlayerMitigationVisualFeedback` 不再引用 `PlayerMitigationController`。
 - SampleScene 的 Player 上已移除旧 Missing Script。
 
-
----
-
 ## 3.3 Health & Combat Stats
 
 ### `HealthComponent.cs`
@@ -665,7 +786,8 @@ Iron Bulwark 视觉反馈原型。
 
 - `TakeDamage(float)`：向后兼容接口
 - `TakeDamage(float, Transform attacker)`：带攻击来源接口
-- `Heal(float amount)` / `Heal(float amount, Transform healer)`：统一治疗入口，按实际恢复量触发治疗事件；死亡状态下不绕过正式复活流程。
+- `TakeDamage(float, Transform attacker, CombatTextSourceLabel sourceLabel)`：带战斗文字来源标签的伤害接口，当前用于 Radiant Riposte 伤害飘字显示技能名
+- `Heal(float amount)` / `Heal(float amount, Transform healer)`：统一治疗入口，应用被治疗倍率后按实际恢复量触发治疗事件；死亡状态下不绕过正式复活流程。
 - `RestoreFullHealth()`：恢复满血并触发血条刷新；若实际恢复量大于 0，也会触发治疗事件，保留复活流程可用性。
 - `SetMaxHealth(float newMaxHealth, bool keepCurrentRatio = false)`：动态修改最大生命值
 - `IsDead`
@@ -674,6 +796,8 @@ Iron Bulwark 视觉反馈原型。
   - `OnDied`
   - `OnDamaged(float, Transform)`
   - `OnHealed(float, Transform)`：传入实际恢复量与治疗来源，可为 null。
+- `LastDamageSourceLabel / LastDamageHasSourceLabel`：最近一次带来源名的伤害信息，供 `DamageNumberSpawner` 显示伤害副文本。
+- `LastHealingReceivedMultiplier / LastHealingWasBoosted`：最近一次治疗倍率状态，供 `DamageNumberSpawner` 显示 `GUARD HEAL`。
 
 
 当前伤害修正规则：
@@ -699,14 +823,17 @@ TakeDamage(...)
 Heal(amount, healer)
 → amount <= 0 时不触发治疗
 → 玩家 / 对象已死亡时不通过 Heal 绕过复活流程
-→ 实际恢复量 = Min(currentHealth + amount, maxHealth) - oldHealth
+→ 若同对象存在 PlayerStatusEffectController，则用 ModifyIncomingHealing(...) 应用被治疗倍率
+→ 实际恢复量 = Min(currentHealth + modifiedAmount, maxHealth) - oldHealth
 → 实际恢复量 > 0 时触发 OnHealthChanged 与 OnHealed
 ```
 
 说明：
 
-- 治疗飘字显示的是实际恢复量，不是传入治疗量。
+- 治疗飘字显示的是实际恢复量，不是传入治疗量或倍率后的理论治疗量。
 - 已满血时不会触发无意义的 0 治疗飘字。
+- Stone Guard 的 `healingReceivedMultiplier = 1.5` 可提高 Hikari 治疗量，并在治疗飘字下方显示 `GUARD HEAL`。
+- `GUARD HEAL` 当前仍是旧硬编码文本，尚未迁移到 `CombatTextSourceLabel` / 本地化 key。
 - `RestoreFullHealth()` 会在实际恢复量大于 0 时触发 `OnHealed(actualHealAmount, null)`。
 
 `SetMaxHealth` 规则：
@@ -1725,7 +1852,7 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
   - `attackDamage = 15`
   - `attackCooldown = 2.0`
   - 普通攻击 DPS = `15 / 2.0 = 0.75 PHU/s`
-  - CastAttack 使用 `Assets/Skills/SK_CastAttack_HeavySlash.asset`
+  - CastAttack 使用 `Assets/Skills/Enemy/SK_CastAttack_HeavySlash.asset`
   - CastAttack：`damage = 50`、`castTime = 2.0`、`cooldown = 10.0`、`range = 2.5`
 - `SK_CastAttack_HeavySlash.asset` 当前确认仅由 `SkeletonBossEnemy_Variant` 使用。
 - 掉落配置：守护核心100%（Boss 测试用）。
@@ -1817,18 +1944,30 @@ F1 Debug UI 来源是这里，不是 Hierarchy 里的 Canvas Button。
 - 鼠标右键：按住并移动鼠标时旋转相机
 - 鼠标左键 + 右键：向当前相机前方移动，等价于前进输入
 - 鼠标左键 + 右键 + Shift：向当前相机前方跑步
-- 单体普通攻击：键盘 1
-- AOE 普通攻击：键盘 4
-  - 与 1 键单体普通攻击共享 `PlayerBasicAttackController.basicAttackRecast`，当前默认 1.0 秒。
-  - 当前 AOE 半径 3m，伤害为普通攻击最终伤害的 0.4 倍。
-- 玩家技能槽：由 `PlayerSkillManager` 读取 `PlayerSkillData.inputSlot`，映射到键盘数字键 1～9；当前主要用于 Slot2 / Slot3 / Slot5 / Slot6 等技能栏技能
 - 跳跃：Space
-  - `IsJumping` 只作为起跳帧信号，不代表整个空中状态。
-  - 跳跃落地后会根据 `Speed / IsSprinting` 直接进入 Idle / RunForward / Sprint。
-  - 当前跳跃下落通过 PlayerController 的 Jump Tuning 字段调校；如需调整“提前进入下落重力”的时机，需后续确认是否加入 `fallGravityStartVelocity`。
 - 拾取物品：E
 - Debug UI：F1
 - 关卡重开：R，仅旧 Victory / Game Over 后生效
+
+当前玩家技能输入统一由 `PlayerSkillManager` 读取 `PlayerSkillData.inputSlot` 并映射到数字键 1～9：
+
+```text
+1 = Basic Attack（BasicMeleeAttack，3m）
+2 = Iron Bulwark（DamageReduction，Self 0m，grantsGuardCounter = true）
+3 = Stone Guard（DamageReduction，Self 0m，healingReceivedMultiplier = 1.5，grantsGuardCounter = false）
+4 = Area Attack（BasicAreaAttack，5m，AOE multiplier 0.4）
+5 = Radiant Riposte（GuardCounter，20m，Guard Resonance 授权后 10 秒内可用）
+```
+
+输入 / 冷却规则：
+
+- 1 / 4 均由 `PlayerSkillManager` 分发到 `PlayerBasicAttackController`，不再由 `PlayerSkillController` 直接处理。
+- 1 / 4 共享 `PlayerBasicAttackController.basicAttackRecast`，当前默认 1.0 秒。
+- 1 的距离为 `PlayerSkillRangeType.Melee = 3m`。
+- 4 的 AOE 半径为 `PlayerSkillRangeType.Area = 5m`。
+- 5 的距离为 `PlayerSkillRangeType.Ranged = 20m`；超过 20m 时不反击、不消耗 Ready、不 fallback 到其他目标。
+- 玩家死亡时 `PlayerSkillManager` 不处理技能输入，`PlayerGuardCounterController` 会清除 Radiant Riposte Ready。
+- `keyLabel` 只用于 UI 显示；当前尚未实现自定义键位或拖拽换位。
 
 移动 / 动画规则：
 
@@ -1846,7 +1985,6 @@ Cursor 当前规则：
 - RPGCameraController 被禁用 / 销毁：强制显示鼠标
 - 不使用 CursorLockMode.Locked
 
-
 目标选择规则：
 
 - 鼠标左键使用 Raycast 选择敌对目标。
@@ -1855,19 +1993,11 @@ Cursor 当前规则：
 - Tab 候选目标必须在屏幕内、摄像机前方、未死亡、敌对且在 `tabTargetMaxDistance` 内。
 - 当前目标由 `PlayerTargeting.CurrentTarget` 统一提供；`TargetSelectionIndicator` 只读取该值显示倒三角。
 
-玩家技能输入规则：
-
-- `PlayerSkillManager` 使用 New Input System 的 `Keyboard.current.digit1Key ... digit9Key`。
-- `PlayerSkillData.inputSlot` 决定技能按键槽。
-- `keyLabel` 只用于 UI 显示。
-- 当前 1 键单体普通攻击与 4 键 AOE 普通攻击由 `PlayerSkillController` 读取输入，并分发给 `PlayerBasicAttackController`。不要在未统一前让 Skill Slot1 与普通攻击冲突；4 键当前也不是 PlayerSkillManager 的回旋斩技能。
-
 相机灵敏度：
 
 - `RPGCameraController.rotationSpeed` 控制鼠标视角灵敏度。
 - 鼠标 delta 不乘 `Time.deltaTime`。
 - 当前用户实测 `rotationSpeed = 0.5` 体感合适；实际值以 Main Camera Inspector 为准。
-
 
 ---
 
@@ -1923,6 +2053,9 @@ Cursor 当前规则：
 - ✅ EnemyAI 在 `EnemySkillController.IsCasting` 时保持 Attack 状态，避免读条被 Attack→Chase 状态切换打断
 - ✅ EnemyAI 普通攻击触发逻辑已抽出为 `TryNormalAttack()`，Chase / Attack 状态均会尝试普通攻击；实际命中仍由 `OnAttackHit()` Animation Event 与距离容错决定
 - ✅ Tier 1 普通小怪 / 精英怪数值基准第一版已落地到对应 Prefab / Skill asset / CSV 表
+- ✅ CircleAoE / 圆形 AoE 第一版：读条期间显示 Boss 周围圆形范围提示，读条结束后提示消失并按 XZ 平面距离判定一次伤害；当前 `SK_CircleAoE_BossShockwave.asset` 为 5m 半径、30 伤害。 
+- ✅ DonutAoE / Moon Ring / 月环 第一版：读条期间显示真环形范围提示，Boss 脚下内圈安全、外环伤害；当前 `SK_DonutAoE_MoonRing.asset` 为 inner 2.8m、outer 7m、35 伤害。
+- ✅ DonutAoE 提示已改为 `DonutAoETelegraphController` 程序化生成环形 Mesh，只渲染伤害区域，内圈安全区无渲染。
 
 ### 玩家技能 / 状态效果 / 技能 UI
 
@@ -1949,6 +2082,13 @@ Cursor 当前规则：
 - ✅ `PlayerMitigationVisualFeedback` 读取 `PlayerSkillManager`，在 Iron Bulwark Active 时显示脚下防御光环
 - ✅ F1 Debug UI 的玩家减伤状态显示读取 `PlayerSkillManager`
 - ✅ Hikari Guard Resonance 可读取 `PlayerSkillManager.RuntimeStates` 判断 DamageReduction 技能是否 Active
+- ✅ Slot1 Basic Attack 与 Slot4 Area Attack 已纳入 `PlayerSkillManager` / `PlayerSkillData` 管理，实际执行仍由 `PlayerBasicAttackController` 负责。
+- ✅ `PlayerSkillRangeType` 第一版：Self 0m、Melee 3m、Area 5m、Ranged 20m、Custom。
+- ✅ `PlayerSkillCanvasUI` 可显示 Basic Attack / Area Attack 的共享基础攻击冷却。
+- ✅ `PlayerSkillCanvasUI` 可显示 GuardCounter 的 Condition Locked 灰色遮罩、Proc Ready 发光提示与剩余时间。
+- ✅ Radiant Riposte / 守护反击 第一版：Iron Bulwark 成功承受 CastAttack 并触发 Guard Resonance 后，10 秒内可按 5 对 attacker 打出 3 PDU 反击。
+- ✅ Guard Resonance 与 Radiant Riposte 授权已分离：Stone Guard 可触发 Guard Resonance 降低光负荷，但不授予 Radiant Riposte。
+- ✅ 玩家死亡后 `PlayerSkillManager` 不处理技能输入，`PlayerGuardCounterController` 会清除 Radiant Riposte Ready。
 
 ### 复活 / SavePoint
 
@@ -2003,6 +2143,9 @@ Cursor 当前规则：
 - ✅ `HealthComponent.Heal()` / `OnHealed` 治疗事件第一版
 - ✅ Player 治疗飘字 Prefab `DamageNumberPopup_PlayerHealth.prefab` 已创建并测试正常
 - ✅ `DamageNumberSpawner` 可通过 `OnHealed` 显示实际恢复量
+- ✅ `CombatTextSourceLabel` 第一版：伤害来源可携带 localizationKey / fallbackText，当前用于 Radiant Riposte 飘字副文本。
+- ✅ `HealthComponent.TakeDamage(..., CombatTextSourceLabel)` 可记录最近一次伤害来源名，`DamageNumberSpawner` 可在伤害数字下显示技能名。
+- ✅ Stone Guard 的被治疗效率提升已接入 `HealthComponent.Heal()`，治疗飘字下方可显示 `GUARD HEAL`。
 - ✅ `TargetSelectionIndicator` 读取 `PlayerTargeting.CurrentTarget` 显示目标头顶倒三角
 - ✅ TargetSelectionIndicator 已修正静止目标上下频闪问题：目标切换时计算一次高度偏移，运行中不再每帧扫描 Collider
 
@@ -2016,6 +2159,8 @@ Cursor 当前规则：
 - ✅ 过载 / Overload：光负荷 100% 时 Hikari 治疗停摆，降到 60% 以下或等于 60% 时恢复
 - ✅ Guard Resonance / 守护共鸣：玩家 DamageReduction Active 期间承受 CastAttack 伤害时降低 Hikari 光负荷
 - ✅ Guard Resonance 不使用最终伤害数值判断，不会被普通攻击触发
+- ✅ Guard Resonance 事件现在会传出 `grantsGuardCounter`，只有带反击授权的减伤技能会刷新 Radiant Riposte Ready。
+- ✅ 溢光反震 / Overflow Counter 与 Radiant Riposte 可同时作为“正确承受 CastAttack”的收益，其中 Radiant Riposte 需要玩家在限时窗口手动按 5。
 
 ### Debug / 工具
 
@@ -2059,14 +2204,15 @@ Cursor 当前规则：
 
 ### 玩家技能系统限制
 
-- ⚠️ 当前玩家技能系统 v0.1 主要支持 DamageReduction / AttackPowerMultiplier；`AreaDamage` 字段与 `PlayerDamageSkillExecutor` 已存在但当前未挂载到 Player，也未作为正式技能栏攻击技能使用。
+- ⚠️ 当前玩家技能系统仍是 v0.2 原型，支持 BasicMeleeAttack / BasicAreaAttack / DamageReduction / AttackPowerMultiplier / GuardCounter；`AreaDamage` 字段与 `PlayerDamageSkillExecutor` 已存在但当前未挂载到 Player，也未作为正式技能栏攻击技能使用。
 - ⚠️ 尚未实现正式 Buff / StatusEffect 数据结构、优先级、覆盖规则、图标状态列表或效果取消事件。
-- ⚠️ 多个 DamageReduction / AttackPowerMultiplier 当前按乘算叠加，尚未设计同类覆盖、上限或职业平衡规则。
+- ⚠️ 多个 DamageReduction / AttackPowerMultiplier / HealingReceivedMultiplier 当前按乘算叠加，尚未设计同类覆盖、上限或职业平衡规则。
 - ⚠️ `PlayerMitigationVisualFeedback` 当前仍是 Iron Bulwark 专用视觉反馈，尚未抽象为通用 Skill Visual 系统。
 - ⚠️ `PlayerSkillHudUI` 是 OnGUI 调试 HUD，不是正式玩家 UI。
-- ⚠️ `PlayerSkillManager.skills` 当前通过 Inspector 注册，尚未实现技能学习、解锁、保存、拖拽或热键自定义。
-- ⚠️ 当前没有正式 GCD / shared recast UI；基础攻击共享冷却只在 `PlayerBasicAttackController` 内部处理，不显示在 SkillBar。
-- ⚠️ 基础攻击（1 键单体 / 4 键 AOE）当前由 `PlayerSkillController` 分发到 `PlayerBasicAttackController`，尚未统一进 `PlayerSkillManager` 或正式 GCD 系统；不要让 Slot1 与普通攻击冲突，也不要把 4 键回旋斩误加回 `PlayerSkillManager.skills`。
+- ⚠️ `PlayerSkillManager.skills` 当前通过 Inspector 注册，尚未实现技能学习、解锁、保存、拖拽换位或热键自定义。
+- ⚠️ 当前 SkillBar 已显示基础攻击共享冷却，但尚未实现正式 GCD / shared recast 系统。
+- ⚠️ Basic Attack / Area Attack 已统一进 `PlayerSkillManager`，但技能栏位置和按键仍依赖 `PlayerSkillData.inputSlot`，尚未分离“显示槽位”和“输入绑定”。
+- ⚠️ `GUARD HEAL` 仍是旧硬编码文本，尚未迁移到 `CombatTextSourceLabel` / 本地化 key。
 
 ### Hikari 支援系统限制
 
@@ -2074,7 +2220,7 @@ Cursor 当前规则：
 - ⚠️ 尚未实现 Hikari 模型、动画、跟随、站位、受伤、死亡或正式 UI。
 - ⚠️ HikariSupportController 当前是硬编码少量支援行为，不是完整 HikariSkillManager / HikariSkillData 系统。
 - ⚠️ Hikari Tier 1 数值（微光治愈 +1 BU、紧急祈愿 +5 BU、守护共鸣 -2 BU、溢光反震 30 伤害）已进入基准表，但仍是原型平衡；正式 Boss / 多怪压力下还需继续测试 PHU / BU / 冷却关系。
-- ⚠️ Guard Resonance 当前只识别 `EnemySkillType.CastAttack`，未来若新增 Boss 技能类型，需要扩展触发条件或升级为正式 DamageContext / CombatHitInfo。
+- ⚠️ Guard Resonance 当前只识别 `EnemySkillType.CastAttack`；CircleAoE / DonutAoE 明确不触发 Guard Resonance / Radiant Riposte。未来若新增可防御反击的 Boss 技能类型，需要扩展触发条件或升级为正式 DamageContext / CombatHitInfo。
 - ⚠️ EnemySkillController 的 `LastDamageSkillData / LastDamageSkillTime` 是当前原型用技能来源追踪；如果未来普通攻击或多技能伤害更复杂，应升级为更正式的伤害上下文。
 
 ### 场景 / UI
@@ -2193,6 +2339,7 @@ Cursor 当前规则：
 - `Assets/Scripts/Enemy/Skills/EnemySkillData.cs`
 - `Assets/Scripts/Enemy/Skills/EnemySkillController.cs`
 - `Assets/Scripts/Enemy/Skills/EnemyCastBarUI.cs`
+- `Assets/Scripts/Enemy/Skills/DonutAoETelegraphController.cs`
 - `Assets/Scripts/Hikari/HikariSupportController.cs`
 - `Assets/Scripts/HealthComponent.cs`
 - `Assets/Scripts/PlayerController.cs`
@@ -2201,8 +2348,10 @@ Cursor 当前规则：
 - `Assets/Scripts/UI/TargetSelectionIndicator.cs`
 - `Assets/Scripts/UI/DamageNumberPopup.cs`
 - `Assets/Scripts/UI/DamageNumberSpawner.cs`
+- `Assets/Scripts/Combat/CombatTextSourceLabel.cs`
 - `Assets/Scripts/Player/PlayerSkillController.cs`
 - `Assets/Scripts/Player/PlayerBasicAttackController.cs`
+- `Assets/Scripts/Player/PlayerGuardCounterController.cs`
 - `Assets/Scripts/Player/PlayerDeathHandler.cs`
 - `Assets/Scripts/Player/PlayerRespawnPointTracker.cs`
 - `Assets/Scripts/Player/PlayerInventory.cs`
@@ -2236,7 +2385,11 @@ Cursor 当前规则：
 - `Assets/Resources/UI/DamageNumberPopup_PlayerTaken.prefab`
 - `Assets/Resources/UI/DamageNumberPopup_PlayerHealth.prefab`
 - 目标倒三角指示器 Prefab（路径未确认，已绑定到 Player 的 `TargetSelectionIndicator.indicatorPrefab`）
-- `Assets/Skills/SK_CastAttack_HeavySlash.asset`：当前 SkeletonBossEnemy_Variant 使用的 CastAttack 资产，已确认未被其他 Prefab 使用
+- `Assets/Skills/Enemy/SK_CastAttack_HeavySlash.asset`：当前 SkeletonBossEnemy_Variant 使用的 CastAttack 资产
+- `Assets/Skills/Enemy/SK_CircleAoE_BossShockwave.asset`：当前 SkeletonBossEnemy_Variant 使用的 CircleAoE 资产
+- `Assets/Skills/Enemy/SK_DonutAoE_MoonRing.asset`：当前 SkeletonBossEnemy_Variant 使用的 DonutAoE / Moon Ring 资产
+- `Assets/Resources/VFX/EnemyAoE/CircleAoETelegraph.prefab`：CircleAoE 地面范围提示
+- `Assets/Resources/VFX/EnemyAoE/DonutAoETelegraph.prefab`：DonutAoE 真环形 Mesh 提示，依赖 `DonutAoETelegraphController`
 - `Assets/Items/TestItem_Bone.asset`
 - `Assets/Items/TestItem_GuardCore.asset`
 - `Assets/Scripts/SkeletonAnimator.controller`
@@ -2248,8 +2401,11 @@ Cursor 当前规则：
 - `Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/HumanM@Death01.fbx`
 - `Assets/ThirdParty/Kevin Iglesias/Human Animations/Animations/Male/Combat/1H/HumanM@Attack1H01_R.fbx`
 - `Assets/Fonts/09_SourceHanSansSC/TMP/SourceHanSansSC-Medium_TMP.asset`
+- `Assets/Skills/Player/Skill_BasicAttack.asset`
 - `Assets/Skills/Player/Skill_IronBulwark.asset`
 - `Assets/Skills/Player/Skill_StoneGuard.asset`
+- `Assets/Skills/Player/Skill_BasicAreaAttack.asset`
+- `Assets/Skills/Player/Skill_RadiantRiposte.asset`
 - `Assets/Skills/Player/Skill_WhirlwindSlash.asset`：当前保留但未注册到 PlayerSkillManager.skills，不作为有效技能栏技能
 - `Assets/Art/UI/SkillIcons/Skill_IronBulwark.png`
 - `Assets/Art/UI/SkillIcons/`：玩家技能图标目录
@@ -2257,17 +2413,19 @@ Cursor 当前规则：
 
 ### 容易误改的绑定 / 约定
 
-- `HealthComponent.OnDamaged(float, Transform)` 仍是伤害飘字与 Hikari 受伤响应的基础事件，不要随意改签名。
+- `HealthComponent.OnDamaged(float, Transform)` 仍是伤害飘字与 Hikari 受伤响应的基础事件，不要随意改签名；带来源名的伤害通过 `TakeDamage(float, Transform, CombatTextSourceLabel)` 与 `LastDamageSourceLabel` 传递，不改事件签名。
 - `HealthComponent.OnHealed(float, Transform)` 负责治疗飘字，治疗逻辑应通过 `Heal(...)` 触发，不要由 UI 或 Spawner 直接改血。
 - `EnemyAI.OnAttackHit()` 是普通攻击 Animation Event，方法名不可改。
-- `EnemySkillController.LastDamageSkillData / LastDamageSkillTime` 当前用于 Guard Resonance 判断 CastAttack；普通攻击不要写入该记录，避免误触发。
-- Hikari Guard Resonance 依赖 `PlayerSkillManager.RuntimeStates` 与 `PlayerSkillEffectType.DamageReduction`，不要让 Slot1 普通攻击与玩家技能系统冲突。
-- `PlayerSkillController` 当前是输入调度器，不应重新堆入伤害计算、AOE 搜索或基础攻击冷却逻辑；这些应保留在 `PlayerBasicAttackController`。
-- 4 键 AOE 普通攻击当前不是 `PlayerSkillManager` 技能栏技能，不要把 `Skill_WhirlwindSlash.asset` 误加回 Player 的 `PlayerSkillManager.skills`，除非正式重做基础攻击 / GCD / 热栏系统。
-- `PlayerBasicAttackController.basicAttackRecast` 同时限制 1 键单体普通攻击与 4 键 AOE 普通攻击；调整它会同时改变两者节奏。
+- `EnemySkillController.LastDamageSkillData / LastDamageSkillTime` 当前用于 Guard Resonance 判断 CastAttack；普通攻击、CircleAoE、DonutAoE 不要写入该记录，避免误触发 Radiant Riposte。
+- Hikari Guard Resonance 依赖 `PlayerSkillManager.RuntimeStates` 与 `PlayerSkillEffectType.DamageReduction`；Radiant Riposte 授权额外依赖 `PlayerSkillData.GrantsGuardCounter`，不要通过 skillId 判断 Iron Bulwark / Stone Guard。
+- `PlayerSkillController` 当前不再处理 1 / 4 输入，不应重新堆入伤害计算、AOE 搜索或基础攻击冷却逻辑；这些应保留在 `PlayerBasicAttackController`。
+- 1 / 4 当前是 `PlayerSkillManager` 技能栏技能，分别是 `Skill_BasicAttack.asset` 与 `Skill_BasicAreaAttack.asset`；不要把 `Skill_WhirlwindSlash.asset` 误加回 Player 的 `PlayerSkillManager.skills`，除非正式重做独立 AOE 技能。
+- `PlayerBasicAttackController.basicAttackRecast` 同时限制 Slot1 Basic Attack 与 Slot4 Area Attack；调整它会同时改变两者节奏和技能栏共享冷却显示。
+- `PlayerSkillManager.skills` 当前有效顺序为：Basic Attack / Iron Bulwark / Stone Guard / Area Attack / Radiant Riposte。后续如改 Inspector 数组顺序，会影响技能栏显示顺序。
 - Hikari Debug 窗口高度依赖 `BuildHikariDebugLines()` 与 `GUIStyle.CalcHeight()`；新增显示行时要更新 Build 方法，不要重新写固定高度。
 - `EnemySkillController.InterruptCurrentCast()` 是未来打断技能的最小入口；当前未接入玩家技能，不要误当作完整打断系统。
 - CastAttack 的 range 只用于开始读条；读条中和读条完成时不因玩家拉开距离取消或失败。
+- CircleAoE / DonutAoE 的伤害判定以读条结束时 Boss 当前坐标为中心并忽略 y 轴；提示范围必须与判定半径保持一致。
 - `PlayerAnimator.controller` 的 JumpDown / FallingLoop 落地 Transition 依赖 `IsGrounded`、`Speed`、`IsSprinting`；不要删除直接到 RunForward / Sprint 的 Transition。
 - `PlayerController.IsJumping` 现在是起跳帧信号，不是整个空中状态；不要让它在空中持续 true。
 
@@ -2415,42 +2573,40 @@ Cursor 当前规则：
 
 ---
 
-## 26. 最近一次有效变更（2026-05-24）
+## 26. 最近一次有效变更（2026-05-25）
 
-1. Player 与 Enemy 的非 Trigger Collider 物理碰撞已通过 `EnemyPlayerCollisionIgnore` 忽略：玩家和敌人不再互相推动，玩家不能站在敌人头上。
-2. 基础攻击结构已拆分：`PlayerSkillController` 作为输入调度器，`PlayerBasicAttackController` 负责 1 键单体普通攻击、4 键 AOE 普通攻击、共享 `basicAttackRecast = 1.0f`、AOE 半径 3m、AOE 伤害倍率 0.4。
-3. Debug 召唤骷髅已改用 `SkeletonEnemy_Variant`；`Skill_WhirlwindSlash.asset` 保留但不再注册到 `PlayerSkillManager.skills`，回旋斩当前不是独立技能栏技能。
+1. 玩家 1 / 4 已纳入 `PlayerSkillManager`：Slot1 Basic Attack 为 3m 近战，Slot4 Area Attack 为 5m AOE，实际执行仍由 `PlayerBasicAttackController` 负责，二者共享基础攻击冷却并在 SkillBar 同步显示。
+2. Radiant Riposte / 守护反击已作为 Slot5 GuardCounter 技能进入技能栏：Iron Bulwark 授予 10 秒反击窗口，Stone Guard 只触发 Guard Resonance 不授予反击；玩家死亡会清除 Ready，20m 外不消耗 Ready。
+3. 敌人技能系统新增 CircleAoE 与 DonutAoE / Moon Ring：二者都有读条和地面范围提示，读条结束后判定一次伤害；DonutAoE 使用真环形 Mesh 提示，只渲染伤害环区域。
 
 ## 11. Next Suggested Tasks
 
 ### ⭐ 最推荐的下一个小任务
 
-**给基础攻击共享冷却增加最小 Debug / UI 可视化。**
+**实现最小打断技能 / Interrupt Skill v0.1。**
 
 目标：
 
 ```text
-显示 PlayerBasicAttackController 当前基础攻击冷却是否可用、剩余时间、1 键 / 4 键共享状态。
-先做 Debug 显示或简单 HUD，不做完整 GCD UI。
+新增一个玩家打断技能，作为 PlayerSkillManager 管理下的正式技能。
+Boss 释放指定可打断读条时，玩家在范围内按键可调用 EnemySkillController.InterruptCurrentCast()。
+第一版只要求能打断指定敌人技能，不做复杂打断免疫、打断 DR 或 Boss 时间轴。
 ```
 
 理由：
 
 ```text
-当前 1 键单体普通攻击与 4 键 AOE 普通攻击已经共享 basicAttackRecast，但没有任何可视化。
-下一步先验证节奏、手感和冷却状态，避免后续技能扩展时误判输入或冷却问题。
+当前已经有 CastAttack、CircleAoE、DonutAoE、Radiant Riposte 和统一技能栏。
+下一步加入“必须打断”的 Boss 读条，可以让战斗从“开减伤 / 走位”扩展到第三种判断：识别并打断关键技能。
 ```
 
 ### 备选任务
 
-1. 基于 `BalanceTables/encounter_tests.csv` 做第一轮遭遇测试记录：重点测试 3 只普通小怪、1 精英 + 2 普通、6 只普通小怪下的 AOE 普通攻击收益、Hikari 光负荷和玩家 HP。
-2. 明确 Player 技能长期分层：`PlayerSkillManager` 管注册 / 冷却 / UI，`PlayerBasicAttackController` 管基础攻击，未来攻击技能使用独立 Executor，不要塞回 `PlayerSkillController`。
-3. 设计第一版正式 GCD / shared recast 方案，但暂不实现完整热栏系统。
-4. 给 Hikari Guard Resonance / Overflow Counter 增加轻量视觉或文本反馈，但不要做正式 UI。
-5. 给 `PlayerTargeting` 增加 Shift+Tab 反向选敌，仍复用同一候选列表与敌对判定。
-6. 给伤害 / 治疗飘字增加对象池 `DamageNumberPool`，减少频繁 Instantiate / Destroy。
-7. 给 `SkeletonDebugUI` 加 `UNITY_EDITOR || DEVELOPMENT_BUILD` 保护。
-
+1. 给 Boss 做最小固定时间轴 v0.1：按顺序释放 HeavySlash / CircleAoE / MoonRing，避免 EnemySkillController 当前“哪个技能先可用就释放”的随机体感。
+2. 将 `GUARD HEAL` 迁移到 `CombatTextSourceLabel` / `PlayerSkillData.localizationKey`，统一治疗与伤害副文本来源，为后续本地化做准备。
+3. 给 CircleAoE / DonutAoE 增加更清晰的视觉表现与边界线，确保提示范围与实际判定范围一致。
+4. 把 `PlayerSkillData.inputSlot` 与技能栏显示顺序解耦，设计第一版 `PlayerSkillLoadoutEntry`，为自定义键位 / 拖拽换位做准备。
+5. 给伤害 / 治疗飘字增加对象池 `DamageNumberPool`，减少频繁 Instantiate / Destroy。
 
 ## 12. 本次有效变更摘要（2026-05-11）
 
@@ -2744,22 +2900,27 @@ EnemyBase
 
 - 定义敌人可配置技能，不把技能写死进 `EnemyAI.cs`。
 - 支持通过 Prefab / Variant 的 Inspector 配置不同敌人会哪些技能。
-- 第一版已用于 `CastAttack`（读条重击）。
+- 当前已用于 `CastAttack`、`CircleAoE`、`DonutAoE`。
 
 当前关键字段 / 属性：
 
 - `skillId`：技能内部 ID
 - `displayName`：显示名，用于读条 UI
-- `skillType`：当前至少包含 `None` / `CastAttack`
+- `skillType`：当前至少包含 `None / CastAttack / CircleAoE / DonutAoE`
 - `damage`：技能伤害
 - `castTime`：读条时间
 - `cooldown`：冷却时间
-- `range`：释放 / 命中范围
+- `range`：技能开始释放距离
+- `aoeRadius`：CircleAoE 半径
+- `aoeInnerRadius`：DonutAoE 内圈安全半径
+- `aoeOuterRadius`：DonutAoE 外圈半径
+- `aoeTelegraphPrefab`：AoE 地面范围提示 Prefab
 
 注意：
 
 - `EnemySkillData` 只保存数据，不负责执行技能。
 - 后续新增敌人技能类型时，应优先扩展该数据结构和 `EnemySkillController`，不要直接把技能逻辑写死进 `EnemyAI.cs`。
+- HeavySlash 技能资产当前路径为 `Assets/Skills/Enemy/SK_CastAttack_HeavySlash.asset`。
 
 ### `EnemySkillController.cs`
 
@@ -2769,7 +2930,7 @@ EnemyBase
 
 - 持有 `List<EnemySkillData> skills`。
 - 判断技能是否可用、距离是否满足、冷却是否结束。
-- 执行第一版 `CastAttack` 读条技能。
+- 执行读条技能：CastAttack / CircleAoE / DonutAoE。
 - 暴露读条状态供 UI 读取。
 - 在 Attack 状态离开、ReturnToSpawn、ResetToSpawn、ForceDisengage、OnDisable 等情况下清理读条。
 
@@ -2781,15 +2942,77 @@ EnemyBase
 - `CurrentCastDuration`：当前读条总时间。
 - `CurrentCastRemaining`：剩余读条时间。
 - `CurrentCastProgress`：0～1 的读条进度。
-- `LastDamageSkillData`：最近一次由敌人技能造成伤害时记录的技能数据。
-- `LastDamageSkillTime`：最近一次由敌人技能造成伤害的记录时间。
+- `LastDamageSkillData`：最近一次由 CastAttack 造成伤害时记录的技能数据。
+- `LastDamageSkillTime`：最近一次由 CastAttack 造成伤害的记录时间。
 
-当前关键方法：
+当前技能行为：
 
-- `TryGetReadySkillInRange(Transform target, out EnemySkillData skill)`
-- `TryStartSkill(EnemySkillData skill, Transform target)`
-- `CancelCasting(string reason)`
-- `InterruptCurrentCast()`：当前只是最小打断入口，尚未接入玩家打断技能。
+```text
+CastAttack
+→ 开始读条
+→ 读条完成后对目标造成一次伤害
+→ 读条开始后不会因为玩家拉开距离而取消或失败
+→ 命中前记录 LastDamageSkillData / LastDamageSkillTime
+→ 可触发 Hikari Guard Resonance / Radiant Riposte
+
+CircleAoE
+→ 开始读条
+→ 读条期间显示圆形范围提示
+→ 提示跟随 Boss
+→ 读条结束时提示消失
+→ 以读条结束时 Boss 当前坐标为中心，忽略 y 轴，仅按 XZ 平面距离判定
+→ 玩家在 aoeRadius 内受到一次伤害
+→ 不更新 LastDamageSkillData，不触发 Guard Resonance / Radiant Riposte
+
+DonutAoE / Moon Ring
+→ 开始读条
+→ 读条期间显示月环范围提示
+→ 提示跟随 Boss
+→ 读条结束时提示消失
+→ 以读条结束时 Boss 当前坐标为中心，忽略 y 轴，仅按 XZ 平面距离判定
+→ distance <= aoeInnerRadius 为安全区
+→ aoeInnerRadius < distance <= aoeOuterRadius 受到一次伤害
+→ distance > aoeOuterRadius 为安全区
+→ 不更新 LastDamageSkillData，不触发 Guard Resonance / Radiant Riposte
+```
+
+当前 AoE 提示：
+
+- `Assets/Resources/VFX/EnemyAoE/CircleAoETelegraph.prefab`
+  - 当前为第一版圆形提示，实际表现以 Prefab 为准。
+- `Assets/Resources/VFX/EnemyAoE/DonutAoETelegraph.prefab`
+  - 使用 `DonutAoETelegraphController` 程序化生成真正环形 Mesh。
+  - 只渲染伤害圆环区域；内圈安全区没有任何渲染面。
+- `Assets/Scripts/Enemy/Skills/DonutAoETelegraphController.cs`
+  - 根据 inner / outer 半径生成 ring mesh。
+  - 不依赖 Animator 或粒子系统。
+
+当前敌人技能资产：
+
+```text
+Assets/Skills/Enemy/SK_CastAttack_HeavySlash.asset
+- skillType = CastAttack
+- 读条重击
+- 当前由 SkeletonBossEnemy_Variant 使用
+
+Assets/Skills/Enemy/SK_CircleAoE_BossShockwave.asset
+- skillType = CircleAoE
+- damage = 30
+- castTime = 2.5
+- cooldown = 12
+- range = 10
+- aoeRadius = 5
+
+Assets/Skills/Enemy/SK_DonutAoE_MoonRing.asset
+- skillType = DonutAoE
+- displayName = Moon Ring
+- damage = 35
+- castTime = 3.0
+- cooldown = 14
+- range = 10
+- aoeInnerRadius = 2.8
+- aoeOuterRadius = 7.0
+```
 
 安全规则：
 
@@ -2797,11 +3020,10 @@ EnemyBase
 - `skills` 中有 null 元素时跳过。
 - `skillType == None` 时不会执行。
 - CastAttack 的 `Range` 只用于“是否可以开始读条”；读条开始后，玩家拉开距离不会取消读条，也不会导致读条完成时不结算。
-- 读条完成时仍会检查 caster / target 是否有效、是否死亡；caster 死亡、target null / 死亡、ReturnToSpawn、ForceDisengage、ResetToSpawn、OnDisable 或未来 Interrupt 会取消读条。
+- 读条完成时仍会检查 caster / target 是否有效、是否死亡；caster 死亡、target null / 死亡、ReturnToSpawn、ForceDisengage、ResetToSpawn、OnDisable 或 Interrupt 会取消读条。
 - 无技能 / 技能不可用时，`EnemyAI` 会继续普通攻击。
 - `OnDisable()` 会清理读条状态，避免对象被禁用时残留 cast 状态。
-- `CastAttackRoutine` 在调用目标 `HealthComponent.TakeDamage(...)` 前记录 `LastDamageSkillData / LastDamageSkillTime`；普通攻击不写入该记录。
-- Hikari 的 Guard Resonance 依赖该记录判断本次玩家受伤是否来自 `EnemySkillType.CastAttack`，不要随意删除或改为普通攻击也记录。
+- Hikari 的 Guard Resonance 只依赖 CastAttack 写入的 `LastDamageSkillData / LastDamageSkillTime`；普通攻击、CircleAoE、DonutAoE 不应写入该记录。
 
 ### `EnemyCastBarUI.cs`
 
@@ -2835,14 +3057,14 @@ SkeletonEnemy_Variant.prefab
 → 普通小怪无技能，只普通攻击
 
 SkeletonBossEnemy_Variant.prefab
-→ 覆写 EnemySkillController.skills，配置读条重击
-→ 可释放 CastAttack / 读条重击
+→ 覆写 EnemySkillController.skills
+→ 当前包含 HeavySlash / BossShockwave / MoonRing
+→ 可释放 CastAttack、圆形 AoE、月环 AoE
 ```
 
-已确认：不设置技能的小怪不会触发技能；配置读条重击的敌人可以正常读条、显示 CastBar，并在命中时造成伤害。
+已确认：不设置技能的小怪不会触发技能；配置技能的敌人可以正常读条、显示 CastBar，并在读条完成时造成对应伤害。
 
 ---
-
 
 ## 3.10 Balance Baseline / 数值基准
 
