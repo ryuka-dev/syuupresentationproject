@@ -18,8 +18,12 @@ MonoBehaviour:
   icon: {fileID: 21300000, guid: 9c2f8b0a2f33f6046adc28ff41a1aa42, type: 3}
   inputSlot: 3
   keyLabel: 3
-  cooldown: 14
-  duration: 12
+  cooldown: 20
+  duration: 6
   effectType: 1
-  damageTakenMultiplier: 0.8
+  damageTakenMultiplier: 0.65
+  attackPowerMultiplier: 1
+  areaRadius: 3
+  areaDamageMultiplier: 0.8
+  healingReceivedMultiplier: 1
   visualType: 1

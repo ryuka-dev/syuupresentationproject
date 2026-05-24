@@ -74,6 +74,10 @@ public class PlayerSkillData : ScriptableObject
         [Header("AOE 伤害参数（EffectType = AreaDamage 时有效）")]
     [SerializeField] private float areaRadius            = 3f;
     [SerializeField] private float areaDamageMultiplier  = 0.8f;
+    [Header("治疗参数")]
+    [SerializeField, Min(0f)]
+    private float healingReceivedMultiplier = 1f;
+
 
 [Header("视觉表现")]
     [SerializeField] private PlayerSkillVisualType visualType = PlayerSkillVisualType.None;
@@ -93,6 +97,7 @@ public class PlayerSkillData : ScriptableObject
     public float                 AttackPowerMultiplier => attackPowerMultiplier;
         public float                 AreaRadius            => areaRadius;
     public float                 AreaDamageMultiplier  => areaDamageMultiplier;
+public float                 HealingReceivedMultiplier => healingReceivedMultiplier;
 public PlayerSkillVisualType VisualType            => visualType;
 
     // ─── OnValidate ───────────────────────────────────────────────
@@ -112,6 +117,7 @@ public PlayerSkillVisualType VisualType            => visualType;
         if (attackPowerMultiplier < 0f) attackPowerMultiplier = 0f;
         if (areaRadius           < 0f) areaRadius           = 0f;
         if (areaDamageMultiplier < 0f) areaDamageMultiplier = 0f;
+        if (healingReceivedMultiplier < 0f) healingReceivedMultiplier = 0f;
 
     }
 }

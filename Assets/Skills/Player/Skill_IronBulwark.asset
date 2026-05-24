@@ -19,7 +19,11 @@ MonoBehaviour:
   inputSlot: 2
   keyLabel: 2
   cooldown: 12
-  duration: 10
+  duration: 3
   effectType: 1
-  damageTakenMultiplier: 0.5
+  damageTakenMultiplier: 0.45
+  attackPowerMultiplier: 1
+  areaRadius: 3
+  areaDamageMultiplier: 0.8
+  healingReceivedMultiplier: 1
   visualType: 1

@@ -90,6 +90,37 @@ public class PlayerStatusEffectController : MonoBehaviour
     }
 
 
+
+    /// <summary>
+    /// Active 状态の技能に基づき、受ける治療量を修正する。
+    /// 全 Active 技能の HealingReceivedMultiplier を乗算叠算で適用する。
+    /// baseHealing &lt;= 0 または skillManager が null の場合は原値を返す。
+    /// デフォルト値 1f の技能は実質的に影響を与えない。
+    /// </summary>
+    public float ModifyIncomingHealing(float baseHealing)
+    {
+        if (baseHealing <= 0f)       return 0f;
+        if (skillManager == null)    return baseHealing;
+
+        float result = baseHealing;
+        var   states = skillManager.RuntimeStates;
+        if (states == null) return baseHealing;
+
+        foreach (var state in states)
+        {
+            if (state == null)           continue;
+            if (state.SkillData == null) continue;
+            if (!state.IsActive)         continue;
+
+            result *= state.SkillData.HealingReceivedMultiplier;
+        }
+
+        if (logDamageModification && !Mathf.Approximately(result, baseHealing))
+            Debug.Log($"[PlayerStatusEffectController] Healing modified: base={baseHealing:F1}, final={result:F1}");
+
+        return result;
+    }
+
     // ─── Private ─────────────────────────────────────────────────
 
     private void ResolveSkillManager()

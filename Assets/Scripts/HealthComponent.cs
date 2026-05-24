@@ -64,9 +64,12 @@ public class HealthComponent : MonoBehaviour
         }
         if (IsDead) return;
         if (currentHealth >= maxHealth) return;
+        float modifiedAmount = ApplyIncomingHealingModifiers(amount);
+        if (modifiedAmount <= 0f) return;
+
 
         float oldHealth   = currentHealth;
-        currentHealth     = Mathf.Min(maxHealth, currentHealth + amount);
+        currentHealth     = Mathf.Min(maxHealth, currentHealth + modifiedAmount);
         float actualHeal  = currentHealth - oldHealth;
 
         if (actualHeal > 0f)
@@ -128,7 +131,18 @@ public void RestoreFullHealth()
     /// 当前只支持 PlayerMitigationController。
     /// 敌人没有此组件时直接返回原始伤害值，不影响敌人逻辑。
     /// </summary>
-    private float ApplyIncomingDamageModifiers(float damage)
+    /// <summary>
+    /// 受ける治療量に対して、PlayerStatusEffectController に基づく治療倒率修正を適用する。
+    /// PlayerStatusEffectController が存在しない場合（敵人等）は原値をそのまま返す。
+    /// </summary>
+    private float ApplyIncomingHealingModifiers(float healing)
+    {
+        if (_statusEffectController == null)
+            return healing;
+        return _statusEffectController.ModifyIncomingHealing(healing);
+    }
+
+        private float ApplyIncomingDamageModifiers(float damage)
     {
         if (_statusEffectController != null)
             return _statusEffectController.ModifyIncomingDamage(damage);
