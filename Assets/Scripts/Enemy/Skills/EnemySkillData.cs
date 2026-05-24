@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 /// <summary>
 /// 敵スキルの種類。
@@ -8,6 +8,7 @@ public enum EnemySkillType
     None,
     CastAttack,
     CircleAoE,
+    DonutAoE,
 }
 
 /// <summary>
@@ -33,6 +34,13 @@ public class EnemySkillData : ScriptableObject
     [Tooltip("読条中に表示する地面範囲提示 Prefab。null の場合はフォールバック Cylinder を使用。")]
     [SerializeField]           private GameObject _aoeTelegraphPrefab;
 
+    [Header("Donut AoE パラメータ（SkillType = DonutAoE の場合のみ有効）")]
+    [Tooltip("Boss 脚下の安全内圆半径（m）。この内側は安全区。")]
+    [SerializeField, Min(0f)] private float _aoeInnerRadius = 2.5f;
+    [Tooltip("AoE 最大半径（m）。_aoeInnerRadius より必ず大きくなければならない。")]
+    [SerializeField, Min(0f)] private float _aoeOuterRadius = 7f;
+
+
     // ─── 読み取り専用プロパティ ──────────────────────────────
     public string         SkillId            => _skillId;
     public string         DisplayName        => _displayName;
@@ -43,6 +51,8 @@ public class EnemySkillData : ScriptableObject
     public float          Range              => _range;
     public float          AoeRadius          => _aoeRadius;
     public GameObject     AoeTelegraphPrefab => _aoeTelegraphPrefab;
+    public float         AoeInnerRadius     => _aoeInnerRadius;
+    public float         AoeOuterRadius     => _aoeOuterRadius;
 
     // ─── バリデーション ─────────────────────────────────────
     private void OnValidate()
@@ -55,5 +65,8 @@ public class EnemySkillData : ScriptableObject
         _cooldown = Mathf.Max(0f,   _cooldown);
         _range    = Mathf.Max(0.1f, _range);
         _aoeRadius = Mathf.Max(0f,  _aoeRadius);
+        _aoeInnerRadius = Mathf.Max(0f,  _aoeInnerRadius);
+        _aoeOuterRadius = Mathf.Max(0f,  _aoeOuterRadius);
+        if (_aoeOuterRadius <= _aoeInnerRadius) _aoeOuterRadius = _aoeInnerRadius + 0.5f;
     }
 }

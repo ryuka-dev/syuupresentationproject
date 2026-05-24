@@ -3068,7 +3068,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -3159519137589924971, guid: 823580420d398034f9b3cab77fd6ec54, type: 3}
       propertyPath: _skills.Array.size
-      value: 2
+      value: 3
       objectReference: {fileID: 0}
     - target: {fileID: -3159519137589924971, guid: 823580420d398034f9b3cab77fd6ec54, type: 3}
       propertyPath: '_skills.Array.data[0]'
@@ -3078,6 +3078,10 @@ PrefabInstance:
       propertyPath: '_skills.Array.data[1]'
       value: 
       objectReference: {fileID: 11400000, guid: fbf7c68b24212b84ebcca1c892abd28e, type: 2}
+    - target: {fileID: -3159519137589924971, guid: 823580420d398034f9b3cab77fd6ec54, type: 3}
+      propertyPath: '_skills.Array.data[2]'
+      value: 
+      objectReference: {fileID: 11400000, guid: 70de17c8ef3853240a5b152d66f5ca57, type: 2}
     - target: {fileID: 934515385917741193, guid: 823580420d398034f9b3cab77fd6ec54, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0

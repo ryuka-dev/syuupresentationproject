@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bce972c0071d480438637912f78f2e8a, type: 3}
+  m_Name: SK_DonutAoE_MoonRing
+  m_EditorClassIdentifier: Assembly-CSharp::EnemySkillData
+  _skillId: donut_aoe_moon_ring
+  _displayName: Moon Ring
+  _skillType: 3
+  _damage: 35
+  _castTime: 3
+  _cooldown: 14
+  _range: 10
+  _aoeRadius: 5
+  _aoeTelegraphPrefab: {fileID: 5023488656258821978, guid: 3dc6c266cada4c44b90be448502c2bef, type: 3}
+  _aoeInnerRadius: 2.8
+  _aoeOuterRadius: 7

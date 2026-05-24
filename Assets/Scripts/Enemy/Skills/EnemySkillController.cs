@@ -151,6 +151,10 @@ public class EnemySkillController : MonoBehaviour
         {
             _currentCastCoroutine = StartCoroutine(CircleAoERoutine(skill));
         }
+        else if (skill.SkillType == EnemySkillType.DonutAoE)
+        {
+            _currentCastCoroutine = StartCoroutine(DonutAoERoutine(skill));
+        }
         else
         {
             return false;
@@ -170,6 +174,117 @@ public class EnemySkillController : MonoBehaviour
     /// 読条期間中は地面範囲提示を表示し、読条完了後に XZ 平面距離で伤害判定する。
     /// CircleAoE は EnemySkillType.CastAttack ではないため Guard Resonance をトリガーしない。
     /// </summary>
+    // ─── DonutAoE コルーチン ─────────────────────────────────────────
+
+    /// <summary>
+    /// 月環 AoE 施法コルーチン。
+    /// 読条期間中は外圈+内圈提示を表示し、読条完了後に XZ 平面距離で月環判定する。
+    /// innerRadius &lt; dist &lt;= outerRadius の場合のみ命中。
+    /// DonutAoE は _lastDamageSkillData を更新しないため Guard Resonance をトリガーしない。
+    /// </summary>
+    private IEnumerator DonutAoERoutine(EnemySkillData skill)
+    {
+        IsCasting            = true;
+        _currentSkill        = skill;
+        _currentCastTarget   = null;
+        _currentCastElapsed  = 0f;
+        _currentCastDuration = skill.CastTime;
+
+        float inner = skill.AoeInnerRadius;
+        float outer = skill.AoeOuterRadius;
+        Debug.Log($"[EnemySkillController] {gameObject.name}: DonutAoE 読条開始 [{skill.DisplayName}] inner={inner} outer={outer} castTime={skill.CastTime}s");
+
+        // ─── 提示生成 ────────────────────────────────────────────────
+        GameObject telegraph = null;
+        if (skill.AoeTelegraphPrefab != null)
+        {
+            telegraph = Instantiate(skill.AoeTelegraphPrefab, transform.position, Quaternion.identity);
+        }
+        else
+        {
+            // フォールバック: 外圈のみ半透明赤 Cylinder
+            telegraph = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            var c = telegraph.GetComponent<Collider>();
+            if (c != null) Destroy(c);
+            var r = telegraph.GetComponent<Renderer>();
+            if (r != null)
+            {
+                var m = new Material(Shader.Find("Standard"));
+                m.color = new Color(1f, 0.15f, 0.05f, 0.4f);
+                m.SetFloat("_Mode", 3f);
+                m.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                m.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                m.SetInt("_ZWrite", 0);
+                m.EnableKeyword("_ALPHABLEND_ON");
+                m.renderQueue = 3000;
+                r.material = m;
+                r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+        }
+        // DonutAoETelegraphController.Setup() でリングメッシュを生成
+        if (telegraph != null)
+        {
+            telegraph.transform.position = transform.position;
+            var ctrl = telegraph.GetComponent<DonutAoETelegraphController>();
+            if (ctrl != null)
+                ctrl.Setup(inner, outer);
+        }
+
+        // ─── 読条ループ ─────────────────────────────────────────────
+        while (_currentCastElapsed < _currentCastDuration)
+        {
+            if (_healthComponent != null && _healthComponent.IsDead)
+            {
+                if (telegraph != null) Destroy(telegraph);
+                CleanupCast();
+                yield break;
+            }
+            if (telegraph != null)
+                telegraph.transform.position = transform.position;
+            _currentCastElapsed += Time.deltaTime;
+            yield return null;
+        }
+        _currentCastElapsed = _currentCastDuration;
+
+        // 提示消去
+        if (telegraph != null) { Destroy(telegraph); telegraph = null; }
+
+        // ─── 伤害判定（月環: innerRadius < dist <= outerRadius） ──────
+        if (_healthComponent != null && _healthComponent.IsDead)
+        {
+            Debug.Log($"[EnemySkillController] {gameObject.name}: DonutAoE caster 死亡 — 判定なし");
+        }
+        else
+        {
+            var playerGO = GameObject.FindGameObjectWithTag("Player");
+            if (playerGO != null)
+            {
+                Vector3 centerFlat = new Vector3(transform.position.x, 0f, transform.position.z);
+                Vector3 playerFlat = new Vector3(playerGO.transform.position.x, 0f, playerGO.transform.position.z);
+                float dist = Vector3.Distance(centerFlat, playerFlat);
+                bool hit = dist > inner && dist <= outer;
+                if (hit)
+                {
+                    var ph = playerGO.GetComponent<HealthComponent>();
+                    if (ph != null && !ph.IsDead)
+                    {
+                        // _lastDamageSkillData は更新しない → Guard Resonance / Radiant Riposte トリガーなし
+                        ph.TakeDamage(skill.Damage, transform);
+                        Debug.Log($"[EnemySkillController] {gameObject.name}: [{skill.DisplayName}] DonutAoE 命中 dist={dist:F2} inner={inner} outer={outer} dmg={skill.Damage}");
+                    }
+                }
+                else
+                {
+                    string reason = dist <= inner ? "内圈安全区" : "外圈之外";
+                    Debug.Log($"[EnemySkillController] {gameObject.name}: [{skill.DisplayName}] DonutAoE 不命中 ({reason}) dist={dist:F2}");
+                }
+            }
+        }
+
+        StartCooldown(skill);
+        CleanupCast();
+    }
+
     private IEnumerator CircleAoERoutine(EnemySkillData skill)
     {
         IsCasting            = true;
