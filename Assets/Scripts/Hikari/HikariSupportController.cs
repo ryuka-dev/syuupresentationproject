@@ -141,6 +141,12 @@ public class HikariSupportController : MonoBehaviour
     public float GuardResonanceCooldown         => guardResonanceCooldown;
     public float GuardResonanceCooldownRemaining => Mathf.Max(0f, _nextGuardResonanceTime - Time.time);
 
+    /// <summary>
+    /// 守护共鸣 / Guard Resonance の成功時に発火するイベント。
+    /// 引数は本次 CastAttack を実行した攻撃者の Transform（null の場合あり）。
+    /// 外部コントローラー（PlayerGuardCounterController など）が購読して反撃機会を管理する。
+    /// </summary>
+    public event System.Action<Transform> OnGuardResonanceTriggered;
 
     
 public bool  IsBurdenRecoveryEnabled  => enableBurdenRecovery;
@@ -419,6 +425,8 @@ private bool TryTriggerGuardResonance(Transform attacker)
 
         if (logDebugMessages)
             Debug.Log("[HikariSupport] 守护共鸣 / Guard Resonance 触发 — 光负荷减少。");
+
+        OnGuardResonanceTriggered?.Invoke(attacker);
 
         if (shouldLightCounter)
             TryTriggerLightCounter(attacker);

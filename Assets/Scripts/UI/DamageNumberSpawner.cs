@@ -85,7 +85,11 @@ public class DamageNumberSpawner : MonoBehaviour
 
         // 生成 & 初期化
         DamageNumberPopup popup = Instantiate(popupPrefab, spawnPos, Quaternion.identity);
-        popup.Initialize(damage, _mainCamera);
+        // 伤害来源ラベルがある場合は副テキストとして表示する
+        if (_health != null && _health.LastDamageHasSourceLabel)
+            popup.Initialize(damage, _mainCamera, _health.LastDamageSourceLabel.GetDisplayText());
+        else
+            popup.Initialize(damage, _mainCamera);
     }
 
 
@@ -111,7 +115,12 @@ public class DamageNumberSpawner : MonoBehaviour
         );
         Vector3 spawnPos = transform.position + popupOffset + randomH;
 
+        // 治療値が倍率強化されている場合は GUARD HEAL 副文字を表示
+        bool wasBoosted = _health != null && _health.LastHealingWasBoosted;
         DamageNumberPopup popup = Instantiate(prefabToUse, spawnPos, Quaternion.identity);
-        popup.Initialize(actualHealAmount, _mainCamera);
+        if (wasBoosted)
+            popup.Initialize(actualHealAmount, _mainCamera, "GUARD HEAL");
+        else
+            popup.Initialize(actualHealAmount, _mainCamera);
     }
 }

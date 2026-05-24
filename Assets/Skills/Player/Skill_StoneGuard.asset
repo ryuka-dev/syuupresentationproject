@@ -25,5 +25,5 @@ MonoBehaviour:
   attackPowerMultiplier: 1
   areaRadius: 3
   areaDamageMultiplier: 0.8
-  healingReceivedMultiplier: 1
+  healingReceivedMultiplier: 1.5
   visualType: 1

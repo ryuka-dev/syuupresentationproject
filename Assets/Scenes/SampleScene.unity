@@ -1473,6 +1473,61 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1121291567}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &489263975
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 489263977}
+  - component: {fileID: 489263976}
+  m_Layer: 0
+  m_Name: EnemySpawnArea_SkeletonBossOnly
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &489263976
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 489263975}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b56fe10633e8344cbf5b3f29c7235cb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EnemySpawnArea
+  spawnEntries:
+  - enemyPrefab: {fileID: 6916372191042502291, guid: 8f1aa5c173be01846af123af8fc0ea83, type: 3}
+    weight: 1
+    maxAlive: 1
+  maxAliveCount: 1
+  spawnRadius: 20
+  leashRadius: 35
+  respawnInterval: 5
+  spawnOnStart: 1
+  navMeshSampleDistance: 3
+  maxSpawnPositionAttempts: 20
+--- !u!4 &489263977
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 489263975}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -18.47, y: -0.00001, z: -70.78}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!4 &561607638 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 7647528585099630626, guid: 696ddc6fa91d8da42a24a800e2f0c34c, type: 3}
@@ -3126,8 +3181,6 @@ MonoBehaviour:
   skills:
   - {fileID: 11400000, guid: 069070b5ecee0574fb042b7859fde373, type: 2}
   - {fileID: 11400000, guid: b26a4bde9ce8d634b95b743135f5b8e9, type: 2}
-  - {fileID: 11400000, guid: e36c90b83337f214cb0b64a56901ff56, type: 2}
-  - {fileID: 11400000, guid: 65b99ffb9b2b76341be6ca54560fdf69, type: 2}
   logSkillActivation: 1
   runtimeStates: []
 --- !u!114 &919417070
@@ -3194,6 +3247,24 @@ MonoBehaviour:
   basicAttackRecast: 1
   areaBasicAttackRadius: 3
   areaBasicAttackDamageMultiplier: 0.4
+--- !u!114 &919417076
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 919417038}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b132d87d7961c73419b341ff636b59e7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerGuardCounterController
+  hikariSupport: {fileID: 1046374386}
+  combatStats: {fileID: 919417063}
+  counterWindowSeconds: 10
+  counterDamagePdu: 3
+  counterLocalizationKey: skill.player.radiant_riposte.name
+  counterFallbackName: Radiant Riposte
 --- !u!1 &971681417
 GameObject:
   m_ObjectHideFlags: 0
@@ -6099,6 +6170,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
       insertIndex: -1
       addedObject: {fileID: 919417074}
+    - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 919417076}
   m_SourcePrefab: {fileID: 100100000, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
 --- !u!1 &2029538305
 GameObject:
@@ -7018,3 +7092,4 @@ SceneRoots:
   - {fileID: 1888087933}
   - {fileID: 1536795122}
   - {fileID: 1046374390}
+  - {fileID: 489263977}

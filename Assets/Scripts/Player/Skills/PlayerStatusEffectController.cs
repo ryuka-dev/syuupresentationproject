@@ -93,18 +93,18 @@ public class PlayerStatusEffectController : MonoBehaviour
 
     /// <summary>
     /// Active 状态の技能に基づき、受ける治療量を修正する。
-    /// 全 Active 技能の HealingReceivedMultiplier を乗算叠算で適用する。
-    /// baseHealing &lt;= 0 または skillManager が null の場合は原値を返す。
-    /// デフォルト値 1f の技能は実質的に影響を与えない。
+    /// <summary>
+    /// Active な全技能の HealingReceivedMultiplier を乗算した最終倍率を返す。
+    /// skillManager が null / RuntimeStates が null の場合は 1f を返す。
+    /// EffectType は問わない（独立パラメータのため）。
     /// </summary>
-    public float ModifyIncomingHealing(float baseHealing)
+    public float GetIncomingHealingReceivedMultiplier()
     {
-        if (baseHealing <= 0f)       return 0f;
-        if (skillManager == null)    return baseHealing;
+        if (skillManager == null) return 1f;
 
-        float result = baseHealing;
-        var   states = skillManager.RuntimeStates;
-        if (states == null) return baseHealing;
+        float multiplier = 1f;
+        var   states     = skillManager.RuntimeStates;
+        if (states == null) return 1f;
 
         foreach (var state in states)
         {
@@ -112,8 +112,22 @@ public class PlayerStatusEffectController : MonoBehaviour
             if (state.SkillData == null) continue;
             if (!state.IsActive)         continue;
 
-            result *= state.SkillData.HealingReceivedMultiplier;
+            multiplier *= state.SkillData.HealingReceivedMultiplier;
         }
+        return multiplier;
+    }
+
+    /// <summary>
+    /// Active 状態の技能に基づき、受ける治療量を修正する。
+    /// GetIncomingHealingReceivedMultiplier() を使って乗算叠算を適用する。
+    /// baseHealing &lt;= 0 または skillManager が null の場合は原值を返す。
+    /// </summary>
+    public float ModifyIncomingHealing(float baseHealing)
+    {
+        if (baseHealing <= 0f)    return 0f;
+        if (skillManager == null) return baseHealing;
+
+        float result = baseHealing * GetIncomingHealingReceivedMultiplier();
 
         if (logDamageModification && !Mathf.Approximately(result, baseHealing))
             Debug.Log($"[PlayerStatusEffectController] Healing modified: base={baseHealing:F1}, final={result:F1}");
@@ -121,7 +135,6 @@ public class PlayerStatusEffectController : MonoBehaviour
         return result;
     }
 
-    // ─── Private ─────────────────────────────────────────────────
 
     private void ResolveSkillManager()
     {

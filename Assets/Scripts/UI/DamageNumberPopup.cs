@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using TMPro;
 
 /// <summary>
@@ -19,9 +19,10 @@ public class DamageNumberPopup : MonoBehaviour
 
     // ─── 运行时状态 ───────────────────────────────────────────────
 
-    private float  _timer;
-    private Color  _startColor;
-    private Camera _mainCamera;
+    private float      _timer;
+    private Color      _startColor;
+    private Camera     _mainCamera;
+    private TextMeshPro _subLabelText;   // GUARD HEAL などの副文字（オプション）
 
     // ─── 公开初始化 ───────────────────────────────────────────────
 
@@ -65,6 +66,36 @@ public class DamageNumberPopup : MonoBehaviour
         transform.position += worldOffset;
     }
 
+    /// <summary>
+    /// 副テキスト付きオーバーロード。
+    /// subLabel が空 / null の場合は元の Initialize(damage, camera) と同じ動作。
+    /// subLabel が非空の場合、数字の下方に小さいテキストを生成して一緒にフェードアウトさせる。
+    /// </summary>
+    public void Initialize(float damage, Camera targetCamera, string subLabel)
+    {
+        Initialize(damage, targetCamera);
+
+        if (!string.IsNullOrEmpty(subLabel) && text != null)
+        {
+            GameObject subObj = new GameObject("SubLabel");
+            subObj.transform.SetParent(transform, false);
+            subObj.transform.localPosition = new Vector3(0f, -0.3f, 0f);
+
+            _subLabelText           = subObj.AddComponent<TextMeshPro>();
+            _subLabelText.text      = subLabel;
+            _subLabelText.font      = text.font;
+            _subLabelText.fontSize  = text.fontSize * 0.5f;
+            _subLabelText.alignment = TextAlignmentOptions.Center;
+            _subLabelText.color     = text.color;
+
+            // ソートオーダーを主テキストと合わせる
+            var mainRenderer = text.GetComponent<MeshRenderer>();
+            var subRenderer  = _subLabelText.GetComponent<MeshRenderer>();
+            if (mainRenderer != null && subRenderer != null)
+                subRenderer.sortingOrder = mainRenderer.sortingOrder;
+        }
+    }
+
     // ─── Unity 生命周期 ───────────────────────────────────────────
 
     private void Update()
@@ -85,6 +116,14 @@ public class DamageNumberPopup : MonoBehaviour
         Color c = _startColor;
         c.a     = alpha;
         text.color = c;
+
+        // 副文字を主テキストと同じアルファで淡出
+        if (_subLabelText != null)
+        {
+            Color sc = _subLabelText.color;
+            sc.a = alpha;
+            _subLabelText.color = sc;
+        }
 
         // 始终面向摄像机
         if (_mainCamera != null)

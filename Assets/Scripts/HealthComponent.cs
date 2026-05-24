@@ -18,6 +18,19 @@ public class HealthComponent : MonoBehaviour
 
     public bool IsDead => currentHealth <= 0f;
 
+    /// <summary>最近の Heal() で適用された被治療倍率。1f は強化なし。</summary>
+    public float LastHealingReceivedMultiplier { get; private set; } = 1f;
+
+    /// <summary>true の場合、最近の治療は倍率強化されている。</summary>
+    public bool LastHealingWasBoosted => LastHealingReceivedMultiplier > 1.001f;
+
+    /// <summary>最近の TakeDamage() で設定された伤害来源ラベル。</summary>
+    public CombatTextSourceLabel LastDamageSourceLabel { get; private set; }
+
+    /// <summary>true の場合、最近の伤害には来源ラベルが設定されている。</summary>
+    public bool LastDamageHasSourceLabel { get; private set; }
+
+
     // PlayerMitigationController 已移除，伤害修正由 PlayerStatusEffectController 统一负责。
     private PlayerStatusEffectController _statusEffectController;
 
@@ -33,8 +46,22 @@ public class HealthComponent : MonoBehaviour
         TakeDamage(amount, null);
     }
 
+    /// <summary>旧接口 overload：带来源标签的伤害接口。</summary>
+    public void TakeDamage(float amount, Transform attacker, CombatTextSourceLabel sourceLabel)
+    {
+        LastDamageSourceLabel    = sourceLabel;
+        LastDamageHasSourceLabel = true;
+        TakeDamageInternal(amount, attacker);
+    }
+
     /// <summary>带攻击来源的伤害接口。attacker 可为 null。</summary>
     public void TakeDamage(float amount, Transform attacker)
+    {
+        LastDamageHasSourceLabel = false;
+        TakeDamageInternal(amount, attacker);
+    }
+
+    private void TakeDamageInternal(float amount, Transform attacker)
     {
         Debug.Log($"[Health] TakeDamage({amount}) called. IsDead={IsDead} current={currentHealth}");
         if (IsDead) return;
@@ -64,7 +91,10 @@ public class HealthComponent : MonoBehaviour
         }
         if (IsDead) return;
         if (currentHealth >= maxHealth) return;
-        float modifiedAmount = ApplyIncomingHealingModifiers(amount);
+        LastHealingReceivedMultiplier = _statusEffectController != null
+            ? _statusEffectController.GetIncomingHealingReceivedMultiplier()
+            : 1f;
+        float modifiedAmount = amount * LastHealingReceivedMultiplier;
         if (modifiedAmount <= 0f) return;
 
 
