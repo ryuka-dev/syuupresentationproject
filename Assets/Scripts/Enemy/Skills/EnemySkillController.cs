@@ -139,15 +139,22 @@ public class EnemySkillController : MonoBehaviour
     public bool TryStartSkill(EnemySkillData skill, Transform target)
     {
         if (skill == null)                                return false;
-        if (target == null)                               return false;
+        if (target == null && skill.SkillType == EnemySkillType.CastAttack) return false;
         if (IsCasting)                                    return false;
         if (!CanUseSkill(skill))                          return false;
-        if (skill.SkillType != EnemySkillType.CastAttack) return false;
-
-        float dist = Vector3.Distance(transform.position, target.position);
-        if (dist > skill.Range) return false;
-
-        _currentCastCoroutine = StartCoroutine(CastAttackRoutine(skill, target));
+        // SkillType に応じてコルーチンを振り分ける
+        if (skill.SkillType == EnemySkillType.CastAttack)
+        {
+            _currentCastCoroutine = StartCoroutine(CastAttackRoutine(skill, target));
+        }
+        else if (skill.SkillType == EnemySkillType.CircleAoE)
+        {
+            _currentCastCoroutine = StartCoroutine(CircleAoERoutine(skill));
+        }
+        else
+        {
+            return false;
+        }
         return true;
     }
 
@@ -156,6 +163,124 @@ public class EnemySkillController : MonoBehaviour
     /// フレームごとに経過時間を加算し、UI が CurrentCastProgress を読み取れるようにする。
     /// 読条完了後にターゲット再検証を行い、命中条件を満たせば TakeDamage を呼ぶ。
     /// </summary>
+    // ─── CircleAoE コルーチン ───────────────────────────────────────
+
+    /// <summary>
+    /// 円形 AoE 施法コルーチン。
+    /// 読条期間中は地面範囲提示を表示し、読条完了後に XZ 平面距離で伤害判定する。
+    /// CircleAoE は EnemySkillType.CastAttack ではないため Guard Resonance をトリガーしない。
+    /// </summary>
+    private IEnumerator CircleAoERoutine(EnemySkillData skill)
+    {
+        IsCasting            = true;
+        _currentSkill        = skill;
+        _currentCastTarget   = null; // CircleAoE はターゲット固定しない
+        _currentCastElapsed  = 0f;
+        _currentCastDuration = skill.CastTime;
+
+        Debug.Log($"[EnemySkillController] {gameObject.name}: CircleAoE 読条開始 [{skill.DisplayName}] radius={skill.AoeRadius} castTime={skill.CastTime}s");
+
+        // ─── 範囲提示エフェクトを生成 ────────────────────────────
+        GameObject telegraph = null;
+        if (skill.AoeTelegraphPrefab != null)
+        {
+            telegraph = Instantiate(skill.AoeTelegraphPrefab, transform.position, Quaternion.identity);
+        }
+        else
+        {
+            // フォールバック: Cylinder で半透明赤円を作成
+            telegraph = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            var col = telegraph.GetComponent<Collider>();
+            if (col != null) Destroy(col);
+            var rend = telegraph.GetComponent<Renderer>();
+            if (rend != null)
+            {
+                var mat = new Material(Shader.Find("Standard"));
+                mat.color = new Color(1f, 0.15f, 0.05f, 0.45f);
+                mat.SetFloat("_Mode", 3f);            // Transparent
+                mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                mat.SetInt("_ZWrite", 0);
+                mat.DisableKeyword("_ALPHATEST_ON");
+                mat.EnableKeyword("_ALPHABLEND_ON");
+                mat.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+                mat.renderQueue = 3000;
+                rend.material   = mat;
+                rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+        }
+
+        // 提示をスケーリング（直径 = radius * 2、高さは薄く）
+        if (telegraph != null)
+        {
+            float d = skill.AoeRadius * 2f;
+            telegraph.transform.localScale = new Vector3(d, 0.05f, d);
+            telegraph.transform.position   = transform.position; // 開始位置
+        }
+
+        // ─── 読条ループ ─────────────────────────────────────────
+        while (_currentCastElapsed < _currentCastDuration)
+        {
+            if (_healthComponent != null && _healthComponent.IsDead)
+            {
+                Debug.Log($"[EnemySkillController] {gameObject.name}: CircleAoE 中断（caster 死亡）");
+                if (telegraph != null) Destroy(telegraph);
+                CleanupCast();
+                yield break;
+            }
+            // 提示を Boss に追従させる
+            if (telegraph != null)
+                telegraph.transform.position = transform.position;
+
+            _currentCastElapsed += Time.deltaTime;
+            yield return null;
+        }
+        _currentCastElapsed = _currentCastDuration;
+
+        // ─── 提示を消す ─────────────────────────────────────────
+        if (telegraph != null)
+        {
+            Destroy(telegraph);
+            telegraph = null;
+        }
+
+        // ─── 伤害判定（XZ 平面距離） ──────────────────────────────
+        if (_healthComponent != null && _healthComponent.IsDead)
+        {
+            Debug.Log($"[EnemySkillController] {gameObject.name}: CircleAoE 読条完了時 caster 死亡 — 判定なし");
+        }
+        else
+        {
+            // 玩家タグで判定（第一版：プレイヤーのみ）
+            var playerGO = GameObject.FindGameObjectWithTag("Player");
+            if (playerGO != null)
+            {
+                Vector3 centerFlat = new Vector3(transform.position.x, 0f, transform.position.z);
+                Vector3 playerFlat = new Vector3(playerGO.transform.position.x, 0f, playerGO.transform.position.z);
+                float dist = Vector3.Distance(centerFlat, playerFlat);
+
+                if (dist <= skill.AoeRadius)
+                {
+                    var playerHealth = playerGO.GetComponent<HealthComponent>();
+                    if (playerHealth != null && !playerHealth.IsDead)
+                    {
+                        // CircleAoE は _lastDamageSkillData を更新しない
+                        // → EnemySkillType.CastAttack ではないため Guard Resonance / Radiant Riposte をトリガーしない
+                        playerHealth.TakeDamage(skill.Damage, transform);
+                        Debug.Log($"[EnemySkillController] {gameObject.name}: [{skill.DisplayName}] CircleAoE 命中 dist={dist:F2}/{skill.AoeRadius} dmg={skill.Damage}");
+                    }
+                }
+                else
+                {
+                    Debug.Log($"[EnemySkillController] {gameObject.name}: [{skill.DisplayName}] CircleAoE 範囲外 — 不命中 dist={dist:F2}/{skill.AoeRadius}");
+                }
+            }
+        }
+
+        StartCooldown(skill);
+        CleanupCast();
+    }
+
 private IEnumerator CastAttackRoutine(EnemySkillData skill, Transform target)
     {
         IsCasting             = true;
