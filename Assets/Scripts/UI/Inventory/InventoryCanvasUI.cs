@@ -39,6 +39,9 @@ public class InventoryCanvasUI : MonoBehaviour
     [SerializeField] private RectTransform equipmentWindowRect;
     [SerializeField] private RectTransform detailWindowRect;
 
+    // Canvas reference for sortingOrder control
+    private Canvas _canvas;
+
     // ── Grid ────────────────────────────────────────────────────────
     private InventoryGridSlotUI[] _gridSlots;
     private InventoryGridSlotUI   _currentSelectedSlot;
@@ -58,7 +61,8 @@ public class InventoryCanvasUI : MonoBehaviour
         if (_isOpen) return;
         _isOpen = true;
         if (rootPanel) rootPanel.SetActive(true);
-        // InventoryCanvas を UI 下で最前面へ（SkillCanvas / LevelUI より上）
+        // InventoryCanvas を最前面へ：sortingOrder で確実に上書き + sibling order
+        if (_canvas != null) _canvas.sortingOrder = 1000;
         transform.SetAsLastSibling();
         ClearSelection();
         RefreshAll();
@@ -80,6 +84,7 @@ public class InventoryCanvasUI : MonoBehaviour
     // ── Lifecycle ───────────────────────────────────────────────────
     private void Awake()
     {
+        _canvas = GetComponent<Canvas>();
         if (playerInventory   == null) playerInventory   = FindFirstObjectByType<PlayerInventory>();
         if (playerEquipment   == null) playerEquipment   = FindFirstObjectByType<PlayerEquipment>();
         if (playerCombatStats == null) playerCombatStats = FindFirstObjectByType<PlayerCombatStats>();
