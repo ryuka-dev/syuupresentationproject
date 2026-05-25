@@ -7097,15 +7097,15 @@ MonoBehaviour:
       m_Calls: []
   m_text: Equipment
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 4e39c7c6d8a336144a39330a241af8aa, type: 2}
-  m_sharedMaterial: {fileID: 5158636000708085158, guid: 4e39c7c6d8a336144a39330a241af8aa, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 2768e8a754264a846b1719f959c41b83, type: 2}
+  m_sharedMaterial: {fileID: 5228617692414682157, guid: 2768e8a754264a846b1719f959c41b83, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4294967295
-  m_fontColor: {r: 1, g: 1, b: 1, a: 1}
+    rgba: 4278190080
+  m_fontColor: {r: 0, g: 0, b: 0, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:
