@@ -1950,7 +1950,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 0}
-  m_AnchoredPosition: {x: 0.000030517578, y: 11.000015}
+  m_AnchoredPosition: {x: 0, y: 11}
   m_SizeDelta: {x: -20, y: 62}
   m_Pivot: {x: 0.5, y: 0}
 --- !u!114 &462053988
@@ -2505,6 +2505,8 @@ MonoBehaviour:
   inventoryWindowRect: {fileID: 574526497}
   equipmentWindowRect: {fileID: 1911561844}
   detailWindowRect: {fileID: 1128885990}
+  detailWindowGap: 12
+  detailScreenPadding: 8
 --- !u!114 &572963372
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3118,7 +3120,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 0}
-  m_AnchoredPosition: {x: 0.000030517578, y: 11.000015}
+  m_AnchoredPosition: {x: 0, y: 11}
   m_SizeDelta: {x: -20, y: 62}
   m_Pivot: {x: 0.5, y: 0}
 --- !u!114 &658182977
@@ -6545,11 +6547,11 @@ RectTransform:
   - {fileID: 658182976}
   m_Father: {fileID: 297789380}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchorMin: {x: 0, y: 0}
+  m_AnchorMax: {x: 0, y: 0}
   m_AnchoredPosition: {x: 195.4, y: -79.96983}
-  m_SizeDelta: {x: 240, y: 432.6604}
-  m_Pivot: {x: 0.5, y: 0.5}
+  m_SizeDelta: {x: 240, y: 300}
+  m_Pivot: {x: 0, y: 1}
 --- !u!114 &1128885991
 MonoBehaviour:
   m_ObjectHideFlags: 0

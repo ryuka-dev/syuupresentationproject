@@ -39,8 +39,14 @@ public class InventoryCanvasUI : MonoBehaviour
     [SerializeField] private RectTransform equipmentWindowRect;
     [SerializeField] private RectTransform detailWindowRect;
 
+    [Header("Tooltip Settings")]
+    [SerializeField] private float detailWindowGap    = 12f;
+    [SerializeField] private float detailScreenPadding = 8f;
+
     // Canvas reference for sortingOrder control
     private Canvas _canvas;
+    // Hover 状態：true = クリック選中中（DetailWindow を維持）
+    private bool _selectionLocked;
 
     // ── Grid ────────────────────────────────────────────────────────
     private InventoryGridSlotUI[] _gridSlots;
@@ -74,7 +80,7 @@ public class InventoryCanvasUI : MonoBehaviour
     {
         if (!_isOpen) return;
         _isOpen = false;
-        ClearSelection();
+        ClearSelection();   // _selectionLocked = false もここで行われる
         if (rootPanel) rootPanel.SetActive(false);
         if (detailPanel) detailPanel.Hide();
     }
@@ -136,7 +142,7 @@ public class InventoryCanvasUI : MonoBehaviour
         RefreshStats();
     }
 
-    private void RefreshInventory()
+private void RefreshInventory()
     {
         if (!_isOpen || _gridSlots == null) return;
         var items     = playerInventory?.Items;
@@ -146,7 +152,7 @@ public class InventoryCanvasUI : MonoBehaviour
 
         for (int i = 0; i < visibleSlotCount; i++)
         {
-            if (i < itemCount) _gridSlots[i].SetItem(items[i], OnItemSlotClicked);
+            if (i < itemCount) _gridSlots[i].SetItem(items[i], OnItemSlotClicked, OnItemSlotHoverEnter, OnItemSlotHoverExit);
             else               _gridSlots[i].SetEmpty();
         }
     }
@@ -176,6 +182,7 @@ public class InventoryCanvasUI : MonoBehaviour
         _selectionMode    = SelectionMode.None;
         _selectedStack    = null;
         _selectedSlotType = EquipmentSlotType.None;
+        _selectionLocked  = false;
     }
 
     // ── Click Handlers ──────────────────────────────────────────────
@@ -191,7 +198,74 @@ public class InventoryCanvasUI : MonoBehaviour
         _selectionMode    = SelectionMode.InventoryItem;
         _selectedStack    = stack;
         _selectedSlotType = EquipmentSlotType.None;
-        if (detailPanel) detailPanel.ShowInventoryItem(stack, OnEquipButtonClicked);
+        _selectionLocked  = true;  // クリック後はDetailWindowを維持
+        if (detailPanel)
+        {
+            detailPanel.ShowInventoryItem(stack, OnEquipButtonClicked);
+            if (_currentSelectedSlot != null)
+                PositionDetailWindowNearSlot(_currentSelectedSlot.SlotRect);
+        }
+    }
+
+    // ── Hover Handlers ──────────────────────────────────────────────
+    private void OnItemSlotHoverEnter(InventoryGridSlotUI slot, ItemStack stack)
+    {
+        // Hover は常に更新（_selectionLocked に関係なく表示）
+        if (detailPanel)
+        {
+            detailPanel.ShowInventoryItem(stack, OnEquipButtonClicked);
+            PositionDetailWindowNearSlot(slot.SlotRect);
+        }
+    }
+
+    private void OnItemSlotHoverExit(InventoryGridSlotUI slot)
+    {
+        // ロック中（クリック選中）は維持、それ以外は隠す
+        if (!_selectionLocked && detailPanel) detailPanel.Hide();
+    }
+
+    // ── Tooltip Position ────────────────────────────────────────────
+private void PositionDetailWindowNearSlot(RectTransform slotRT)
+    {
+        if (detailWindowRect == null || slotRT == null) return;
+
+        var rootRT = rootPanel != null ? rootPanel.GetComponent<RectTransform>() : null;
+        if (rootRT == null) return;
+
+        var worldCorners = new Vector3[4];
+        slotRT.GetWorldCorners(worldCorners);
+        // [0]=bottomLeft [1]=topLeft [2]=topRight [3]=bottomRight
+
+        float screenCenterX = (worldCorners[0].x + worldCorners[2].x) * 0.5f;
+        bool  isLeftHalf    = screenCenterX < Screen.width * 0.5f;
+
+        Vector2 localTopLeft, localTopRight;
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            rootRT, new Vector2(worldCorners[1].x, worldCorners[1].y), null, out localTopLeft);
+        RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            rootRT, new Vector2(worldCorners[2].x, worldCorners[2].y), null, out localTopRight);
+
+        float detailW = detailWindowRect.rect.width;
+        float detailH = detailWindowRect.rect.height;
+        float gap     = detailWindowGap;
+        float pad     = detailScreenPadding;
+
+        // Pivot=(0,1): anchoredPosition = window 左上角
+        Vector2 pos = isLeftHalf
+            ? new Vector2(localTopRight.x + gap, localTopRight.y)
+            : new Vector2(localTopLeft.x  - gap - detailW, localTopLeft.y);
+
+        // rootRT ローカル座標内で Clamp
+        Rect rootBounds = rootRT.rect;
+        pos.x = Mathf.Clamp(pos.x, rootBounds.xMin + pad, rootBounds.xMax - detailW - pad);
+        pos.y = Mathf.Clamp(pos.y, rootBounds.yMin + detailH + pad, rootBounds.yMax - pad);
+
+        // anchor=(0.5,0.5) にすることで anchoredPosition が rootRT ローカル座標と一致する
+        detailWindowRect.pivot        = new Vector2(0f, 1f);
+        detailWindowRect.anchorMin    = new Vector2(0.5f, 0.5f);
+        detailWindowRect.anchorMax    = new Vector2(0.5f, 0.5f);
+        detailWindowRect.anchoredPosition = pos;
+        detailWindowRect.SetAsLastSibling();
     }
 
     private void OnEquipmentSlotClicked(ItemData item, EquipmentSlotType slotType)
