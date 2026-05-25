@@ -35,7 +35,8 @@ public class RPGCameraController : MonoBehaviour
 
     // Cursor 管理
     private bool _isCameraDragging    = false;
-    private bool _rightDragAllowed   = false;  // 右键按下那一帧决定是否允许相机旋转
+    private bool    _rightDragAllowed          = false;
+    private Vector2 _rightDragStartMousePosition  = Vector2.zero;
     private static readonly List<RaycastResult> _uiRaycastResults = new List<RaycastResult>();
 
     void Start()
@@ -63,21 +64,29 @@ void LateUpdate()
 
         if (rmbPressed)
         {
-            // 按下那一帧：如果鼠标在 UI 上则不允许相机拖动
-            bool overUI = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
-            _rightDragAllowed = !overUI;
+            // 按下时用 RaycastAll 判断是否在 UI 上
+            _rightDragAllowed = !IsPointerOverUI();
             if (_rightDragAllowed)
             {
-                _isCameraDragging = true;
-                SetCursorVisible(false);
+                _isCameraDragging              = true;
+                _rightDragStartMousePosition   = mouse.position.ReadValue(); // 起点を記録
+                Cursor.visible                 = false;
+                Cursor.lockState               = CursorLockMode.Locked;     // 物理位置を固定
             }
         }
 
         if (rmbReleased)
         {
+            bool wasAllowed   = _rightDragAllowed;
             _rightDragAllowed = false;
             _isCameraDragging = false;
-            SetCursorVisible(true);
+            if (wasAllowed)
+            {
+                Cursor.lockState = CursorLockMode.None;
+                // 起点位置に戻す
+                mouse.WarpCursorPosition(_rightDragStartMousePosition);
+                Cursor.visible   = true;
+            }
         }
 
         if (rmbHeld && _rightDragAllowed)
@@ -106,8 +115,10 @@ void LateUpdate()
     void OnDisable()
     {
         // 無効化時（プレイヤー死亡など）に必ずカーソルを復元する
+        _rightDragAllowed = false;
         _isCameraDragging = false;
-        SetCursorVisible(true);
+        Cursor.lockState  = CursorLockMode.None;
+        Cursor.visible    = true;
     }
 
     private bool IsPointerOverUI()
@@ -124,8 +135,10 @@ void LateUpdate()
 
     void OnDestroy()
     {
+        _rightDragAllowed = false;
         _isCameraDragging = false;
-        SetCursorVisible(true);
+        Cursor.lockState  = CursorLockMode.None;
+        Cursor.visible    = true;
     }
 
     private void SetCursorVisible(bool visible)
