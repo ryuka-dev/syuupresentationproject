@@ -23,6 +23,33 @@ public class ItemDetailPanelUI : MonoBehaviour
     [SerializeField] private Button   equipButton;
     [SerializeField] private Button   unequipButton;
 
+    [Header("Height Auto-Fit")]
+    [SerializeField] private float minWindowHeight       = 220f;
+    [SerializeField] private float maxWindowHeight       = 560f;
+    [SerializeField] private float buttonAreaReservedH   = 73f;   // button height(62) + bottom margin(11)
+    [SerializeField] private float contentBottomPadding  = 8f;
+
+    // ── Height Auto-Fit ─────────────────────────────────────────────
+    private void RefreshHeight()
+    {
+        if (rootPanel == null || descriptionText == null) return;
+        var windowRT = rootPanel.GetComponent<UnityEngine.RectTransform>();
+        if (windowRT == null) return;
+
+        // TMP に最新テキストで優先高さを計算させる
+        descriptionText.ForceMeshUpdate();
+
+        var descRT = descriptionText.GetComponent<UnityEngine.RectTransform>();
+        // descRT.anchoredPosition.y は負値（上端からの距離）
+        float descTop    = Mathf.Abs(descRT.anchoredPosition.y);
+        float descH      = descriptionText.preferredHeight;
+        float targetH    = descTop + descH + buttonAreaReservedH + contentBottomPadding;
+        targetH = Mathf.Clamp(targetH, minWindowHeight, maxWindowHeight);
+
+        // 幅は変えない
+        windowRT.sizeDelta = new Vector2(windowRT.sizeDelta.x, targetH);
+    }
+
     private void Awake() { Hide(); }
 
     // 背包物品を表示（Equip ボタン付き）
@@ -43,6 +70,7 @@ public class ItemDetailPanelUI : MonoBehaviour
         SetButton(equipButton,   isEquipment, onEquip);
         SetButton(unequipButton, false,       null);
         if (rootPanel) { rootPanel.SetActive(true); rootPanel.transform.SetAsLastSibling(); }
+        RefreshHeight();
     }
 
     // 装備中物品を表示（Unequip ボタン付き）
@@ -59,6 +87,7 @@ public class ItemDetailPanelUI : MonoBehaviour
         SetButton(equipButton,   false, null);
         SetButton(unequipButton, true,  onUnequip);
         if (rootPanel) { rootPanel.SetActive(true); rootPanel.transform.SetAsLastSibling(); }
+        RefreshHeight();
     }
 
     public void Hide()

@@ -51,6 +51,7 @@ public class InventoryCanvasUI : MonoBehaviour
     // ── Grid ────────────────────────────────────────────────────────
     private InventoryGridSlotUI[] _gridSlots;
     private InventoryGridSlotUI   _currentSelectedSlot;
+    private EquipmentSlotUI        _currentSelectedEquipSlot;
 
     // ── State ───────────────────────────────────────────────────────
     private bool             _isOpen;
@@ -160,9 +161,9 @@ private void RefreshInventory()
     private void RefreshEquipment()
     {
         if (!_isOpen || playerEquipment == null) return;
-        if (coreSlotUI)      coreSlotUI.Setup("Core",      playerEquipment.EquippedCore,      OnEquipmentSlotClicked);
-        if (armorSlotUI)     armorSlotUI.Setup("Armor",    playerEquipment.EquippedArmor,     OnEquipmentSlotClicked);
-        if (accessorySlotUI) accessorySlotUI.Setup("Accessory", playerEquipment.EquippedAccessory, OnEquipmentSlotClicked);
+        if (coreSlotUI)      coreSlotUI.Setup(EquipmentSlotType.Core,      playerEquipment.EquippedCore,      OnEquipmentSlotClicked, OnEquipSlotHoverEnter, OnEquipSlotHoverExit);
+        if (armorSlotUI)     armorSlotUI.Setup(EquipmentSlotType.Armor,     playerEquipment.EquippedArmor,     OnEquipmentSlotClicked, OnEquipSlotHoverEnter, OnEquipSlotHoverExit);
+        if (accessorySlotUI) accessorySlotUI.Setup(EquipmentSlotType.Accessory, playerEquipment.EquippedAccessory, OnEquipmentSlotClicked, OnEquipSlotHoverEnter, OnEquipSlotHoverExit);
     }
 
     private void RefreshStats()
@@ -179,6 +180,7 @@ private void RefreshInventory()
     private void ClearSelection()
     {
         if (_currentSelectedSlot != null) { _currentSelectedSlot.SetSelected(false); _currentSelectedSlot = null; }
+        if (_currentSelectedEquipSlot != null) { _currentSelectedEquipSlot.SetSelected(false); _currentSelectedEquipSlot = null; }
         _selectionMode    = SelectionMode.None;
         _selectedStack    = null;
         _selectedSlotType = EquipmentSlotType.None;
@@ -272,11 +274,44 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
     {
         if (equipmentWindowRect != null) equipmentWindowRect.SetAsLastSibling();
         if (_currentSelectedSlot != null) { _currentSelectedSlot.SetSelected(false); _currentSelectedSlot = null; }
+        // 装備スロット選中ハイライト更新
+        if (_currentSelectedEquipSlot != null) _currentSelectedEquipSlot.SetSelected(false);
+        _currentSelectedEquipSlot = GetEquipSlotUI(slotType);
+        if (_currentSelectedEquipSlot != null) _currentSelectedEquipSlot.SetSelected(true);
         _selectionMode    = SelectionMode.EquippedItem;
         _selectedStack    = null;
         _selectedSlotType = slotType;
+        _selectionLocked  = true;
         if (item == null) { if (detailPanel) detailPanel.Hide(); return; }
-        if (detailPanel) detailPanel.ShowEquippedItem(item, OnUnequipButtonClicked);
+        if (detailPanel)
+        {
+            detailPanel.ShowEquippedItem(item, OnUnequipButtonClicked);
+            if (_currentSelectedEquipSlot != null)
+                PositionDetailWindowNearSlot(_currentSelectedEquipSlot.SlotRect);
+        }
+    }
+
+    // ── Equipment Hover ─────────────────────────────────────────────
+    private void OnEquipSlotHoverEnter(EquipmentSlotUI slot, ItemData item, EquipmentSlotType slotType)
+    {
+        if (detailPanel)
+        {
+            detailPanel.ShowEquippedItem(item, OnUnequipButtonClicked);
+            PositionDetailWindowNearSlot(slot.SlotRect);
+        }
+    }
+
+    private void OnEquipSlotHoverExit(EquipmentSlotUI slot)
+    {
+        if (!_selectionLocked && detailPanel) detailPanel.Hide();
+    }
+
+    private EquipmentSlotUI GetEquipSlotUI(EquipmentSlotType type)
+    {
+        if (type == EquipmentSlotType.Core)      return coreSlotUI;
+        if (type == EquipmentSlotType.Armor)     return armorSlotUI;
+        if (type == EquipmentSlotType.Accessory) return accessorySlotUI;
+        return null;
     }
 
     // ── Equip ───────────────────────────────────────────────────────
