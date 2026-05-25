@@ -26,7 +26,7 @@ public class ItemDetailPanelUI : MonoBehaviour
     [Header("Height Auto-Fit")]
     [SerializeField] private float minWindowHeight       = 220f;
     [SerializeField] private float maxWindowHeight       = 560f;
-    [SerializeField] private float buttonAreaReservedH   = 73f;   // button height(62) + bottom margin(11)
+    [SerializeField] private float buttonAreaReservedH   = 0f;    // buttons hidden in tooltip mode
     [SerializeField] private float contentBottomPadding  = 8f;
 
     // ── Height Auto-Fit ─────────────────────────────────────────────
@@ -52,8 +52,8 @@ public class ItemDetailPanelUI : MonoBehaviour
 
     private void Awake() { Hide(); }
 
-    // 背包物品を表示（Equip ボタン付き）
-    public void ShowInventoryItem(ItemStack stack, Action onEquip)
+    // 背包物品を表示（純 Tooltip - ボタンなし）
+    public void ShowInventoryItem(ItemStack stack)
     {
         if (stack == null || stack.ItemData == null) { Hide(); return; }
         var item = stack.ItemData;
@@ -67,14 +67,14 @@ public class ItemDetailPanelUI : MonoBehaviour
             isEquipment ? $"+{item.MaxHealthBonus}" : "",
             item.Description
         );
-        SetButton(equipButton,   isEquipment, onEquip);
-        SetButton(unequipButton, false,       null);
+        SetButton(equipButton,   false, null);
+        SetButton(unequipButton, false, null);
         if (rootPanel) { rootPanel.SetActive(true); rootPanel.transform.SetAsLastSibling(); }
         RefreshHeight();
     }
 
-    // 装備中物品を表示（Unequip ボタン付き）
-    public void ShowEquippedItem(ItemData item, Action onUnequip)
+    // 装備中物品を表示（純 Tooltip - ボタンなし）
+    public void ShowEquippedItem(ItemData item)
     {
         if (item == null) { Hide(); return; }
         SetIcon(item.Icon);
@@ -85,7 +85,7 @@ public class ItemDetailPanelUI : MonoBehaviour
             item.Description
         );
         SetButton(equipButton,   false, null);
-        SetButton(unequipButton, true,  onUnequip);
+        SetButton(unequipButton, false, null);
         if (rootPanel) { rootPanel.SetActive(true); rootPanel.transform.SetAsLastSibling(); }
         RefreshHeight();
     }
@@ -96,8 +96,8 @@ public class ItemDetailPanelUI : MonoBehaviour
     }
 
     // 後方互換
-    public void Show(ItemStack stack) { ShowInventoryItem(stack, null); }
-    public void Show(ItemData  item)  { ShowEquippedItem(item,   null); }
+    public void Show(ItemStack stack) { ShowInventoryItem(stack); }
+    public void Show(ItemData  item)  { ShowEquippedItem(item); }
 
     private void SetIcon(Sprite sprite)
     {

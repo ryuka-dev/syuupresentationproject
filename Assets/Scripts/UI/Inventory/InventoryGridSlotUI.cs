@@ -8,7 +8,7 @@ using UnityEngine.UI;
 /// 格子式背包スロット。アイコン + 数量のみ表示。Hover で詳情 Tooltip を通知。
 /// </summary>
 public class InventoryGridSlotUI : MonoBehaviour,
-    IPointerEnterHandler, IPointerExitHandler
+    IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
 {
     [SerializeField] private Image      iconImage;
     [SerializeField] private TMP_Text   countText;
@@ -19,6 +19,7 @@ public class InventoryGridSlotUI : MonoBehaviour,
     private Action<ItemStack>  _onClicked;
     private Action<InventoryGridSlotUI, ItemStack> _onHoverEnter;
     private Action<InventoryGridSlotUI>            _onHoverExit;
+    private Action<InventoryGridSlotUI, ItemStack, Vector2> _onRightClicked;
 
     public bool      IsEmpty    => _stack == null;
     public ItemStack BoundStack => _stack;
@@ -29,8 +30,9 @@ public class InventoryGridSlotUI : MonoBehaviour,
     {
         _stack        = null;
         _onClicked    = null;
-        _onHoverEnter = null;
-        _onHoverExit  = null;
+        _onHoverEnter   = null;
+        _onHoverExit    = null;
+        _onRightClicked = null;
         if (iconImage)  { iconImage.sprite = null; iconImage.enabled = false; }
         if (countText)    countText.gameObject.SetActive(false);
         SetSelected(false);
@@ -40,14 +42,16 @@ public class InventoryGridSlotUI : MonoBehaviour,
     // ── Occupied ───────────────────────────────────────────────────
     public void SetItem(ItemStack stack, Action<ItemStack> onClicked,
                         Action<InventoryGridSlotUI, ItemStack> onHoverEnter = null,
-                        Action<InventoryGridSlotUI>            onHoverExit  = null)
+                        Action<InventoryGridSlotUI>            onHoverExit  = null,
+                        Action<InventoryGridSlotUI, ItemStack, Vector2> onRightClicked = null)
     {
         if (stack == null || stack.ItemData == null) { SetEmpty(); return; }
 
-        _stack        = stack;
-        _onClicked    = onClicked;
-        _onHoverEnter = onHoverEnter;
-        _onHoverExit  = onHoverExit;
+        _stack          = stack;
+        _onClicked      = onClicked;
+        _onHoverEnter   = onHoverEnter;
+        _onHoverExit    = onHoverExit;
+        _onRightClicked = onRightClicked;
 
         if (iconImage)
         {
@@ -86,6 +90,12 @@ public class InventoryGridSlotUI : MonoBehaviour,
     public void OnPointerExit(PointerEventData eventData)
     {
         _onHoverExit?.Invoke(this);
+    }
+
+    public void OnPointerClick(PointerEventData eventData)
+    {
+        if (eventData.button == PointerEventData.InputButton.Right && !IsEmpty)
+            _onRightClicked?.Invoke(this, _stack, eventData.position);
     }
 
     private void OnButtonClicked() { _onClicked?.Invoke(_stack); }

@@ -7,7 +7,8 @@ using UnityEngine.EventSystems;
 /// </summary>
 public class DraggableUIWindow : MonoBehaviour, IPointerDownHandler, IBeginDragHandler, IDragHandler
 {
-    [SerializeField] private RectTransform windowRect;
+    [SerializeField] private RectTransform          windowRect;
+    [SerializeField] private InventoryContextMenuUI contextMenuToHideOnDrag;
 
     private Vector2 _dragOffset;
 
@@ -26,6 +27,7 @@ public class DraggableUIWindow : MonoBehaviour, IPointerDownHandler, IBeginDragH
 
     public void OnBeginDrag(PointerEventData eventData)
     {
+        contextMenuToHideOnDrag?.Hide();   // ドラッグ開始でメニューを閉じる
         if (windowRect == null) return;
         if (windowRect.parent is RectTransform parentRT)
         {

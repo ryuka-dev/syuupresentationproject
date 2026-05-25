@@ -1,4 +1,6 @@
 using UnityEngine;
+using System.Collections.Generic;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
 /// <summary>
@@ -32,7 +34,9 @@ public class RPGCameraController : MonoBehaviour
     private float _pitch = 30f;
 
     // Cursor 管理
-    private bool _isCameraDragging = false;
+    private bool _isCameraDragging    = false;
+    private bool _rightDragAllowed   = false;  // 右键按下那一帧决定是否允许相机旋转
+    private static readonly List<RaycastResult> _uiRaycastResults = new List<RaycastResult>();
 
     void Start()
     {
@@ -52,21 +56,31 @@ void LateUpdate()
         var mouse = Mouse.current;
         if (mouse == null) return;
 
-        // 右键のみドラッグ対象（左键は鏡头に触れない）
-        bool rmb = mouse.rightButton.isPressed;
+        // 右键ドラッグ：UI 上では相机を動かさない
+        bool rmbPressed  = mouse.rightButton.wasPressedThisFrame;
+        bool rmbHeld     = mouse.rightButton.isPressed;
+        bool rmbReleased = mouse.rightButton.wasReleasedThisFrame;
 
-        if (rmb && !_isCameraDragging)
+        if (rmbPressed)
         {
-            _isCameraDragging = true;
-            SetCursorVisible(false);
+            // 按下那一帧：如果鼠标在 UI 上则不允许相机拖动
+            bool overUI = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
+            _rightDragAllowed = !overUI;
+            if (_rightDragAllowed)
+            {
+                _isCameraDragging = true;
+                SetCursorVisible(false);
+            }
         }
-        else if (!rmb && _isCameraDragging)
+
+        if (rmbReleased)
         {
+            _rightDragAllowed = false;
             _isCameraDragging = false;
             SetCursorVisible(true);
         }
 
-        if (rmb)
+        if (rmbHeld && _rightDragAllowed)
         {
             Vector2 delta = mouse.delta.ReadValue();
             _yaw   += delta.x * rotationSpeed * Time.deltaTime;
@@ -94,6 +108,18 @@ void LateUpdate()
         // 無効化時（プレイヤー死亡など）に必ずカーソルを復元する
         _isCameraDragging = false;
         SetCursorVisible(true);
+    }
+
+    private bool IsPointerOverUI()
+    {
+        if (EventSystem.current == null || Mouse.current == null) return false;
+        var eventData = new PointerEventData(EventSystem.current)
+        {
+            position = Mouse.current.position.ReadValue()
+        };
+        _uiRaycastResults.Clear();
+        EventSystem.current.RaycastAll(eventData, _uiRaycastResults);
+        return _uiRaycastResults.Count > 0;
     }
 
     void OnDestroy()
