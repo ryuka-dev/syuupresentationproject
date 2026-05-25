@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+using System;
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 
@@ -11,6 +12,9 @@ using UnityEngine;
 public class PlayerInventory : MonoBehaviour
 {
     private readonly List<ItemStack> _items = new List<ItemStack>();
+
+    /// <summary>インベントリの内容が変化したときに発火するイベント。</summary>
+    public event Action OnInventoryChanged;
 
     /// <summary>全スタックの count 合計（総所持アイテム数）。</summary>
     public int ItemCount
@@ -59,6 +63,7 @@ public class PlayerInventory : MonoBehaviour
 
         Debug.Log($"获得：{item.ItemName}（ID: {item.ItemId}），当前持有总数：{ItemCount}，当前 stack 数：{StackCount}");
         PrintInventorySummary();
+        OnInventoryChanged?.Invoke();
         return true;
     }
 
@@ -91,6 +96,7 @@ public class PlayerInventory : MonoBehaviour
 
         Debug.Log($"移除：{item.ItemName}（ID: {item.ItemId}），当前持有总数：{ItemCount}，当前 stack 数：{StackCount}");
         PrintInventorySummary();
+        OnInventoryChanged?.Invoke();
         return true;
     }
 
