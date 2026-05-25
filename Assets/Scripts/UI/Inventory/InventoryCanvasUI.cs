@@ -34,6 +34,11 @@ public class InventoryCanvasUI : MonoBehaviour
     [Header("Stat Summary")]
     [SerializeField] private TMP_Text statSummaryText;
 
+    [Header("Window Roots (for bring-to-front)")]
+    [SerializeField] private RectTransform inventoryWindowRect;
+    [SerializeField] private RectTransform equipmentWindowRect;
+    [SerializeField] private RectTransform detailWindowRect;
+
     // ── Grid ────────────────────────────────────────────────────────
     private InventoryGridSlotUI[] _gridSlots;
     private InventoryGridSlotUI   _currentSelectedSlot;
@@ -53,6 +58,8 @@ public class InventoryCanvasUI : MonoBehaviour
         if (_isOpen) return;
         _isOpen = true;
         if (rootPanel) rootPanel.SetActive(true);
+        // InventoryCanvas を UI 下で最前面へ（SkillCanvas / LevelUI より上）
+        transform.SetAsLastSibling();
         ClearSelection();
         RefreshAll();
         Cursor.visible   = true;
@@ -169,6 +176,7 @@ public class InventoryCanvasUI : MonoBehaviour
     // ── Click Handlers ──────────────────────────────────────────────
     private void OnItemSlotClicked(ItemStack stack)
     {
+        if (inventoryWindowRect != null) inventoryWindowRect.SetAsLastSibling();
         if (_currentSelectedSlot != null) _currentSelectedSlot.SetSelected(false);
         _currentSelectedSlot = null;
         if (_gridSlots != null)
@@ -183,6 +191,7 @@ public class InventoryCanvasUI : MonoBehaviour
 
     private void OnEquipmentSlotClicked(ItemData item, EquipmentSlotType slotType)
     {
+        if (equipmentWindowRect != null) equipmentWindowRect.SetAsLastSibling();
         if (_currentSelectedSlot != null) { _currentSelectedSlot.SetSelected(false); _currentSelectedSlot = null; }
         _selectionMode    = SelectionMode.EquippedItem;
         _selectedStack    = null;

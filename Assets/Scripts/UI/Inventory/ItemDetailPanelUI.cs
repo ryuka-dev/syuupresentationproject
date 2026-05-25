@@ -42,7 +42,7 @@ public class ItemDetailPanelUI : MonoBehaviour
         );
         SetButton(equipButton,   isEquipment, onEquip);
         SetButton(unequipButton, false,       null);
-        if (rootPanel) rootPanel.SetActive(true);
+        if (rootPanel) { rootPanel.SetActive(true); rootPanel.transform.SetAsLastSibling(); }
     }
 
     // 装備中物品を表示（Unequip ボタン付き）
@@ -58,7 +58,7 @@ public class ItemDetailPanelUI : MonoBehaviour
         );
         SetButton(equipButton,   false, null);
         SetButton(unequipButton, true,  onUnequip);
-        if (rootPanel) rootPanel.SetActive(true);
+        if (rootPanel) { rootPanel.SetActive(true); rootPanel.transform.SetAsLastSibling(); }
     }
 
     public void Hide()

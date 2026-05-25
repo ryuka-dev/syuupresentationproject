@@ -141,7 +141,7 @@ GameObject:
   - component: {fileID: 5048959}
   - component: {fileID: 5048961}
   - component: {fileID: 5048960}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: SlotLabel
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -402,7 +402,7 @@ GameObject:
   - component: {fileID: 93038925}
   - component: {fileID: 93038927}
   - component: {fileID: 93038926}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: ProgressText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -539,7 +539,7 @@ GameObject:
   - component: {fileID: 116474198}
   - component: {fileID: 116474200}
   - component: {fileID: 116474199}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: HpBonus
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -925,7 +925,7 @@ GameObject:
   - component: {fileID: 192837039}
   - component: {fileID: 192837041}
   - component: {fileID: 192837040}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: EquippedItem
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1240,7 +1240,7 @@ GameObject:
   - component: {fileID: 297789380}
   - component: {fileID: 297789382}
   - component: {fileID: 297789381}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: Root
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1926,7 +1926,7 @@ GameObject:
   - component: {fileID: 462053990}
   - component: {fileID: 462053989}
   - component: {fileID: 462053988}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: EquipButton
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -2228,7 +2228,7 @@ GameObject:
   - component: {fileID: 557440926}
   - component: {fileID: 557440928}
   - component: {fileID: 557440927}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: SlotIcon
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -2309,7 +2309,7 @@ GameObject:
   - component: {fileID: 562146194}
   - component: {fileID: 562146193}
   - component: {fileID: 562146192}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: TitleBar
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -2458,7 +2458,7 @@ GameObject:
   - component: {fileID: 572963372}
   - component: {fileID: 572963371}
   - component: {fileID: 572963370}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: InventoryCanvas
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -2501,6 +2501,9 @@ MonoBehaviour:
   accessorySlotUI: {fileID: 1717436270}
   detailPanel: {fileID: 1128885993}
   statSummaryText: {fileID: 1012703499}
+  inventoryWindowRect: {fileID: 574526497}
+  equipmentWindowRect: {fileID: 1911561844}
+  detailWindowRect: {fileID: 1128885990}
 --- !u!114 &572963372
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2596,7 +2599,8 @@ GameObject:
   - component: {fileID: 574526497}
   - component: {fileID: 574526499}
   - component: {fileID: 574526498}
-  m_Layer: 0
+  - component: {fileID: 574526500}
+  m_Layer: 5
   m_Name: InventoryWindow
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -2662,6 +2666,19 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 574526496}
   m_CullTransparentMesh: 1
+--- !u!114 &574526500
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 574526496}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1f35f0107b4ee0848af4e0590cc6d16d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::UIWindowBringToFront
+  windowRoot: {fileID: 574526497}
 --- !u!1001 &601271187
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -2730,7 +2747,7 @@ GameObject:
   - component: {fileID: 609095935}
   - component: {fileID: 609095937}
   - component: {fileID: 609095936}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: Icon
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -2805,7 +2822,7 @@ GameObject:
   - component: {fileID: 618259696}
   - component: {fileID: 618259698}
   - component: {fileID: 618259697}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: DetailIcon
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -2878,7 +2895,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 627986612}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: UI
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -3074,7 +3091,7 @@ GameObject:
   - component: {fileID: 658182979}
   - component: {fileID: 658182978}
   - component: {fileID: 658182977}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: UnequipButton
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -3194,7 +3211,7 @@ GameObject:
   - component: {fileID: 660028061}
   - component: {fileID: 660028063}
   - component: {fileID: 660028062}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: CooldownOverlay
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -3269,7 +3286,7 @@ GameObject:
   - component: {fileID: 668662790}
   - component: {fileID: 668662792}
   - component: {fileID: 668662791}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: ItemType
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -3408,7 +3425,7 @@ GameObject:
   - component: {fileID: 672582247}
   - component: {fileID: 672582246}
   - component: {fileID: 672582249}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: ArmorSlot
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -3660,7 +3677,7 @@ GameObject:
   - component: {fileID: 685507840}
   - component: {fileID: 685507842}
   - component: {fileID: 685507841}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: TitleText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -3797,7 +3814,7 @@ GameObject:
   - component: {fileID: 705226949}
   - component: {fileID: 705226951}
   - component: {fileID: 705226950}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: EquippedItem
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -3991,7 +4008,7 @@ GameObject:
   - component: {fileID: 732822477}
   - component: {fileID: 732822479}
   - component: {fileID: 732822478}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: ItemCount
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -4397,7 +4414,7 @@ GameObject:
   - component: {fileID: 806675168}
   - component: {fileID: 806675170}
   - component: {fileID: 806675169}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: SlotIcon
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -4526,7 +4543,7 @@ GameObject:
   - component: {fileID: 836205466}
   - component: {fileID: 836205468}
   - component: {fileID: 836205467}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: CooldownText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -4663,7 +4680,7 @@ GameObject:
   - component: {fileID: 841309068}
   - component: {fileID: 841309070}
   - component: {fileID: 841309069}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: EquipSlot
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -5066,7 +5083,7 @@ GameObject:
   - component: {fileID: 908902814}
   - component: {fileID: 908902816}
   - component: {fileID: 908902815}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: SlotLabel
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -5647,7 +5664,7 @@ GameObject:
   - component: {fileID: 1012703501}
   - component: {fileID: 1012703500}
   - component: {fileID: 1012703499}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: StatSummary
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -6183,7 +6200,7 @@ GameObject:
   - component: {fileID: 1116200906}
   - component: {fileID: 1116200908}
   - component: {fileID: 1116200907}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: Label
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -6360,7 +6377,8 @@ GameObject:
   - component: {fileID: 1128885992}
   - component: {fileID: 1128885991}
   - component: {fileID: 1128885993}
-  m_Layer: 0
+  - component: {fileID: 1128885994}
+  m_Layer: 5
   m_Name: ItemDetailWindow
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -6460,6 +6478,19 @@ MonoBehaviour:
   descriptionText: {fileID: 2041321398}
   equipButton: {fileID: 462053988}
   unequipButton: {fileID: 658182977}
+--- !u!114 &1128885994
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1128885989}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1f35f0107b4ee0848af4e0590cc6d16d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::UIWindowBringToFront
+  windowRoot: {fileID: 1128885990}
 --- !u!1 &1182658308
 GameObject:
   m_ObjectHideFlags: 0
@@ -6701,7 +6732,7 @@ GameObject:
   - component: {fileID: 1240942133}
   - component: {fileID: 1240942135}
   - component: {fileID: 1240942134}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: TitleText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -6848,7 +6879,7 @@ GameObject:
   - component: {fileID: 1341145684}
   - component: {fileID: 1341145686}
   - component: {fileID: 1341145685}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: KeyText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -6985,7 +7016,7 @@ GameObject:
   - component: {fileID: 1346177486}
   - component: {fileID: 1346177488}
   - component: {fileID: 1346177487}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: EquippedItem
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -7133,7 +7164,7 @@ GameObject:
   - component: {fileID: 1395828642}
   - component: {fileID: 1395828641}
   - component: {fileID: 1395828640}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: TitleBar
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -7223,7 +7254,7 @@ GameObject:
   - component: {fileID: 1398356748}
   - component: {fileID: 1398356747}
   - component: {fileID: 1398356746}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: LevelUI
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -7391,7 +7422,7 @@ GameObject:
   - component: {fileID: 1410539174}
   - component: {fileID: 1410539176}
   - component: {fileID: 1410539175}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: TitleText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -7585,7 +7616,7 @@ GameObject:
   - component: {fileID: 1484410514}
   - component: {fileID: 1484410516}
   - component: {fileID: 1484410515}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: ResultText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -7790,7 +7821,7 @@ GameObject:
   - component: {fileID: 1536795121}
   - component: {fileID: 1536795120}
   - component: {fileID: 1536795119}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: SkillCanvas
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -7897,7 +7928,7 @@ GameObject:
   - component: {fileID: 1559428120}
   - component: {fileID: 1559428122}
   - component: {fileID: 1559428121}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: RestartHintText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -8091,7 +8122,7 @@ GameObject:
   - component: {fileID: 1617821878}
   - component: {fileID: 1617821880}
   - component: {fileID: 1617821879}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: ItemName
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -8340,7 +8371,7 @@ GameObject:
   - component: {fileID: 1645218438}
   - component: {fileID: 1645218440}
   - component: {fileID: 1645218439}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: Label
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -8477,7 +8508,7 @@ GameObject:
   - component: {fileID: 1648093831}
   - component: {fileID: 1648093833}
   - component: {fileID: 1648093832}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: SlotLabel
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -8672,7 +8703,7 @@ GameObject:
   - component: {fileID: 1653267268}
   - component: {fileID: 1653267267}
   - component: {fileID: 1653267266}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: GridRoot
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -8882,7 +8913,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1675659769}
   - component: {fileID: 1675659770}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: SkillBar
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -8942,7 +8973,7 @@ GameObject:
   - component: {fileID: 1693897083}
   - component: {fileID: 1693897082}
   - component: {fileID: 1693897081}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: TitleBar
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -9222,7 +9253,7 @@ GameObject:
   - component: {fileID: 1717436268}
   - component: {fileID: 1717436267}
   - component: {fileID: 1717436270}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: AccessorySlot
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -9435,7 +9466,7 @@ GameObject:
   - component: {fileID: 1767976194}
   - component: {fileID: 1767976193}
   - component: {fileID: 1767976192}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: SkillSlotTemplate
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -9875,7 +9906,7 @@ GameObject:
   - component: {fileID: 1869084894}
   - component: {fileID: 1869084896}
   - component: {fileID: 1869084895}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: SlotIcon
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -10077,7 +10108,7 @@ GameObject:
   - component: {fileID: 1899776706}
   - component: {fileID: 1899776705}
   - component: {fileID: 1899776708}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: CoreSlot
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -10215,7 +10246,8 @@ GameObject:
   - component: {fileID: 1911561844}
   - component: {fileID: 1911561846}
   - component: {fileID: 1911561845}
-  m_Layer: 0
+  - component: {fileID: 1911561847}
+  m_Layer: 5
   m_Name: EquipmentWindow
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -10284,6 +10316,19 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1911561843}
   m_CullTransparentMesh: 1
+--- !u!114 &1911561847
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1911561843}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1f35f0107b4ee0848af4e0590cc6d16d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::UIWindowBringToFront
+  windowRoot: {fileID: 1911561844}
 --- !u!1001 &2013578515
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -10450,7 +10495,7 @@ GameObject:
   - component: {fileID: 2022700333}
   - component: {fileID: 2022700335}
   - component: {fileID: 2022700334}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: ItemId
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -10699,7 +10744,7 @@ GameObject:
   - component: {fileID: 2041321397}
   - component: {fileID: 2041321399}
   - component: {fileID: 2041321398}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: Description
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -10836,7 +10881,7 @@ GameObject:
   - component: {fileID: 2054467542}
   - component: {fileID: 2054467544}
   - component: {fileID: 2054467543}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: AtkBonus
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -11157,7 +11202,7 @@ GameObject:
   - component: {fileID: 2109723837}
   - component: {fileID: 2109723839}
   - component: {fileID: 2109723838}
-  m_Layer: 0
+  m_Layer: 5
   m_Name: SkillNameText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
