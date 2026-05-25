@@ -50,8 +50,8 @@
 → 溢光反震（光溢出区间触发 Guard Resonance 时对攻击者反伤 30）
 → 敌人死亡 → 掉落 ItemDrop → 按 E 拾取
 → PlayerInventory 加入背包
-→ F1 右侧背包 Debug 面板验证库存
-→ 从背包装备 Core / Armor / Accessory
+→ B 打开正式 InventoryCanvas 格子背包 / EquipmentWindow
+→ Hover 物品显示 ItemDetailWindow Tooltip；右键菜单执行 Equip / Unequip
 → PlayerCombatStats 汇总攻击力与最大生命值
 → HealthComponent 自动应用新上限
 → 刷怪点延迟刷新（EnemySpawnPoint / EnemySpawnArea）
@@ -65,6 +65,7 @@
 ### Player / Camera / Movement
 - WASD FF14 Legacy-like 相机基准移动，Shift 支持八方向跑步
 - 右键旋转相机，左键 + 右键双键前进
+- 鼠标位于 UI 上时，右键不会触发相机旋转（`EventSystem.RaycastAll` 检测）
 - 移动时 Player 朝实际方向转身，无输入不被相机强制转身
 - 跳跃动画循环修复，落地后可直接进入 RunForward / Sprint
 - `RPGCameraController` 只控制相机，不直接旋转 Player
@@ -102,10 +103,18 @@
 - `PlayerStatusEffectController` 修正玩家减伤 / 攻击输出 / 治疗接收倍率
 
 ### Item / Drop / Inventory / Equipment
-- `ItemData` ScriptableObject：Material / Equipment，含 attackPowerBonus / maxHealthBonus
-- `PlayerInventory`：Equipment 独立 stack，Material 合并 stack
+- `ItemData` ScriptableObject：Material / Equipment，含 attackPowerBonus / maxHealthBonus / Icon
+- `PlayerInventory`：Equipment 独立 stack，Material 合并 stack，并通过 OnInventoryChanged 驱动正式 UI 刷新
 - `PlayerEquipment`：Core / Armor / Accessory 三槽（主角武器固定不入装备系统）
 - `EnemyDropper`：多条目概率掉落 + Terrain 贴地 Raycast 生成
+
+### Formal Inventory / Equipment UI (v1)
+- `InventoryCanvas` 已作为正式 Canvas UI 接入，挂在 `UI` 根对象下；B 打开/关闭，Esc 关闭
+- `InventoryWindow` 使用程序生成的 RPG 格子背包，`visibleSlotCount` 可在 Inspector 配置（当前用于 48 格测试）
+- `EquipmentWindow` 显示 Core / Armor / Accessory 三槽装备栏，与背包格子共用图标 / Tooltip 交互风格
+- `ItemDetailWindow` 是纯 Hover Tooltip：不挡鼠标 Raycast，自动高度，按目标左右侧定位并 Clamp 到屏幕内
+- `InventoryContextMenu` 是右键操作菜单：背包 Equipment 可 Equip，已装备槽可 Unequip；执行菜单项、点击外部、拖动窗口或关闭背包时隐藏
+- `InventoryCanvas` 的 Canvas sortingOrder = 1000，用于压住 SkillCanvas / LevelUI；内部窗口置顶用 SetAsLastSibling
 
 ### Damage Number / UI Feedback
 - `DamageNumberSpawner` / `DamageNumberPopup`：伤害与治疗飘字
@@ -135,14 +144,19 @@
 | 脚本 | 职责简述 |
 |---|---|
 | `PlayerController` | 玩家输入移动、朝向、动画参数 |
-| `RPGCameraController` | 相机跟随与右键旋转，不旋转 Player |
+| `RPGCameraController` | 相机跟随与右键旋转，不旋转 Player；UI 上右键不触发相机 |
 | `PlayerTargeting` | 鼠标左键 / Tab 目标选择，提供 CurrentTarget |
 | `PlayerSkillManager` | 统一技能输入、RuntimeState、分发到执行器 |
 | `PlayerBasicAttackController` | Slot1/4 执行与共享基础攻击冷却 |
 | `PlayerGuardCounterController` | Slot5 Radiant Riposte 执行与 10 秒窗口管理 |
 | `PlayerStatusEffectController` | 减伤 / 攻击倍率 / 治疗倍率统一修正 |
+| `PlayerInventory` | 运行时库存，stack 规则与 OnInventoryChanged 事件 |
 | `PlayerEquipment` | Core / Armor / Accessory 三槽装备容器 |
 | `PlayerCombatStats` | 三槽属性汇总，装备变化自动应用最大生命值 |
+| `InventoryCanvasUI` | 正式背包 / 装备 UI 总控，负责格子刷新、Tooltip、右键菜单与 Equip/Unequip 调用 |
+| `InventoryGridSlotUI` / `EquipmentSlotUI` | 背包格子与装备槽显示、Hover、右键事件 |
+| `ItemDetailPanelUI` / `InventoryContextMenuUI` | 物品 Tooltip 与右键操作菜单 |
+| `DraggableUIWindow` / `UIWindowBringToFront` | 背包窗口拖动与窗口置顶 |
 | `HikariSupportController` | 自动治疗、光负荷、Guard Resonance、溢光反震 |
 | `EnemyAI` | FSM + NavMeshAgent + 仇恨系统 |
 | `EnemySkillController` | 敌人技能配置与执行（CastAttack / AoE） |
@@ -157,8 +171,9 @@
 
 ## 6. 当前已知问题 / 未确认事项
 
-- 正式背包 UI / 装备 UI / 死亡复活 UI 尚未制作。
-- 背包 / 装备仍是运行时原型：库存不持久化，装备仍以 `ItemData` 表示，不支持 `ItemInstance` / 随机词条。
+- 死亡复活正式 UI 尚未制作。
+- 正式背包 / 装备 UI v1 已可用，但库存 / 装备不持久化，尚未实现 `ItemDatabase` / SaveData / Load。
+- 背包 / 装备仍以 `ItemData` 表示，不支持 `ItemInstance` / 随机词条 / 格子位置保存 / 物品拖拽换格。
 - 掉落系统仍使用 Prefab 上的简单 `EnemyDropper.drops`，尚未实现正式 DropTable ScriptableObject。
 - Hikari 正式模型 / Prefab / Animator / 跟随 AI 尚未制作。
 - 正式 Hikari UI 未制作；当前 Hikari Debug 只是 OnGUI 窗口。
@@ -179,8 +194,8 @@
 
 ## 7. 推荐下一步
 
-1. **整理 EnemyAI / NavMesh**：实测 Wander / Chase / ReturnToSpawn 稳定性，整理 NavMeshSurface LayerMask，考虑独立保存 NavMeshData。
-2. **玩家技能系统小步扩展**：在现有 v0.2 框架上新增一个不同类型技能（打断 / 瞬发伤害），或整理通用技能视觉系统。
-3. **最小打断技能 v0.1**：Boss 读条时玩家可调用 `EnemySkillController.InterruptCurrentCast()`，扩展第三种战斗判断维度。
-4. **正式 Hikari UI**：制作第一版正式 Hikari 光负荷 UI（Canvas + TMP），替换 OnGUI Debug 窗口。
-5. **正式背包 / 装备 UI**：第一版 Canvas 背包界面，支持查看库存与一键装备。
+1. **最推荐：Inventory Save/Load v1**：建立 `ItemDatabase(itemId → ItemData)`，保存 `InventorySaveData` 与 `EquipmentSaveData` 到 JSON，并在启动时还原背包 / 装备。
+2. **背包交互扩展**：在当前格子 UI 上加入物品拖拽换格 / 排序 / 丢弃或使用 Consumable（先设计格子位置保存）。
+3. **正式 Hikari UI**：制作第一版正式 Hikari 光负荷 UI（Canvas + TMP），替换 OnGUI Debug 窗口。
+4. **最小打断技能 v0.1**：Boss 读条时玩家可调用 `EnemySkillController.InterruptCurrentCast()`，扩展第三种战斗判断维度。
+5. **整理 EnemyAI / NavMesh**：实测 Wander / Chase / ReturnToSpawn 稳定性，整理 NavMeshSurface LayerMask，考虑独立保存 NavMeshData。

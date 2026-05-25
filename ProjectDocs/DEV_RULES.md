@@ -22,6 +22,7 @@
 
 - Player 移动由 PlayerController 负责，使用相机水平 forward / right 为基准。
 - RPGCameraController 只负责相机，不直接旋转 Player。
+- 鼠标位于 UI 上时，右键不应触发相机旋转；当前使用 EventSystem RaycastAll 做 UI 命中检测，不要改回单纯 `IsPointerOverGameObject()` 或旧 Input。
 - 玩家朝向由 PlayerController 在有移动输入时负责；无输入时 Player 不因相机旋转转身。
 - 鼠标视角旋转使用 Mouse.delta * rotationSpeed，不要再乘 Time.deltaTime。
 - Tab 目标选择属于 PlayerTargeting；不要另建第二套目标系统与 CurrentTarget 抢控制权。
@@ -74,6 +75,11 @@
 
 - OnGUI 只作为 Debug / Developer Menu（F1 Debug UI）。
 - 正式 UI 使用 Canvas + TMP + Button 或 UI Toolkit。
+- 正式背包 UI 位于 `UI/InventoryCanvas`，不要把 F1 Debug 背包当正式 UI 修改。
+- `InventoryCanvas` 需要压住 HUD：Canvas sortingOrder 当前为 1000；内部窗口置顶用 `SetAsLastSibling()`。
+- `ItemDetailWindow` 是纯 Hover Tooltip：不要加回 TitleBar / DraggableUIWindow / 操作按钮；必须保持不挡鼠标 Raycast。
+- `InventoryContextMenu` 是右键操作菜单：必须接收 Raycast；菜单项执行、点击外部、拖动窗口、关闭背包时应关闭。
+- `EquipmentSlotUI` 当前不依赖 SlotLabel / EquippedItem 文本子物体；不要恢复对这些被删除对象的硬依赖。
 - 正式发布前应通过 UNITY_EDITOR || DEVELOPMENT_BUILD 或特殊开关隐藏 Debug 菜单。
 
 ---
@@ -113,6 +119,7 @@
 
 Enemy：EnemyAI / EnemyWorldManager / EnemySpawnPoint / EnemySpawnArea / EnemyDeathHandler / EnemyPlayerCollisionIgnore / EnemySkillData / EnemySkillController / EnemyCastBarUI / DonutAoETelegraphController
 Player：PlayerController / RPGCameraController / PlayerTargeting / TargetSelectionIndicator / PlayerSkillController / PlayerBasicAttackController / PlayerGuardCounterController / PlayerDeathHandler / PlayerRespawnPointTracker / PlayerInventory / PlayerEquipment / PlayerCombatStats / PlayerSkillManager / PlayerStatusEffectController / PlayerSkillCanvasUI / PlayerSkillBarCanvasUI / PlayerMitigationVisualFeedback
+Inventory UI：InventoryInputController / InventoryCanvasUI / InventoryGridSlotUI / EquipmentSlotUI / ItemDetailPanelUI / InventoryContextMenuUI / DraggableUIWindow / UIWindowBringToFront
 Hikari：HikariSupportController
 Combat：HealthComponent / DamageNumberPopup / DamageNumberSpawner / CombatTextSourceLabel
 Items：ItemData / ItemStack / PickupItem / EnemyDropper

@@ -32,6 +32,7 @@
 ### RPGCameraController.cs
 - 只负责相机跟随、yaw / pitch、Cursor 显示隐藏；不直接修改 Player rotation
 - 只有右键按住时相机才旋转；右键拖拽开始时隐藏 Cursor，松开时显示
+- 右键按下帧若鼠标位于 UI 上，则不进入相机拖拽；当前通过 `EventSystem.current.RaycastAll(PointerEventData)` 判断 UI 命中，避免背包右键菜单触发相机旋转
 - 灵敏度：_yaw += delta.x * rotationSpeed，_pitch -= delta.y * rotationSpeed（不乘 Time.deltaTime）
 - rotationSpeed Inspector 可调，用户实测 0.5 合适；实际值以 Main Camera Inspector 为准
 - OnDisable() / OnDestroy() 强制恢复 Cursor 显示
@@ -269,10 +270,12 @@ ScriptableObject，OnValidate() 保护规则：
 - Equipment → maxStack = 1，非 Equipment → equipmentSlotType = None，attackPowerBonus = 0，maxHealthBonus = 0
 - 枚举 ItemType: Material / Equipment / Consumable / Currency / Quest / Cosmetic
 - 枚举 EquipmentSlotType: None / Core / Armor / Accessory
+- 当前用于正式背包 UI 的图标字段：`Sprite icon` / `Icon` 只读属性
 
 ### PlayerInventory.cs
 - Equipment 永远新增独立 ItemStack（不合并）
 - 非 Equipment 优先合并到相同 itemId 且未满的 stack
+- OnInventoryChanged：Add / Remove 等库存变化后触发，用于正式 InventoryCanvas 刷新
 - FindFirstEquipmentBySlot(EquipmentSlotType) → 返回第一个匹配的 ItemData，不移除
 
 ### PlayerEquipment.cs
@@ -287,6 +290,27 @@ ScriptableObject，OnValidate() 保护规则：
 TestItem_Bone.asset       Material / MaxStack=99
 TestItem_GuardCore.asset  Equipment / Core / ATK+20 / MaxHP+50
 ```
+
+### Formal Inventory / Equipment UI (v1)
+
+当前正式背包 UI 位于 `SampleScene` 的 `UI/InventoryCanvas`。F1 OnGUI 背包窗口仍是 Debug，不是正式 UI。
+
+关键脚本：
+- `InventoryInputController.cs`：B 打开 / 关闭背包，Esc 关闭。使用 New Input System，不使用旧 `UnityEngine.Input`。
+- `InventoryCanvasUI.cs`：正式背包 UI 总控；读取 `PlayerInventory` / `PlayerEquipment` / `PlayerCombatStats`，刷新 InventoryWindow / EquipmentWindow / StatSummary，并调用 Equip / Unequip。
+- `InventoryGridSlotUI.cs`：背包格子，由 `InventoryCanvasUI` 根据 `visibleSlotCount` 程序生成；显示 Icon / Count / SelectedFrame，支持 Hover Tooltip、左键高亮、右键菜单。
+- `EquipmentSlotUI.cs`：Core / Armor / Accessory 装备槽显示；不依赖 SlotLabel / EquippedItem 文本子物体，空槽只显示空槽背景，有装备时显示 Icon；支持 Hover Tooltip 与右键 Unequip 菜单。
+- `ItemDetailPanelUI.cs`：纯 Hover Tooltip，只显示信息；无 TitleBar、无 DraggableUIWindow、无操作按钮；高度根据内容自动调整，`CanvasGroup.blocksRaycasts=false`，不阻挡底层格子 Hover。
+- `InventoryContextMenuUI.cs`：右键操作菜单；背包 Equipment 显示 Equip，已装备槽显示 Unequip；点击任意菜单项后关闭，点击菜单外部 / 拖动窗口 / 关闭背包时关闭。
+- `DraggableUIWindow.cs`：InventoryWindow / EquipmentWindow 的窗口拖动；开始拖动时会隐藏右键菜单。
+- `UIWindowBringToFront.cs`：窗口点击置顶；InventoryCanvas 内部窗口用 `SetAsLastSibling()` 控制前后顺序。
+
+显示与交互规则：
+- `InventoryCanvas` Canvas sortingOrder = 1000，用于压住 `SkillCanvas` / `LevelUI`。
+- 背包格子总数由 `InventoryCanvasUI.visibleSlotCount` 控制；当前用于 48 格测试。列数由 `GridRoot` 的 `GridLayoutGroup.Constraint Count` 控制。
+- Tooltip 定位基于 `Root` RectTransform 坐标系：目标在屏幕左半边时显示在右侧，右半边时显示在左侧，并 Clamp 到屏幕内。
+- ItemDetailWindow 是纯信息层，不能接收 Raycast；InventoryContextMenu 是可交互菜单，必须接收 Raycast。
+- 当前没有背包保存、ItemDatabase、ItemInstance、格子位置保存或物品拖拽换格。
 
 ---
 
@@ -320,11 +344,32 @@ TestItem_GuardCore.asset  Equipment / Core / ATK+20 / MaxHP+50
 Player 挂载组件（关键）：
 PlayerController / FactionComponent(Player) / HealthComponent / PlayerTargeting / PlayerSkillController / PlayerBasicAttackController / PlayerDeathHandler / PlayerRespawnPointTracker / PlayerInventory / PlayerEquipment / PlayerCombatStats / PlayerSkillManager / PlayerStatusEffectController / PlayerMitigationVisualFeedback / DamageNumberSpawner / TargetSelectionIndicator / PlayerSkillHudUI(OnGUI Debug)
 
+UI 根结构：
+```
+UI
+├─ SkillCanvas
+├─ LevelUI
+└─ InventoryCanvas (sortingOrder=1000)
+```
+
 SkillCanvas 结构：
 ```
 SkillCanvas
 └─ SkillBar (PlayerSkillBarCanvasUI)
    └─ SkillSlotTemplate (隐藏模板)
+```
+
+InventoryCanvas 结构摘要：
+```
+InventoryCanvas
+└─ Root
+   ├─ InventoryWindow
+   │  └─ GridRoot (InventoryGridSlotUI × visibleSlotCount)
+   ├─ EquipmentWindow
+   │  ├─ CoreSlot / ArmorSlot / AccessorySlot (EquipmentSlotUI)
+   │  └─ StatSummary
+   ├─ ItemDetailWindow (pure Tooltip, blocksRaycasts=false)
+   └─ InventoryContextMenu (right-click actions)
 ```
 
 - SkeletonSpawnerManager：F1 Debug UI 来源（SkeletonDebugUI 挂在此处）
