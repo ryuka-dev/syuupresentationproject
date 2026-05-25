@@ -9,7 +9,7 @@ using UnityEngine;
 public class InventoryCanvasUI : MonoBehaviour
 {
     private enum SelectionMode { None, InventoryItem, EquippedItem }
-    private const int SLOT_COUNT = 30;
+    [SerializeField] private int visibleSlotCount = 48;
 
     [Header("References")]
     [SerializeField] private PlayerInventory   playerInventory;
@@ -118,8 +118,8 @@ public class InventoryCanvasUI : MonoBehaviour
     private void InitializeGrid()
     {
         if (_gridSlots != null || itemGridRoot == null || gridSlotPrefab == null) return;
-        _gridSlots = new InventoryGridSlotUI[SLOT_COUNT];
-        for (int i = 0; i < SLOT_COUNT; i++)
+        _gridSlots = new InventoryGridSlotUI[visibleSlotCount];
+        for (int i = 0; i < visibleSlotCount; i++)
         {
             var slot = Instantiate(gridSlotPrefab, itemGridRoot);
             slot.name    = "Slot_" + i.ToString("D2");
@@ -141,10 +141,10 @@ public class InventoryCanvasUI : MonoBehaviour
         if (!_isOpen || _gridSlots == null) return;
         var items     = playerInventory?.Items;
         int itemCount = items != null ? items.Count : 0;
-        if (itemCount > SLOT_COUNT)
-            Debug.LogWarning($"[InventoryCanvasUI] Item count ({itemCount}) exceeds {SLOT_COUNT} visible slots.");
+        if (itemCount > visibleSlotCount)
+            Debug.LogWarning($"[InventoryCanvasUI] Item count ({itemCount}) exceeds {visibleSlotCount} visible slots.");
 
-        for (int i = 0; i < SLOT_COUNT; i++)
+        for (int i = 0; i < visibleSlotCount; i++)
         {
             if (i < itemCount) _gridSlots[i].SetItem(items[i], OnItemSlotClicked);
             else               _gridSlots[i].SetEmpty();
