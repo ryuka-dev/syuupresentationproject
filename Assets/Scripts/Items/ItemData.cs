@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 public enum ItemType { Material, Equipment, Consumable, Currency, Quest, Cosmetic }
 public enum ItemRarity { Common, Rare, Epic, Legendary }
@@ -33,6 +33,9 @@ public class ItemData : ScriptableObject
 
     [SerializeField] private float maxHealthBonus = 0f;
     public float MaxHealthBonus => maxHealthBonus;
+
+    [SerializeField] private Sprite icon;
+    public Sprite Icon => icon;
 
 #if UNITY_EDITOR
     private void OnValidate()

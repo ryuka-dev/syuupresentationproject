@@ -9,9 +9,10 @@ using UnityEngine.UI;
 /// </summary>
 public class EquipmentSlotUI : MonoBehaviour
 {
+    [SerializeField] private Image    iconImage;
     [SerializeField] private TMP_Text slotLabelText;
     [SerializeField] private TMP_Text equippedItemText;
-    [SerializeField] private Button button;
+    [SerializeField] private Button   button;
 
     private ItemData          _equippedItem;
     private EquipmentSlotType _slotType;
@@ -23,23 +24,22 @@ public class EquipmentSlotUI : MonoBehaviour
         _equippedItem = equippedItem;
         _onClicked    = onClicked;
 
-        // スロットタイプをラベルから判定
-        if (slotLabel == "Core")      _slotType = EquipmentSlotType.Core;
-        else if (slotLabel == "Armor") _slotType = EquipmentSlotType.Armor;
-        else                            _slotType = EquipmentSlotType.Accessory;
+        if      (slotLabel == "Core")   _slotType = EquipmentSlotType.Core;
+        else if (slotLabel == "Armor")  _slotType = EquipmentSlotType.Armor;
+        else                             _slotType = EquipmentSlotType.Accessory;
 
         if (slotLabelText)    slotLabelText.text    = slotLabel;
-        if (equippedItemText) equippedItemText.text  = equippedItem != null ? equippedItem.ItemName : "未装備";
+        if (equippedItemText) equippedItemText.text  = equippedItem != null ? equippedItem.ItemName : "--";
 
-        if (button)
+        if (iconImage != null)
         {
-            button.onClick.RemoveAllListeners();
-            button.onClick.AddListener(OnButtonClicked);
+            if (equippedItem != null && equippedItem.Icon != null)
+            { iconImage.sprite = equippedItem.Icon; iconImage.enabled = true; }
+            else iconImage.enabled = false;
         }
+
+        if (button) { button.onClick.RemoveAllListeners(); button.onClick.AddListener(OnButtonClicked); }
     }
 
-    private void OnButtonClicked()
-    {
-        _onClicked?.Invoke(_equippedItem, _slotType);
-    }
+    private void OnButtonClicked() { _onClicked?.Invoke(_equippedItem, _slotType); }
 }

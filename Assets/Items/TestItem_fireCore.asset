@@ -21,3 +21,4 @@ MonoBehaviour:
   equipmentSlotType: 1
   attackPowerBonus: 90
   maxHealthBonus: 134
+  icon: {fileID: 21300000, guid: e8ff89ac71ef2b84ba592c319049c27d, type: 3}

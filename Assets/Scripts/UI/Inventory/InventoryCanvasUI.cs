@@ -1,51 +1,53 @@
-using System.Collections.Generic;
+
 using TMPro;
 using UnityEngine;
 
 /// <summary>
-/// 正式バックパック UI のメインコントローラ。
-/// PlayerInventory / PlayerEquipment / PlayerCombatStats を参照して表示を管理する。
+/// 格子式背包 UI のメインコントローラ。30 格固定グリッド。
+/// PlayerInventory / PlayerEquipment / PlayerCombatStats を唯一のデータ源として使用。
 /// </summary>
 public class InventoryCanvasUI : MonoBehaviour
 {
-    // ─── 選択モード ───────────────────────────────────────────────
     private enum SelectionMode { None, InventoryItem, EquippedItem }
+    private const int SLOT_COUNT = 30;
 
     [Header("References")]
-    [SerializeField] private PlayerInventory playerInventory;
-    [SerializeField] private PlayerEquipment playerEquipment;
+    [SerializeField] private PlayerInventory   playerInventory;
+    [SerializeField] private PlayerEquipment   playerEquipment;
     [SerializeField] private PlayerCombatStats playerCombatStats;
 
     [Header("Root")]
     [SerializeField] private GameObject rootPanel;
 
-    [Header("Item Grid")]
-    [SerializeField] private Transform itemGridRoot;
-    [SerializeField] private InventorySlotUI itemSlotPrefab;
+    [Header("Inventory Grid")]
+    [SerializeField] private Transform           itemGridRoot;
+    [SerializeField] private InventoryGridSlotUI gridSlotPrefab;
 
     [Header("Equipment Slots")]
     [SerializeField] private EquipmentSlotUI coreSlotUI;
     [SerializeField] private EquipmentSlotUI armorSlotUI;
     [SerializeField] private EquipmentSlotUI accessorySlotUI;
 
-    [Header("Detail Panel")]
+    [Header("Detail Window")]
     [SerializeField] private ItemDetailPanelUI detailPanel;
 
     [Header("Stat Summary")]
     [SerializeField] private TMP_Text statSummaryText;
 
-    private readonly List<InventorySlotUI> _spawnedSlots = new List<InventorySlotUI>();
-    private bool _isOpen;
-    private bool _eventsSubscribed;
+    // ── Grid ────────────────────────────────────────────────────────
+    private InventoryGridSlotUI[] _gridSlots;
+    private InventoryGridSlotUI   _currentSelectedSlot;
 
-    // 選択状態
-    private SelectionMode      _selectionMode  = SelectionMode.None;
-    private ItemStack          _selectedStack;
-    private EquipmentSlotType  _selectedSlotType;
+    // ── State ───────────────────────────────────────────────────────
+    private bool             _isOpen;
+    private bool             _eventsSubscribed;
+    private SelectionMode    _selectionMode = SelectionMode.None;
+    private ItemStack        _selectedStack;
+    private EquipmentSlotType _selectedSlotType;
 
-    // ─── Open / Close ─────────────────────────────────────────────
     public bool IsOpen => _isOpen;
 
+    // ── Open / Close ────────────────────────────────────────────────
     public void Open()
     {
         if (_isOpen) return;
@@ -54,7 +56,7 @@ public class InventoryCanvasUI : MonoBehaviour
         ClearSelection();
         RefreshAll();
         Cursor.visible   = true;
-        Cursor.lockState = UnityEngine.CursorLockMode.None;
+        Cursor.lockState = CursorLockMode.None;
     }
 
     public void Close()
@@ -68,45 +70,53 @@ public class InventoryCanvasUI : MonoBehaviour
 
     public void Toggle() { if (_isOpen) Close(); else Open(); }
 
-    // ─── Lifecycle ────────────────────────────────────────────────
+    // ── Lifecycle ───────────────────────────────────────────────────
     private void Awake()
     {
         if (playerInventory   == null) playerInventory   = FindFirstObjectByType<PlayerInventory>();
         if (playerEquipment   == null) playerEquipment   = FindFirstObjectByType<PlayerEquipment>();
         if (playerCombatStats == null) playerCombatStats = FindFirstObjectByType<PlayerCombatStats>();
         if (rootPanel) rootPanel.SetActive(false);
+        InitializeGrid();
     }
 
-    private void Start() { SubscribeEvents(); }
-    private void OnDestroy() { UnsubscribeEvents(); }
+    private void Start()       { SubscribeEvents(); }
+    private void OnDestroy()   { UnsubscribeEvents(); }
 
     private void SubscribeEvents()
     {
         if (_eventsSubscribed) return;
-        if (playerInventory != null) playerInventory.OnInventoryChanged += OnInventoryChangedHandler;
-        if (playerEquipment != null)
-        {
-            playerEquipment.OnEquipmentChanged += OnEquipmentChangedHandler;
-        }
+        if (playerInventory != null) playerInventory.OnInventoryChanged  += OnInventoryChangedHandler;
+        if (playerEquipment != null) playerEquipment.OnEquipmentChanged  += OnEquipmentChangedHandler;
         _eventsSubscribed = true;
     }
 
     private void UnsubscribeEvents()
     {
         if (!_eventsSubscribed) return;
-        if (playerInventory != null) playerInventory.OnInventoryChanged -= OnInventoryChangedHandler;
-        if (playerEquipment != null)
-        {
-            playerEquipment.OnEquipmentChanged -= OnEquipmentChangedHandler;
-        }
+        if (playerInventory != null) playerInventory.OnInventoryChanged  -= OnInventoryChangedHandler;
+        if (playerEquipment != null) playerEquipment.OnEquipmentChanged  -= OnEquipmentChangedHandler;
         _eventsSubscribed = false;
     }
 
-    // ─── Event handlers（背包が開いているときのみ刷新）──────────────
     private void OnInventoryChangedHandler() { if (_isOpen) RefreshInventory(); }
     private void OnEquipmentChangedHandler() { if (_isOpen) { RefreshEquipment(); RefreshStats(); } }
 
-    // ─── Refresh ──────────────────────────────────────────────────
+    // ── Grid Init ───────────────────────────────────────────────────
+    private void InitializeGrid()
+    {
+        if (_gridSlots != null || itemGridRoot == null || gridSlotPrefab == null) return;
+        _gridSlots = new InventoryGridSlotUI[SLOT_COUNT];
+        for (int i = 0; i < SLOT_COUNT; i++)
+        {
+            var slot = Instantiate(gridSlotPrefab, itemGridRoot);
+            slot.name    = "Slot_" + i.ToString("D2");
+            slot.SetEmpty();
+            _gridSlots[i] = slot;
+        }
+    }
+
+    // ── Refresh ─────────────────────────────────────────────────────
     public void RefreshAll()
     {
         RefreshInventory();
@@ -116,24 +126,22 @@ public class InventoryCanvasUI : MonoBehaviour
 
     private void RefreshInventory()
     {
-        if (!_isOpen) return;
-        foreach (var slot in _spawnedSlots)
-            if (slot) Destroy(slot.gameObject);
-        _spawnedSlots.Clear();
+        if (!_isOpen || _gridSlots == null) return;
+        var items     = playerInventory?.Items;
+        int itemCount = items != null ? items.Count : 0;
+        if (itemCount > SLOT_COUNT)
+            Debug.LogWarning($"[InventoryCanvasUI] Item count ({itemCount}) exceeds {SLOT_COUNT} visible slots.");
 
-        if (playerInventory == null || itemGridRoot == null || itemSlotPrefab == null) return;
-        foreach (var stack in playerInventory.Items)
+        for (int i = 0; i < SLOT_COUNT; i++)
         {
-            var slotGO = Instantiate(itemSlotPrefab, itemGridRoot);
-            slotGO.Setup(stack, OnItemSlotClicked);
-            _spawnedSlots.Add(slotGO);
+            if (i < itemCount) _gridSlots[i].SetItem(items[i], OnItemSlotClicked);
+            else               _gridSlots[i].SetEmpty();
         }
     }
 
     private void RefreshEquipment()
     {
-        if (!_isOpen) return;
-        if (playerEquipment == null) return;
+        if (!_isOpen || playerEquipment == null) return;
         if (coreSlotUI)      coreSlotUI.Setup("Core",      playerEquipment.EquippedCore,      OnEquipmentSlotClicked);
         if (armorSlotUI)     armorSlotUI.Setup("Armor",    playerEquipment.EquippedArmor,     OnEquipmentSlotClicked);
         if (accessorySlotUI) accessorySlotUI.Setup("Accessory", playerEquipment.EquippedAccessory, OnEquipmentSlotClicked);
@@ -141,26 +149,32 @@ public class InventoryCanvasUI : MonoBehaviour
 
     private void RefreshStats()
     {
-        if (!_isOpen) return;
-        if (statSummaryText == null || playerCombatStats == null) return;
+        if (!_isOpen || statSummaryText == null || playerCombatStats == null) return;
         statSummaryText.text =
-            $"Normal ATK: {playerCombatStats.CurrentNormalAttackDamage:F1}\n" +
+            $"ATK: {playerCombatStats.CurrentNormalAttackDamage:F1}\n" +
             $"Max HP: {playerCombatStats.CurrentMaxHealth:F1}\n" +
-            $"Equipment ATK Bonus: +{playerCombatStats.EquipmentAttackPowerBonus:F1}\n" +
-            $"Equipment HP Bonus:  +{playerCombatStats.EquipmentMaxHealthBonus:F1}";
+            $"+ATK Eq: {playerCombatStats.EquipmentAttackPowerBonus:F1}\n" +
+            $"+HP Eq: {playerCombatStats.EquipmentMaxHealthBonus:F1}";
     }
 
-    // ─── 選択状態管理 ────────────────────────────────────────────
+    // ── Selection ───────────────────────────────────────────────────
     private void ClearSelection()
     {
+        if (_currentSelectedSlot != null) { _currentSelectedSlot.SetSelected(false); _currentSelectedSlot = null; }
         _selectionMode    = SelectionMode.None;
         _selectedStack    = null;
         _selectedSlotType = EquipmentSlotType.None;
     }
 
-    // ─── Click Handlers ──────────────────────────────────────────
+    // ── Click Handlers ──────────────────────────────────────────────
     private void OnItemSlotClicked(ItemStack stack)
     {
+        if (_currentSelectedSlot != null) _currentSelectedSlot.SetSelected(false);
+        _currentSelectedSlot = null;
+        if (_gridSlots != null)
+            foreach (var s in _gridSlots)
+                if (s != null && s.BoundStack == stack) { _currentSelectedSlot = s; s.SetSelected(true); break; }
+
         _selectionMode    = SelectionMode.InventoryItem;
         _selectedStack    = stack;
         _selectedSlotType = EquipmentSlotType.None;
@@ -169,18 +183,15 @@ public class InventoryCanvasUI : MonoBehaviour
 
     private void OnEquipmentSlotClicked(ItemData item, EquipmentSlotType slotType)
     {
+        if (_currentSelectedSlot != null) { _currentSelectedSlot.SetSelected(false); _currentSelectedSlot = null; }
         _selectionMode    = SelectionMode.EquippedItem;
         _selectedStack    = null;
         _selectedSlotType = slotType;
-        if (item == null)
-        {
-            if (detailPanel) detailPanel.Hide();
-            return;
-        }
+        if (item == null) { if (detailPanel) detailPanel.Hide(); return; }
         if (detailPanel) detailPanel.ShowEquippedItem(item, OnUnequipButtonClicked);
     }
 
-    // ─── Equip ────────────────────────────────────────────────────
+    // ── Equip ───────────────────────────────────────────────────────
     private void OnEquipButtonClicked()
     {
         if (_selectionMode != SelectionMode.InventoryItem || _selectedStack == null) return;
@@ -188,42 +199,26 @@ public class InventoryCanvasUI : MonoBehaviour
         if (item == null || item.ItemType != ItemType.Equipment) return;
         if (playerInventory == null || playerEquipment == null) return;
 
-        bool success = false;
+        bool success  = false;
         ItemData replaced = null;
-
-        // SkeletonDebugUI のフローに準拠
         switch (item.EquipmentSlotType)
         {
-            case EquipmentSlotType.Core:
-                success = playerEquipment.EquipCore(item, out replaced);
-                break;
-            case EquipmentSlotType.Armor:
-                success = playerEquipment.EquipArmor(item, out replaced);
-                break;
-            case EquipmentSlotType.Accessory:
-                success = playerEquipment.EquipAccessory(item, out replaced);
-                break;
-            default:
-                Debug.LogWarning($"[InventoryCanvasUI] Unknown EquipmentSlotType: {item.EquipmentSlotType}");
-                return;
+            case EquipmentSlotType.Core:      success = playerEquipment.EquipCore(item, out replaced);      break;
+            case EquipmentSlotType.Armor:     success = playerEquipment.EquipArmor(item, out replaced);     break;
+            case EquipmentSlotType.Accessory: success = playerEquipment.EquipAccessory(item, out replaced); break;
+            default: Debug.LogWarning("[InventoryCanvasUI] Unknown slot: " + item.EquipmentSlotType); return;
         }
-
         if (!success) return;
 
-        // 装備成功：背包から除去
         if (!playerInventory.RemoveItem(item))
             Debug.LogError("[InventoryCanvasUI] Equip succeeded but RemoveItem failed!");
-
-        // 入れ替え装備があれば背包に戻す
-        if (replaced != null)
-            playerInventory.AddItem(replaced);
+        if (replaced != null) playerInventory.AddItem(replaced);
 
         ClearSelection();
         if (detailPanel) detailPanel.Hide();
-        // OnEquipmentChanged / OnInventoryChanged により自動刷新
     }
 
-    // ─── Unequip ──────────────────────────────────────────────────
+    // ── Unequip ─────────────────────────────────────────────────────
     private void OnUnequipButtonClicked()
     {
         if (_selectionMode != SelectionMode.EquippedItem) return;
@@ -232,27 +227,17 @@ public class InventoryCanvasUI : MonoBehaviour
         ItemData unequipped = null;
         switch (_selectedSlotType)
         {
-            case EquipmentSlotType.Core:
-                unequipped = playerEquipment.UnequipCore();
-                break;
-            case EquipmentSlotType.Armor:
-                unequipped = playerEquipment.UnequipArmor();
-                break;
-            case EquipmentSlotType.Accessory:
-                unequipped = playerEquipment.UnequipAccessory();
-                break;
-            default:
-                Debug.LogWarning($"[InventoryCanvasUI] Unknown slot to unequip: {_selectedSlotType}");
-                return;
+            case EquipmentSlotType.Core:      unequipped = playerEquipment.UnequipCore();      break;
+            case EquipmentSlotType.Armor:     unequipped = playerEquipment.UnequipArmor();     break;
+            case EquipmentSlotType.Accessory: unequipped = playerEquipment.UnequipAccessory(); break;
+            default: Debug.LogWarning("[InventoryCanvasUI] Unknown slot: " + _selectedSlotType); return;
         }
-
         if (unequipped == null) return;
 
         if (!playerInventory.AddItem(unequipped))
-            Debug.LogWarning($"[InventoryCanvasUI] Unequip succeeded but AddItem failed for {unequipped.ItemName}");
+            Debug.LogWarning("[InventoryCanvasUI] AddItem failed for " + unequipped.ItemName);
 
         ClearSelection();
         if (detailPanel) detailPanel.Hide();
-        // OnEquipmentChanged / OnInventoryChanged により自動刷新
     }
 }

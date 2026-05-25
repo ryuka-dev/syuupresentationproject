@@ -11,6 +11,7 @@ using UnityEngine.UI;
 public class ItemDetailPanelUI : MonoBehaviour
 {
     [SerializeField] private GameObject rootPanel;
+    [SerializeField] private Image    iconImage;
     [SerializeField] private TMP_Text itemNameText;
     [SerializeField] private TMP_Text itemIdText;
     [SerializeField] private TMP_Text itemTypeText;
@@ -19,26 +20,24 @@ public class ItemDetailPanelUI : MonoBehaviour
     [SerializeField] private TMP_Text atkBonusText;
     [SerializeField] private TMP_Text hpBonusText;
     [SerializeField] private TMP_Text descriptionText;
-    [SerializeField] private Button equipButton;
-    [SerializeField] private Button unequipButton;
+    [SerializeField] private Button   equipButton;
+    [SerializeField] private Button   unequipButton;
 
     private void Awake() { Hide(); }
 
-    // ─── 背包物品を表示（Equip ボタン付き）────────────────────────
+    // 背包物品を表示（Equip ボタン付き）
     public void ShowInventoryItem(ItemStack stack, Action onEquip)
     {
         if (stack == null || stack.ItemData == null) { Hide(); return; }
         var item = stack.ItemData;
         bool isEquipment = item.ItemType == ItemType.Equipment;
 
+        SetIcon(item.Icon);
         FillTexts(
-            item.ItemName,
-            item.ItemId,
-            item.ItemType.ToString(),
-            stack.Count.ToString(),
-            isEquipment ? item.EquipmentSlotType.ToString() : string.Empty,
-            isEquipment ? $"+{item.AttackPowerBonus}" : string.Empty,
-            isEquipment ? $"+{item.MaxHealthBonus}" : string.Empty,
+            item.ItemName, item.ItemId, item.ItemType.ToString(), stack.Count.ToString(),
+            isEquipment ? item.EquipmentSlotType.ToString() : "",
+            isEquipment ? $"+{item.AttackPowerBonus}" : "",
+            isEquipment ? $"+{item.MaxHealthBonus}" : "",
             item.Description
         );
         SetButton(equipButton,   isEquipment, onEquip);
@@ -46,19 +45,15 @@ public class ItemDetailPanelUI : MonoBehaviour
         if (rootPanel) rootPanel.SetActive(true);
     }
 
-    // ─── 装備中物品を表示（Unequip ボタン付き）──────────────────────
+    // 装備中物品を表示（Unequip ボタン付き）
     public void ShowEquippedItem(ItemData item, Action onUnequip)
     {
         if (item == null) { Hide(); return; }
-
+        SetIcon(item.Icon);
         FillTexts(
-            item.ItemName,
-            item.ItemId,
-            item.ItemType.ToString(),
-            "1",
+            item.ItemName, item.ItemId, item.ItemType.ToString(), "1",
             item.EquipmentSlotType.ToString(),
-            $"+{item.AttackPowerBonus}",
-            $"+{item.MaxHealthBonus}",
+            $"+{item.AttackPowerBonus}", $"+{item.MaxHealthBonus}",
             item.Description
         );
         SetButton(equipButton,   false, null);
@@ -71,11 +66,17 @@ public class ItemDetailPanelUI : MonoBehaviour
         if (rootPanel) rootPanel.SetActive(false);
     }
 
-    // ─── 後方互換（コールバックなし）───────────────────────────────
+    // 後方互換
     public void Show(ItemStack stack) { ShowInventoryItem(stack, null); }
-    public void Show(ItemData item)   { ShowEquippedItem(item, null); }
+    public void Show(ItemData  item)  { ShowEquippedItem(item,   null); }
 
-    // ─── Private ────────────────────────────────────────────────
+    private void SetIcon(Sprite sprite)
+    {
+        if (iconImage == null) return;
+        if (sprite != null) { iconImage.sprite = sprite; iconImage.enabled = true; }
+        else                  iconImage.enabled = false;
+    }
+
     private void FillTexts(string name, string id, string type, string count,
                             string slot, string atk, string hp, string desc)
     {
@@ -83,10 +84,10 @@ public class ItemDetailPanelUI : MonoBehaviour
         if (itemIdText)      itemIdText.text      = $"ID: {id}";
         if (itemTypeText)    itemTypeText.text    = $"Type: {type}";
         if (itemCountText)   itemCountText.text   = $"Count: {count}";
-        if (equipSlotText)   equipSlotText.text   = string.IsNullOrEmpty(slot) ? string.Empty : $"Slot: {slot}";
-        if (atkBonusText)    atkBonusText.text    = string.IsNullOrEmpty(atk)  ? string.Empty : $"ATK Bonus: {atk}";
-        if (hpBonusText)     hpBonusText.text     = string.IsNullOrEmpty(hp)   ? string.Empty : $"HP Bonus: {hp}";
-        if (descriptionText) descriptionText.text = desc ?? string.Empty;
+        if (equipSlotText)   equipSlotText.text   = string.IsNullOrEmpty(slot) ? "" : $"Slot: {slot}";
+        if (atkBonusText)    atkBonusText.text    = string.IsNullOrEmpty(atk)  ? "" : $"ATK: {atk}";
+        if (hpBonusText)     hpBonusText.text     = string.IsNullOrEmpty(hp)   ? "" : $"HP: {hp}";
+        if (descriptionText) descriptionText.text = desc ?? "";
     }
 
     private void SetButton(Button btn, bool visible, Action onClick)
@@ -94,7 +95,6 @@ public class ItemDetailPanelUI : MonoBehaviour
         if (btn == null) return;
         btn.gameObject.SetActive(visible);
         btn.onClick.RemoveAllListeners();
-        if (visible && onClick != null)
-            btn.onClick.AddListener(() => onClick());
+        if (visible && onClick != null) btn.onClick.AddListener(() => onClick());
     }
 }
