@@ -176,6 +176,9 @@ public class SkeletonDebugUI : MonoBehaviour
         GUILayout.Space(6);
         DrawTeaBuffSection();
 
+        GUILayout.Space(6);
+        DrawWalletSection();
+
         GUILayout.Space(4);
         GUILayout.Label("F1: Toggle");
 
@@ -727,6 +730,7 @@ private PlayerSkillManager ResolvePlayerSkillManager()
 
 private HikariSupportController _hikariSupportController;
     private PlayerTeaBuffController  _teaBuffController;
+    private PlayerWallet             _playerWallet;
 
     
     // ── Tea Buff Debug ───────────────────────────────────────────────
@@ -757,7 +761,28 @@ private HikariSupportController _hikariSupportController;
         }
     }
 
-    private PlayerTeaBuffController ResolveTeaBuffController()
+
+    // ── Wallet Debug ─────────────────────────────────────────────
+    private void DrawWalletSection()
+    {
+        GUILayout.Label("--- Wallet ---");
+        var wallet = ResolvePlayerWallet();
+        if (wallet == null)
+        {
+            GUILayout.Label("  PlayerWallet: not found");
+            return;
+        }
+        GUILayout.Label($"  Gold: {wallet.Gold}");
+    }
+
+    private PlayerWallet ResolvePlayerWallet()
+    {
+        if (_playerWallet != null) return _playerWallet;
+        _playerWallet = FindFirstObjectByType<PlayerWallet>();
+        return _playerWallet;
+    }
+
+        private PlayerTeaBuffController ResolveTeaBuffController()
     {
         if (_teaBuffController != null) return _teaBuffController;
         _teaBuffController = FindFirstObjectByType<PlayerTeaBuffController>();

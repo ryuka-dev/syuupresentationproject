@@ -818,6 +818,12 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 4294967295
   maxDropHeightAboveOwnerBounds: 0.2
+  dropGold: 1
+  goldDropChance: 1
+  goldMin: 3
+  goldMax: 8
+  goldPickupPrefab: {fileID: 799364345215455199, guid: d497b344abbe34646a829d6c9f815531, type: 3}
+  goldDropOffset: {x: 0, y: 0, z: 0}
 --- !u!195 &5735063381198297738
 NavMeshAgent:
   m_ObjectHideFlags: 0

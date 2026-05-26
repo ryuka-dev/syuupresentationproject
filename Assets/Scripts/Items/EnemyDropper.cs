@@ -2,16 +2,15 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 敌人死亡时生成掉落物，并将 ItemData 注入到 PickupItem 中。
-/// drops リストが設定されている場合は各エントリを確率判定で生成する。
-/// drops が空の場合は旧来の dropItem を 100% 掉落 (fallback)。
-/// alignDropsToGround が有効な場合は Raycast で地面を検出し、掉落物を地面に密着させる。
-/// Raycast の命中点が敵自身の Collider 上端より高い場合は無効と判断し candidatePosition へ fallback する。
+/// 敌人死亡时生成掉落物。
+/// - ItemData 掉落（drops リスト / レガシー単一 dropItem）
+/// - Gold 掉落（GoldPickup Prefab）
 /// 茶 Buff 対応：PlayerTeaBuffController から掉率倍率 / Material 額外数量概率を取得する。
+/// Gold 掉落は茶 Buff の影響を受けない。
 /// </summary>
 public class EnemyDropper : MonoBehaviour
 {
-    // ─── 新: 複数掉落条目 ──────────────────────────────────────
+    // ─── 複数掉落条目 ──────────────────────────────────────────
     [System.Serializable]
     public class DropEntry
     {
@@ -23,59 +22,53 @@ public class EnemyDropper : MonoBehaviour
     [Header("掉落列表（新）")]
     [SerializeField] private List<DropEntry> drops = new List<DropEntry>();
 
-    // ─── 旧: 単一掉落（fallback 兼容） ─────────────────────────
-    [Header("单物品掉落（旧 fallback，drops 为空时使用）")]
+    [Header("单物品掉落（旧 fallback）")]
     [SerializeField] private ItemData dropItem;
 
-    // ─── 共通 ──────────────────────────────────────────────────
     [Header("拾取物 Prefab")]
     [SerializeField] private PickupItem pickupPrefab;
-    [SerializeField] private Vector3 dropOffset = new Vector3(0f, 0.2f, 0f);
+    [SerializeField] private Vector3    dropOffset = new Vector3(0f, 0.2f, 0f);
 
-    // ─── Ground Placement ──────────────────────────────────────
     [Header("Ground Placement")]
-    [Tooltip("有效にすると Raycast で地面を検出し、掉落物を地面に密着させる")]
-    [SerializeField] private bool alignDropsToGround = true;
-    [Tooltip("候補位置から上方にどれだけ Raycast 開始点を上げるか（m）")]
-    [SerializeField] private float groundRaycastStartHeight = 5f;
-    [Tooltip("Raycast の最大検出距離（m）")]
-    [SerializeField] private float groundRaycastDistance = 20f;
-    [Tooltip("地面ヒット点から掉落物を浮かせるオフセット（m）")]
-    [SerializeField] private float groundOffset = 0.1f;
-    [Tooltip("地面として判定する Layer。デフォルト（~0）は全レイヤー対象")]
-    [SerializeField] private LayerMask groundLayerMask = ~0;
-    [Tooltip("敵自身の Collider 上端より何 m 高い命中まで有効とみなすか。斜面・地形起伏の許容誤差。")]
-    [SerializeField] private float maxDropHeightAboveOwnerBounds = 0.2f;
+    [SerializeField] private bool      alignDropsToGround        = true;
+    [SerializeField] private float     groundRaycastStartHeight  = 5f;
+    [SerializeField] private float     groundRaycastDistance     = 20f;
+    [SerializeField] private float     groundOffset              = 0.1f;
+    [SerializeField] private LayerMask groundLayerMask           = ~0;
+    [SerializeField] private float     maxDropHeightAboveOwnerBounds = 0.2f;
 
-    private HealthComponent _health;
+    [Header("Gold Drop")]
+    [Tooltip("有効にすると敵死亡時に金貨を掉落する")]
+    [SerializeField] private bool       dropGold;
+    [SerializeField, Range(0f, 1f)] private float goldDropChance = 0f;
+    [SerializeField] private int        goldMin           = 1;
+    [SerializeField] private int        goldMax           = 5;
+    [SerializeField] private GameObject goldPickupPrefab;
+    [SerializeField] private Vector3    goldDropOffset    = Vector3.zero;
+
+    // ── キャッシュ ──────────────────────────────────────────────
+    private HealthComponent         _health;
     private PlayerTeaBuffController _teaBuffController;
 
+    // ── Lifecycle ───────────────────────────────────────────────
     private void Awake()
     {
         _health = GetComponent<HealthComponent>();
         if (_health == null)
-            Debug.LogWarning("[EnemyDropper] HealthComponent not found on this GameObject.");
+            Debug.LogWarning("[EnemyDropper] HealthComponent not found.");
     }
 
-    private void OnEnable()
-    {
-        if (_health != null) _health.OnDied += HandleDied;
-    }
-
-    private void OnDisable()
-    {
-        if (_health != null) _health.OnDied -= HandleDied;
-    }
+    private void OnEnable()  { if (_health != null) _health.OnDied += HandleDied; }
+    private void OnDisable() { if (_health != null) _health.OnDied -= HandleDied; }
 
     private void OnValidate()
     {
-        if (groundRaycastStartHeight      < 0f)   groundRaycastStartHeight      = 0f;
+        if (groundRaycastStartHeight      < 0f)    groundRaycastStartHeight      = 0f;
         if (groundRaycastDistance         < 0.1f)  groundRaycastDistance         = 0.1f;
-        if (groundOffset                  < 0f)   groundOffset                  = 0f;
-        if (maxDropHeightAboveOwnerBounds < 0f)   maxDropHeightAboveOwnerBounds = 0f;
+        if (groundOffset                  < 0f)    groundOffset                  = 0f;
+        if (maxDropHeightAboveOwnerBounds < 0f)    maxDropHeightAboveOwnerBounds = 0f;
     }
 
-    // PlayerTeaBuffController はキャッシュして毎回 Find しない
     private PlayerTeaBuffController GetTeaBuffController()
     {
         if (_teaBuffController == null)
@@ -83,70 +76,65 @@ public class EnemyDropper : MonoBehaviour
         return _teaBuffController;
     }
 
+    // ── 掉落メイン ──────────────────────────────────────────────
     private void HandleDied()
     {
-        if (pickupPrefab == null)
-        {
-            Debug.LogWarning("[EnemyDropper] pickupPrefab is not assigned. No item will drop.");
-            return;
-        }
-
         var teaBuff = GetTeaBuffController();
-        float dropChanceMult   = teaBuff != null ? teaBuff.GetNonGuaranteedDropChanceMultiplier() : 1f;
-        float materialExtraChance = teaBuff != null ? teaBuff.GetMaterialExtraQuantityChance()    : 0f;
+        float dropChanceMult      = teaBuff != null ? teaBuff.GetNonGuaranteedDropChanceMultiplier() : 1f;
+        float materialExtraChance = teaBuff != null ? teaBuff.GetMaterialExtraQuantityChance()       : 0f;
 
-        // ─── drops リストが設定されている場合 ──────────────────
+        // ── ItemData drops リスト ──────────────────────────────
         if (drops != null && drops.Count > 0)
         {
-            foreach (var entry in drops)
+            if (pickupPrefab == null)
+                Debug.LogWarning("[EnemyDropper] pickupPrefab is not assigned. Item drops skipped.");
+            else
             {
-                if (entry.item == null)
+                foreach (var entry in drops)
                 {
-                    Debug.LogWarning("[EnemyDropper] DropEntry has null item, skipping.");
-                    continue;
-                }
+                    if (entry.item == null) { Debug.LogWarning("[EnemyDropper] DropEntry has null item."); continue; }
 
-                // 茶の掉率倍率：dropChance < 1f の場合のみ適用
-                float finalChance = entry.dropChance < 1f
-                    ? Mathf.Clamp01(entry.dropChance * dropChanceMult)
-                    : entry.dropChance;
+                    float finalChance = entry.dropChance < 1f
+                        ? Mathf.Clamp01(entry.dropChance * dropChanceMult)
+                        : entry.dropChance;
 
-                if (Random.value <= finalChance)
-                {
-                    Vector3 candidate = transform.position + dropOffset + entry.offset;
-                    Vector3 pos       = GetGroundedDropPosition(candidate);
-                    SpawnDrop(entry.item, pos);
-
-                    // Material 額外数量概率
-                    if (entry.item.ItemType == ItemType.Material && materialExtraChance > 0f)
+                    if (Random.value <= finalChance)
                     {
-                        if (Random.value < materialExtraChance)
+                        Vector3 candidate = transform.position + dropOffset + entry.offset;
+                        Vector3 pos       = GetGroundedDropPosition(candidate);
+                        SpawnDrop(entry.item, pos);
+
+                        if (entry.item.ItemType == ItemType.Material && materialExtraChance > 0f)
                         {
-                            // 少しオフセットして重ならないようにする
-                            Vector3 extraCandidate = candidate + new Vector3(0.3f, 0f, 0.3f);
-                            Vector3 extraPos       = GetGroundedDropPosition(extraCandidate);
-                            SpawnDrop(entry.item, extraPos);
-                            Debug.Log($"[EnemyDropper] Material extra drop: {entry.item.ItemName} at {extraPos}");
+                            if (Random.value < materialExtraChance)
+                            {
+                                Vector3 extraPos = GetGroundedDropPosition(candidate + new Vector3(0.3f, 0f, 0.3f));
+                                SpawnDrop(entry.item, extraPos);
+                                Debug.Log($"[EnemyDropper] Material extra drop: {entry.item.ItemName}");
+                            }
                         }
                     }
                 }
             }
-            return;
         }
-
-        // ─── fallback: 旧来の単一 dropItem ─────────────────────
-        if (dropItem == null)
+        // ── fallback: 単一 dropItem ────────────────────────────
+        else if (dropItem != null)
         {
-            Debug.LogWarning("[EnemyDropper] dropItem is not assigned and drops list is empty. No item will drop.");
-            return;
+            if (pickupPrefab == null)
+                Debug.LogWarning("[EnemyDropper] pickupPrefab is not assigned.");
+            else
+            {
+                Vector3 pos = GetGroundedDropPosition(transform.position + dropOffset);
+                SpawnDrop(dropItem, pos);
+                Debug.Log($"[EnemyDropper] Dropped (legacy): {dropItem.ItemName}");
+            }
         }
 
-        Vector3 legacyCandidate = transform.position + dropOffset;
-        Vector3 spawnPos        = GetGroundedDropPosition(legacyCandidate);
-        SpawnDrop(dropItem, spawnPos);
-        Debug.Log($"[EnemyDropper] Dropped (legacy): {dropItem.ItemName} at {spawnPos}");
+        // ── Gold Drop（アイテム掉落とは独立して判定。茶 Buff の影響を受けない） ──
+        SpawnGoldDrop();
     }
 
+    // ── ItemDrop 生成 ───────────────────────────────────────────
     private void SpawnDrop(ItemData item, Vector3 pos)
     {
         PickupItem dropped = Instantiate(pickupPrefab, pos, Quaternion.identity);
@@ -154,63 +142,62 @@ public class EnemyDropper : MonoBehaviour
         Debug.Log($"[EnemyDropper] Dropped: {item.ItemName} at {pos}");
     }
 
-    /// <summary>
-    /// 候補位置から上方へ Raycast し、地面を検出した場合は
-    /// ヒット点の groundOffset 分上の座標を返す。
-    /// ヒット点が敵自身の Collider 上端より高い場合は無効と判断し candidatePosition を返す。
-    /// alignDropsToGround が false、または未命中の場合も candidatePosition をそのまま返す。
-    /// </summary>
+    // ── GoldPickup 生成 ─────────────────────────────────────────
+    private void SpawnGoldDrop()
+    {
+        if (!dropGold) return;
+        if (goldPickupPrefab == null)
+        {
+            Debug.LogWarning("[EnemyDropper] goldPickupPrefab is not assigned. Gold will not drop.");
+            return;
+        }
+        if (Random.value > goldDropChance) return;
+
+        int min    = Mathf.Min(goldMin, goldMax);
+        int max    = Mathf.Max(goldMin, goldMax);
+        int amount = Mathf.Max(1, Random.Range(min, max + 1));
+
+        Vector3 candidate = transform.position + dropOffset + goldDropOffset;
+        Vector3 pos       = GetGroundedDropPosition(candidate);
+
+        var go     = Instantiate(goldPickupPrefab, pos, Quaternion.identity);
+        var pickup = go.GetComponent<GoldPickup>();
+        if (pickup != null)
+            pickup.SetAmount(amount);
+        else
+            Debug.LogWarning($"[EnemyDropper] goldPickupPrefab has no GoldPickup component.");
+
+        Debug.Log($"[EnemyDropper] Gold dropped: {amount} at {pos}");
+    }
+
+    // ── 地面への配置 ────────────────────────────────────────────
     private Vector3 GetGroundedDropPosition(Vector3 candidatePosition)
     {
-        if (!alignDropsToGround)
-            return candidatePosition;
+        if (!alignDropsToGround) return candidatePosition;
 
         Vector3 rayStart = candidatePosition + Vector3.up * groundRaycastStartHeight;
         if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit,
-                            groundRaycastDistance, groundLayerMask,
-                            QueryTriggerInteraction.Ignore))
+                            groundRaycastDistance, groundLayerMask, QueryTriggerInteraction.Ignore))
         {
-            // 命中点が敵自身の Collider 上端より高い場合は頭上の物体に当たっていると判断し無効扱い
             float maxAllowedY = GetMaxAllowedDropGroundY();
             if (hit.point.y <= maxAllowedY)
-            {
                 return hit.point + Vector3.up * groundOffset;
-            }
-
-            // 命中点が高すぎる → 頭上物体への誤命中とみなし fallback
             return candidatePosition;
         }
-
-        // 未命中：候補位置にそのまま生成（掉落を阻断しない）
         return candidatePosition;
     }
 
-    /// <summary>
-    /// Raycast 命中点として許容できる最大 Y 座標を返す。
-    /// 敵自身（子含む）の非 Trigger Collider の bounds.max.y の最大値 + maxDropHeightAboveOwnerBounds。
-    /// Collider が見つからない場合は transform.position.y + maxDropHeightAboveOwnerBounds を使用する。
-    /// </summary>
     private float GetMaxAllowedDropGroundY()
     {
         float maxBoundsY = float.MinValue;
         bool  found      = false;
-
-        // 自身および子オブジェクトの非 Trigger Collider を走査
         foreach (var col in GetComponentsInChildren<Collider>())
         {
             if (col.isTrigger) continue;
             float top = col.bounds.max.y;
-            if (top > maxBoundsY)
-            {
-                maxBoundsY = top;
-                found      = true;
-            }
+            if (top > maxBoundsY) { maxBoundsY = top; found = true; }
         }
-
-        if (found)
-            return maxBoundsY + maxDropHeightAboveOwnerBounds;
-
-        // Collider が取得できない場合は自身の Y 座標を基準にする
-        return transform.position.y + maxDropHeightAboveOwnerBounds;
+        return found ? maxBoundsY + maxDropHeightAboveOwnerBounds
+                     : transform.position.y + maxDropHeightAboveOwnerBounds;
     }
 }

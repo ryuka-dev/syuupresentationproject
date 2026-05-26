@@ -3115,9 +3115,29 @@ PrefabInstance:
       value: SkeletonEnemy_Variant
       objectReference: {fileID: 0}
     - target: {fileID: 6757057786128687492, guid: 823580420d398034f9b3cab77fd6ec54, type: 3}
+      propertyPath: goldMax
+      value: 8
+      objectReference: {fileID: 0}
+    - target: {fileID: 6757057786128687492, guid: 823580420d398034f9b3cab77fd6ec54, type: 3}
+      propertyPath: goldMin
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 6757057786128687492, guid: 823580420d398034f9b3cab77fd6ec54, type: 3}
+      propertyPath: dropGold
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6757057786128687492, guid: 823580420d398034f9b3cab77fd6ec54, type: 3}
+      propertyPath: goldDropChance
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6757057786128687492, guid: 823580420d398034f9b3cab77fd6ec54, type: 3}
       propertyPath: drops.Array.size
       value: 2
       objectReference: {fileID: 0}
+    - target: {fileID: 6757057786128687492, guid: 823580420d398034f9b3cab77fd6ec54, type: 3}
+      propertyPath: goldPickupPrefab
+      value: 
+      objectReference: {fileID: 799364345215455199, guid: d497b344abbe34646a829d6c9f815531, type: 3}
     - target: {fileID: 6757057786128687492, guid: 823580420d398034f9b3cab77fd6ec54, type: 3}
       propertyPath: drops.Array.data[0].item
       value: 
