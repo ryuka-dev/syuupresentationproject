@@ -53,7 +53,7 @@
 → B 打开正式 InventoryCanvas 格子背包 / EquipmentWindow
 → Hover 物品显示 ItemDetailWindow Tooltip；右键菜单执行 Equip / Unequip / Use Tea
 → 使用 Tea 道具触发 PlayerTeaBuffController，影响 ItemData 掉率 / Material 额外掉落
-→ TeaShopCanvas 茶商店 UI 原型可展示分类 / 商品 / 详情 / 购买 / 试饮 / 赠送（当前 T 打开未正常工作）
+→ TeaShopCanvas 茶商店 UI 原型可展示分类 / 商品 / 详情 / 购买 / 试饮 / 赠送；临时 T 键入口已改为 New Input System，可用于打开 / 关闭茶商店。
 → PlayerCombatStats 汇总攻击力与最大生命值
 → HealthComponent 自动应用新上限
 → 刷怪点延迟刷新（EnemySpawnPoint / EnemySpawnArea）

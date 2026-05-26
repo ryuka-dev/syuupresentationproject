@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 /// <summary>
@@ -151,7 +152,7 @@ public class TeaShopCanvasUI : MonoBehaviour
     private void Update()
     {
         // [TEMP TEST] T キーで開閉 - 後でNPC連携時に削除
-        if (Input.GetKeyDown(KeyCode.T))
+        if (Keyboard.current != null && Keyboard.current.tKey.wasPressedThisFrame)
             Toggle();
 
         if (_isOpen)

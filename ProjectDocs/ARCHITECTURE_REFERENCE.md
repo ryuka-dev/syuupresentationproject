@@ -393,7 +393,6 @@ TeaShopCanvas
 - 试饮：每小时 1 次，直接 PlayerTeaBuffController.TryUseTea(teaItem)，不扣金币，不加入背包
 - 赠送：扣 giftCost，增加 TeaShopCanvasUI 内部运行时 affinity，进入冷却；当前不接正式 NPC 好感系统
 - 玩家持有数来自 PlayerInventory；金币显示来自 PlayerWallet.OnGoldChanged；持有数显示监听 PlayerInventory.OnInventoryChanged
-- 当前已知问题：Play Mode 按 T 未打开茶商店 UI。需优先检查 TeaShopCanvasUI 是否使用旧 Input / KeyCode，以及 TeaShopCanvas active 与 RootPanel 初始隐藏状态。NPC 接入前 T 仅作为临时测试入口。
 
 
 ---
@@ -434,7 +433,7 @@ UI
 ├─ SkillCanvas
 ├─ LevelUI
 ├─ InventoryCanvas (sortingOrder=1000)
-└─ TeaShopCanvas (RootPanel 初始隐藏，当前 T 打开未正常工作)
+└─ TeaShopCanvas (RootPanel 初始隐藏)
 ```
 
 SkillCanvas 结构：
