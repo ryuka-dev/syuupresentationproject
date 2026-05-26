@@ -1,6 +1,6 @@
 ﻿# ARCHITECTURE_REFERENCE
 
-最后更新：2026-05-25
+最后更新：2026-05-26
 
 旧 PROJECT_STATE.md 中的详细系统架构参考。当前实现状态摘要见 PROJECT_STATE.md。
 
@@ -9,16 +9,28 @@
 ## 1. Player 系统
 
 ### PlayerController.cs
-玩家输入、移动、朝向与动画参数输出。使用 New Input System，applyRootMotion = false。
+玩家输入、移动、朝向、自动前进与动画参数输出。使用 New Input System，applyRootMotion = false。
 
 - FF14 Legacy-like 相机基准移动：WASD 以 cameraTransform.forward / right（去掉 y 轴）为基准
-- 有移动输入时 Player 朝实际移动方向平滑转身；无移动输入时不被相机旋转强制转身
+- 有移动输入时 Player 朝实际移动方向平滑转身；无输入时不被相机旋转强制转身
 - Shift + 任意移动输入 = Sprint，八方向可跑
-- 左键 + 右键 = 等价前进输入；左键 + 右键 + Shift = 相机前方跑步
+- 场景左键 + 右键 = 等价前进输入；UI 起始鼠标输入不参与双键前进
+- R 键自动前进 v1：等效持续 W；右键调整前进方向；左键进入自由视角并锁定进入时前进方向；左键松开后相机 yaw 回正
+- 自动前进中，W/A/S/D 任意方向输入或重新形成的场景双键会打断；持续方向输入或双键状态下按 R 可由自动前进接管，直到对应输入松开后恢复打断规则
+- 自动前进自由视角 / 回正期间使用 locked forward，避免松开左键时角色转向自由视角方向；回正期间右键可接管当前相机方向
 - Rigidbody 移动使用 rb.linearVelocity（Unity 6）
 - Animator 参数：Speed = 0/0.5/1.0（Idle/Walk/Run），Horizontal = 0（Legacy-like 始终为 0）
 - IsJumping 只在起跳帧短暂为 true，下一帧清除；_jumpConsumed 限制一次离地只消费一次
 - fallGravityMultiplier = 2.5，riseGravityMultiplier = 1.0，maxFallSpeed = 25
+
+### MouseInputGate.cs
+路径：Assets/Scripts/Player/MouseInputGate.cs
+
+- 统一记录鼠标左键 / 右键“按下瞬间”是否从 UI 开始，而不是每帧按当前位置判断
+- 对外提供 LeftWorldHeld / RightWorldHeld / BothWorldButtonsHeld / LeftWorldPressedThisFrame 等状态
+- `DefaultExecutionOrder(-100)`，保证 PlayerController / PlayerTargeting / RPGCameraController 读取时状态已更新
+- UI 检测使用 EventSystem RaycastAll，不使用旧 Input 或单纯 IsPointerOverGameObject
+- PlayerController、RPGCameraController、PlayerTargeting 都应依赖 MouseInputGate，不要各自维护独立 UI 命中判断
 
 ### PlayerAnimator.controller
 路径：Assets/Scripts/PlayerAnimator.controller
@@ -31,14 +43,17 @@
 
 ### RPGCameraController.cs
 - 只负责相机跟随、yaw / pitch、Cursor 显示隐藏；不直接修改 Player rotation
-- 只有右键按住时相机才旋转；右键拖拽开始时隐藏 Cursor，松开时显示
-- 右键按下帧若鼠标位于 UI 上，则不进入相机拖拽；当前通过 `EventSystem.current.RaycastAll(PointerEventData)` 判断 UI 命中，避免背包右键菜单触发相机旋转
+- 场景起始左键或右键按住时均可旋转相机；鼠标拖拽开始时隐藏 Cursor，松开时显示
+- 鼠标输入归属统一通过 MouseInputGate 判断；UI 起始鼠标输入不进入相机拖拽
+- 自动前进 + 左键自由视角松开后，HandleCameraReturn() 只慢速回正 yaw，不强制回正 pitch
+- 自动前进回正目标来自 PlayerController.AutoForwardLockedForward；回正完成后调用 PlayerController.NotifyCameraReturnComplete()
 - 灵敏度：_yaw += delta.x * rotationSpeed，_pitch -= delta.y * rotationSpeed（不乘 Time.deltaTime）
 - rotationSpeed Inspector 可调，用户实测 0.5 合适；实际值以 Main Camera Inspector 为准
 - OnDisable() / OnDestroy() 强制恢复 Cursor 显示
 
 ### PlayerTargeting.cs
 - 鼠标左键 Raycast，通过 HealthComponent + FactionComponent + ShouldAttack() 验证目标
+- 鼠标左键选目标只在 MouseInputGate.LeftWorldPressedThisFrame 时处理；点击 UI 不选中背后敌人
 - CurrentTarget 统一为 faction.transform
 - Tab 选择：收集屏幕内、摄像机前方、未死亡、敌对、距离 <= tabTargetMaxDistance 的目标，按 viewport.x 从左到右排序
 - 当前使用 FindObjectsByType，敌人数量多时应改为注册缓存
@@ -187,10 +202,13 @@ ReturnToSpawn → NavMeshAgent 优先回家；到达后回满血，进入 Idle
 - 暂未接入 LevelObjectiveManager
 
 ### EnemyDropper.cs
-- List<DropEntry> drops：多条目概率掉落（item / dropChance / offset）
+- List<DropEntry> drops：多条目概率 ItemData 掉落（item / dropChance / offset）
+- Tea Buff 接入：非 100% ItemData 掉落概率可受 PlayerTeaBuffController 的掉率茶倍率影响；Material 成功掉落后可按素材茶概率额外生成 1 个
+- Gold Drop 独立于 ItemData：dropGold / goldDropChance / goldMin / goldMax / goldPickupPrefab / goldDropOffset 生成 GoldPickup，不受茶 Buff 影响
 - alignDropsToGround = true：掉落物通过 Raycast 向下贴地生成
 - maxDropHeightAboveOwnerBounds：避免将敌人头顶 Collider 误判为地面
 - drops 为空时 fallback 到旧单物品 dropItem
+
 
 ---
 
@@ -268,9 +286,39 @@ currentBurden / maxBurden / isOverloaded / overburdenHealingMultiplier / lightCo
 ### ItemData.cs
 ScriptableObject，OnValidate() 保护规则：
 - Equipment → maxStack = 1，非 Equipment → equipmentSlotType = None，attackPowerBonus = 0，maxHealthBonus = 0
-- 枚举 ItemType: Material / Equipment / Consumable / Currency / Quest / Cosmetic
+- 枚举 ItemType 当前包含 Material / Equipment / Consumable / Currency / Quest / Cosmetic / Tea
+- Tea 类型可引用 TeaBuffData；Tea 不是装备，不提供攻击力 / 最大生命值
 - 枚举 EquipmentSlotType: None / Core / Armor / Accessory
 - 当前用于正式背包 UI 的图标字段：`Sprite icon` / `Icon` 只读属性
+
+### TeaBuffData.cs
+路径：Assets/Scripts/Items/TeaBuffData.cs
+
+- ScriptableObject，描述茶 Buff 静态数据：buffId / displayName / effectType / value / durationSeconds
+- 当前效果类型：NonGuaranteedDropChanceMultiplier、MaterialExtraQuantityChance
+- 一个 Tea ItemData 通过 TeaBuffData 绑定一种茶效果；第一版不做多效果数组
+
+### PlayerTeaBuffController.cs
+路径：Assets/Scripts/Player/PlayerTeaBuffController.cs
+
+- 挂在 Player，管理当前 TeaBuffData、剩余时间与覆盖规则
+- TryUseTea(ItemData)：只接受 ItemType.Tea 且有 TeaBuffData 的物品；成功后覆盖当前茶 Buff
+- 为 EnemyDropper 提供 GetNonGuaranteedDropChanceMultiplier() / GetMaterialExtraQuantityChance()
+- 背包 Use 会消耗 1 个茶道具；试饮会直接应用茶 Buff，不加入背包也不扣金币
+
+### PlayerWallet.cs
+路径：Assets/Scripts/Player/PlayerWallet.cs
+
+- 管理 Gold，提供 Gold / OnGoldChanged / AddGold(amount) / CanSpendGold(amount) / TrySpendGold(amount)
+- Gold 不是 ItemData，不进入 PlayerInventory，不占背包格子
+- 当前无存档、无上限、无多货币
+
+### GoldPickup.cs
+路径：Assets/Scripts/Items/GoldPickup.cs
+
+- 地面金币掉落物，amount 可由 EnemyDropper.SetAmount() 设置
+- 玩家进入触发范围后按 E，调用 PlayerWallet.AddGold(amount)，成功后销毁自身
+- 找不到 PlayerWallet 时不销毁并输出 Warning
 
 ### PlayerInventory.cs
 - Equipment 永远新增独立 ItemStack（不合并）
@@ -301,7 +349,7 @@ TestItem_GuardCore.asset  Equipment / Core / ATK+20 / MaxHP+50
 - `InventoryGridSlotUI.cs`：背包格子，由 `InventoryCanvasUI` 根据 `visibleSlotCount` 程序生成；显示 Icon / Count / SelectedFrame，支持 Hover Tooltip、左键高亮、右键菜单。
 - `EquipmentSlotUI.cs`：Core / Armor / Accessory 装备槽显示；不依赖 SlotLabel / EquippedItem 文本子物体，空槽只显示空槽背景，有装备时显示 Icon；支持 Hover Tooltip 与右键 Unequip 菜单。
 - `ItemDetailPanelUI.cs`：纯 Hover Tooltip，只显示信息；无 TitleBar、无 DraggableUIWindow、无操作按钮；高度根据内容自动调整，`CanvasGroup.blocksRaycasts=false`，不阻挡底层格子 Hover。
-- `InventoryContextMenuUI.cs`：右键操作菜单；背包 Equipment 显示 Equip，已装备槽显示 Unequip；点击任意菜单项后关闭，点击菜单外部 / 拖动窗口 / 关闭背包时关闭。
+- `InventoryContextMenuUI.cs`：右键操作菜单；背包 Equipment 显示 Equip，背包 Tea 显示 Use，已装备槽显示 Unequip；点击任意菜单项后关闭，点击菜单外部 / 拖动窗口 / 关闭背包时关闭。
 - `DraggableUIWindow.cs`：InventoryWindow / EquipmentWindow 的窗口拖动；开始拖动时会隐藏右键菜单。
 - `UIWindowBringToFront.cs`：窗口点击置顶；InventoryCanvas 内部窗口用 `SetAsLastSibling()` 控制前后顺序。
 
@@ -311,6 +359,42 @@ TestItem_GuardCore.asset  Equipment / Core / ATK+20 / MaxHP+50
 - Tooltip 定位基于 `Root` RectTransform 坐标系：目标在屏幕左半边时显示在右侧，右半边时显示在左侧，并 Clamp 到屏幕内。
 - ItemDetailWindow 是纯信息层，不能接收 Raycast；InventoryContextMenu 是可交互菜单，必须接收 Raycast。
 - 当前没有背包保存、ItemDatabase、ItemInstance、格子位置保存或物品拖拽换格。
+
+
+### TeaShop UI (v1)
+
+当前正式茶商店 UI 位于 `SampleScene` 的 `TeaShopCanvas`（Canvas + TMP + Button + Image），不是 F1 Debug，也暂未接 NPC。
+
+关键脚本：
+- `TeaShopItemData.cs`：单个商店商品配置（category / teaItem / price / unlocked / sortOrder / description override / giftCost / giftCooldownSeconds）
+- `TeaShopCatalogData.cs`：商店商品列表，UI 按分类筛选 unlocked 商品
+- `TeaShopCanvasUI.cs`：茶商店总控，负责分类、分页、商品详情、数量、购买、试饮、赠送、金币显示
+- `TeaShopItemSlotUI.cs`：商品格显示与点击回调
+- `TeaShopCategoryTabUI.cs` 未创建；分类按钮逻辑当前内置在 TeaShopCanvasUI 中
+
+当前 UI 层级摘要：
+```
+TeaShopCanvas
+└─ RootPanel (初始隐藏)
+   ├─ TitleText
+   ├─ LeftPanel
+   │  ├─ CategoryTabs (绿茶 / 红茶 / 花茶 / 特饮)
+   │  ├─ PaginationRow (Prev / PageInfo / Next)
+   │  └─ ItemListRoot (动态商品格)
+   ├─ RightPanel
+   │  ├─ EmptyDetailText
+   │  └─ DetailPanel (Icon / Name / Description / Price / Owned / Quantity / Buy / Sample / Gift)
+   └─ BottomBar (GoldText / CloseButton)
+```
+
+行为：
+- 每页最多 6 个商品格；商品格按当前分类与 unlocked 动态生成
+- 购买：PlayerWallet.TrySpendGold(price × quantity) → 成功后 PlayerInventory.AddItem(teaItem, quantity)
+- 试饮：每小时 1 次，直接 PlayerTeaBuffController.TryUseTea(teaItem)，不扣金币，不加入背包
+- 赠送：扣 giftCost，增加 TeaShopCanvasUI 内部运行时 affinity，进入冷却；当前不接正式 NPC 好感系统
+- 玩家持有数来自 PlayerInventory；金币显示来自 PlayerWallet.OnGoldChanged；持有数显示监听 PlayerInventory.OnInventoryChanged
+- 当前已知问题：Play Mode 按 T 未打开茶商店 UI。需优先检查 TeaShopCanvasUI 是否使用旧 Input / KeyCode，以及 TeaShopCanvas active 与 RootPanel 初始隐藏状态。NPC 接入前 T 仅作为临时测试入口。
+
 
 ---
 
@@ -342,14 +426,15 @@ TestItem_GuardCore.asset  Equipment / Core / ATK+20 / MaxHP+50
 ### SampleScene 主要对象
 
 Player 挂载组件（关键）：
-PlayerController / FactionComponent(Player) / HealthComponent / PlayerTargeting / PlayerSkillController / PlayerBasicAttackController / PlayerDeathHandler / PlayerRespawnPointTracker / PlayerInventory / PlayerEquipment / PlayerCombatStats / PlayerSkillManager / PlayerStatusEffectController / PlayerMitigationVisualFeedback / DamageNumberSpawner / TargetSelectionIndicator / PlayerSkillHudUI(OnGUI Debug)
+PlayerController / MouseInputGate / FactionComponent(Player) / HealthComponent / PlayerTargeting / PlayerSkillController / PlayerBasicAttackController / PlayerDeathHandler / PlayerRespawnPointTracker / PlayerInventory / PlayerEquipment / PlayerCombatStats / PlayerWallet / PlayerTeaBuffController / PlayerSkillManager / PlayerStatusEffectController / PlayerMitigationVisualFeedback / DamageNumberSpawner / TargetSelectionIndicator / PlayerSkillHudUI(OnGUI Debug)
 
 UI 根结构：
 ```
 UI
 ├─ SkillCanvas
 ├─ LevelUI
-└─ InventoryCanvas (sortingOrder=1000)
+├─ InventoryCanvas (sortingOrder=1000)
+└─ TeaShopCanvas (RootPanel 初始隐藏，当前 T 打开未正常工作)
 ```
 
 SkillCanvas 结构：
@@ -385,6 +470,8 @@ InventoryCanvas
 | Resources/SkeletonBossEnemy_Variant.prefab | EnemyBase Variant，VisualRoot 1.5×，有技能 Boss |
 | Resources/SkeletonEnemy.prefab | 旧独立 Prefab，保留未删 |
 | Resources/ItemDrop.prefab | SphereCollider Trigger，挂 PickupItem |
+| Resources/GoldPickup.prefab | 金币拾取物，挂 GoldPickup |
+| Assets/Prefabs/UI/TeaShopItemSlot.prefab | 茶商店商品格模板，挂 TeaShopItemSlotUI |
 | Resources/UI/DamageNumberPopup*.prefab | 伤害 / 治疗飘字 4 个版本 |
 | Resources/VFX/EnemyAoE/CircleAoETelegraph.prefab | CircleAoE 地面圆形提示 |
 | Resources/VFX/EnemyAoE/DonutAoETelegraph.prefab | DonutAoE 程序化真环形 Mesh 提示 |
@@ -392,7 +479,7 @@ InventoryCanvas
 EnemyBase Variant 工作流：
 ```
 EnemyBase.prefab
-├─ SkeletonEnemy_Variant.prefab  (无技能，骨头100%+守护核心20%)
+├─ SkeletonEnemy_Variant.prefab  (无技能，骨头100%+守护核心20%，金币掉落以 Prefab 当前 Inspector 为准)
 └─ SkeletonBossEnemy_Variant.prefab  (有技能：HeavySlash/BossShockwave/MoonRing，守护核心100%)
 ```
 
