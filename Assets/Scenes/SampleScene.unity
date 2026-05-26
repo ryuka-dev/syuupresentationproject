@@ -5895,7 +5895,7 @@ MonoBehaviour:
   cameraTransform: {fileID: 330585546}
   mouseInputGate: {fileID: 919417079}
   autoForwardActive: 0
-  autoForwardCameraReturnYawSpeed: 180
+  autoForwardCameraReturnYawSpeed: 30
 --- !u!114 &919417046
 MonoBehaviour:
   m_ObjectHideFlags: 0
