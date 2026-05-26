@@ -10,16 +10,10 @@ using UnityEngine.InputSystem;
 ///   ボタンを「押した瞬間」の UI 命中を記録し、その押下期間中は状態を維持する。
 ///   毎フレーム現在位置が UI 上かを判定しない。
 ///
-/// 提供する情報：
-///   LeftWorldHeld / RightWorldHeld      … 押下開始がワールド側のボタンが現在押されているか
-///   LeftWorldPressedThisFrame           … 今フレームにワールドで左ボタンが押された
-///   RightWorldPressedThisFrame          … 今フレームにワールドで右ボタンが押された
-///   AnyWorldMouseHeld                   … どちらか一方でもワールドで押されているか
-///   BothWorldButtonsHeld                … 両方ともワールドで押されているか
-///   LeftStartedOverUI / RightStartedOverUI … デバッグ / 外部参照用
-///
-/// 他システムへの依存：EventSystem（null 安全対応済み）
+/// [DefaultExecutionOrder(-100)] により他の MonoBehaviour より早く Update が走る。
+/// これにより LeftWorldPressedThisFrame 等が同フレーム内で正確に読み取れる。
 /// </summary>
+[DefaultExecutionOrder(-100)]
 public class MouseInputGate : MonoBehaviour
 {
     // ── 共有 RaycastResult バッファ（GC 削減） ──────────────────────
@@ -31,12 +25,9 @@ public class MouseInputGate : MonoBehaviour
     private bool _rightStartedOverUI;
 
     // ── 公開プロパティ ──────────────────────────────────────────────
-    /// <summary>左ボタンの押下開始が UI 上だったか（参照・デバッグ用）</summary>
     public bool LeftStartedOverUI  => _leftStartedOverUI;
-    /// <summary>右ボタンの押下開始が UI 上だったか（参照・デバッグ用）</summary>
     public bool RightStartedOverUI => _rightStartedOverUI;
 
-    /// <summary>ワールド起点の左ボタンが現在押されているか</summary>
     public bool LeftWorldHeld
     {
         get
@@ -46,7 +37,6 @@ public class MouseInputGate : MonoBehaviour
         }
     }
 
-    /// <summary>ワールド起点の右ボタンが現在押されているか</summary>
     public bool RightWorldHeld
     {
         get
@@ -56,37 +46,27 @@ public class MouseInputGate : MonoBehaviour
         }
     }
 
-    /// <summary>どちらか一方でもワールド起点で押されているか</summary>
-    public bool AnyWorldMouseHeld  => LeftWorldHeld || RightWorldHeld;
-
-    /// <summary>両方ともワールド起点で押されているか（双键前進用）</summary>
+    public bool AnyWorldMouseHeld    => LeftWorldHeld || RightWorldHeld;
     public bool BothWorldButtonsHeld => LeftWorldHeld && RightWorldHeld;
 
-    // ── 今フレームのみ有効なプロパティ（Update 終了後に自動クリア） ─
-    /// <summary>今フレームにワールドで左ボタンが押された</summary>
     public bool LeftWorldPressedThisFrame  { get; private set; }
-    /// <summary>今フレームにワールドで右ボタンが押された</summary>
     public bool RightWorldPressedThisFrame { get; private set; }
-    /// <summary>今フレームにワールドでどちらかのボタンが押された</summary>
     public bool AnyWorldMousePressedThisFrame => LeftWorldPressedThisFrame || RightWorldPressedThisFrame;
 
     // ── Lifecycle ────────────────────────────────────────────────────
     private void Awake()
     {
-        // PointerEventData は一度だけ生成（EventSystem が後で初期化される可能性があるため null 許容）
         _pointerEventData = null;
     }
 
     private void Update()
     {
-        // ThisFrame 系は毎フレームリセット（Update の先頭でクリア）
         LeftWorldPressedThisFrame  = false;
         RightWorldPressedThisFrame = false;
 
         var mouse = Mouse.current;
         if (mouse == null) return;
 
-        // ── 左ボタン ──────────────────────────────────────────────
         if (mouse.leftButton.wasPressedThisFrame)
         {
             _leftStartedOverUI = IsPointerOverUI(mouse.position.ReadValue());
@@ -96,7 +76,6 @@ public class MouseInputGate : MonoBehaviour
         if (mouse.leftButton.wasReleasedThisFrame)
             _leftStartedOverUI = false;
 
-        // ── 右ボタン ──────────────────────────────────────────────
         if (mouse.rightButton.wasPressedThisFrame)
         {
             _rightStartedOverUI = IsPointerOverUI(mouse.position.ReadValue());
@@ -107,12 +86,10 @@ public class MouseInputGate : MonoBehaviour
             _rightStartedOverUI = false;
     }
 
-    // ── UI 命中判定（押下瞬間のみ呼ばれる） ───────────────────────
     private static bool IsPointerOverUI(Vector2 screenPos)
     {
         if (EventSystem.current == null) return false;
 
-        // PointerEventData を再利用（null or EventSystem 差し替え後は再生成）
         if (_pointerEventData == null || _pointerEventData.currentInputModule == null)
             _pointerEventData = new PointerEventData(EventSystem.current);
 

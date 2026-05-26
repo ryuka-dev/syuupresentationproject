@@ -12,13 +12,9 @@ public class PlayerController : MonoBehaviour
     public float jumpForce = 6f;
 
     [Header("Jump Tuning")]
-    [Tooltip("下落阶段に追加する重力倍率。大きいほど下落が速い。デフォルト 2.5。")]
-    [SerializeField] private float fallGravityMultiplier = 2.5f;
-    [Tooltip("上昇面の追加重力倍率。1.0 は変更なし。")]
-    [SerializeField] private float riseGravityMultiplier = 1.0f;
-    [Tooltip("最大下落速度。过大なクラッシュを防ぐ。デフォルト 25。")]
-    [SerializeField] private float maxFallSpeed          = 25f;
-    [Tooltip("Y velocity がこの値以下になったら fallGravityMultiplier に切替。0=最高点到達後。正値=上昇中でも早めに切替。")]
+    [SerializeField] private float fallGravityMultiplier    = 2.5f;
+    [SerializeField] private float riseGravityMultiplier    = 1.0f;
+    [SerializeField] private float maxFallSpeed             = 25f;
     [SerializeField, Range(-5f, 5f)] private float fallGravityStartVelocity = 0f;
 
     [Header("旋转")]
@@ -30,16 +26,40 @@ public class PlayerController : MonoBehaviour
     [Header("Input")]
     [SerializeField] private MouseInputGate mouseInputGate;
 
+    [Header("自动前进")]
+    [SerializeField] private bool  autoForwardActive;                          // Inspector 可读（调试用）
+    [SerializeField] private float autoForwardCameraReturnYawSpeed = 180f;    // yaw 回正速度（度/秒）
+
+    // ── 自动前进状態（RPGCameraController から参照） ──────────────
+    /// <summary>自动前进が有効か</summary>
+    public bool  AutoForwardActive          => autoForwardActive;
+    /// <summary>左键自由镜头中か</summary>
+    public bool  AutoForwardFreeLookActive  => _autoForwardFreeLookActive;
+    /// <summary>カメラ yaw 回正処理中か</summary>
+    public bool  AutoForwardCameraReturnActive => _autoForwardCameraReturnActive;
+    /// <summary>自由镜头進入時に固定した前進方向（水平 normalized）</summary>
+    public Vector3 AutoForwardLockedForward => _autoForwardLockedForward;
+    /// <summary>カメラ回正速度（度/秒）を RPGCameraController が読み取る用</summary>
+    public float AutoForwardCameraReturnYawSpeed => autoForwardCameraReturnYawSpeed;
+
+    // ── 自动前进内部状態 ──────────────────────────────────────────
+    private bool    _autoForwardFreeLookActive;    // 左键自由镜头中
+    private bool    _autoForwardCameraReturnActive; // カメラ回正中
+    private Vector3 _autoForwardLockedForward;     // 自由镜头進入時の前進方向
+    private bool    _mouseGateWarned;              // Warning 一回だけ
+
+    // ── Rigidbody / Animator ──────────────────────────────────────
     private Rigidbody rb;
     private Animator  anim;
     private bool      isGrounded;
 
-    // ─── ジャンプ状態管理 ──────────────────────────────────────
-    private bool _clearIsJumpingNextFrame = false;
-    private bool _jumpConsumed = false;
-    private int  _groundedFrameCount    = 0;
+    // ── ジャンプ状態管理 ──────────────────────────────────────────
+    private bool _clearIsJumpingNextFrame;
+    private bool _jumpConsumed;
+    private int  _groundedFrameCount;
     private const int GroundedFrameThreshold = 2;
 
+    // ─────────────────────────────────────────────────────────────
     void Awake()
     {
         rb   = GetComponent<Rigidbody>();
@@ -51,30 +71,33 @@ public class PlayerController : MonoBehaviour
             cameraTransform = Camera.main.transform;
 
         if (mouseInputGate == null)
-            mouseInputGate = GetComponentInChildren<MouseInputGate>()
+            mouseInputGate = GetComponent<MouseInputGate>()
                           ?? FindFirstObjectByType<MouseInputGate>();
         if (mouseInputGate == null)
-            Debug.LogWarning("[PlayerController] MouseInputGate not found. Dual-button forward will be disabled.");
+        {
+            Debug.LogWarning("[PlayerController] MouseInputGate not found. Mouse-based forward/free-look disabled.");
+            _mouseGateWarned = true;
+        }
     }
 
+    // ─────────────────────────────────────────────────────────────
     void Update()
     {
-        // ─── 着地検出 ──────────────────────────────────────────
+        // ── 着地検出 ───────────────────────────────────────────────
         bool rawGrounded = Physics.Raycast(
             transform.position + Vector3.up * 0.2f,
             Vector3.down, 0.35f,
             Physics.AllLayers, QueryTriggerInteraction.Ignore);
 
-        if (rawGrounded)
-            _groundedFrameCount = Mathf.Min(_groundedFrameCount + 1, GroundedFrameThreshold);
-        else
-            _groundedFrameCount = 0;
-
+        _groundedFrameCount = rawGrounded
+            ? Mathf.Min(_groundedFrameCount + 1, GroundedFrameThreshold)
+            : 0;
         isGrounded = (_groundedFrameCount >= GroundedFrameThreshold);
 
         var keyboard = Keyboard.current;
         if (keyboard == null) return;
 
+        // ── IsJumping 1フレームクリア ──────────────────────────────
         if (_clearIsJumpingNextFrame)
         {
             if (anim != null) anim.SetBool("IsJumping", false);
@@ -87,6 +110,7 @@ public class PlayerController : MonoBehaviour
             if (anim != null) anim.SetBool("IsJumping", false);
         }
 
+        // ── ジャンプ ───────────────────────────────────────────────
         if (keyboard.spaceKey.wasPressedThisFrame && isGrounded && !_jumpConsumed)
         {
             _jumpConsumed            = true;
@@ -101,8 +125,57 @@ public class PlayerController : MonoBehaviour
             anim.SetBool ("IsGrounded",      isGrounded);
             anim.SetFloat("VerticalVelocity", rb.linearVelocity.y);
         }
+
+        // ── 自动前进 Toggle（R キー） ──────────────────────────────
+        if (keyboard.rKey.wasPressedThisFrame)
+        {
+            autoForwardActive = !autoForwardActive;
+            if (!autoForwardActive)
+            {
+                // 自动前进 OFF 時に自由镜头 / 回正も全てキャンセル
+                _autoForwardFreeLookActive     = false;
+                _autoForwardCameraReturnActive = false;
+            }
+        }
+
+        // ── 自由镜头 状態更新（mouseInputGate がある場合のみ） ───────
+        if (mouseInputGate != null && autoForwardActive)
+        {
+            bool leftHeld  = mouseInputGate.LeftWorldHeld;
+            bool rightHeld = mouseInputGate.RightWorldHeld;
+
+            // 右键優先：自由镜头を強制終了
+            if (rightHeld && _autoForwardFreeLookActive)
+            {
+                _autoForwardFreeLookActive     = false;
+                _autoForwardCameraReturnActive = false;
+            }
+
+            // 左键のみ押されているとき（右键なし）→ 自由镜头モード
+            if (leftHeld && !rightHeld)
+            {
+                if (!_autoForwardFreeLookActive)
+                {
+                    // 自由镜头 進入：プレイヤーの現在の水平 forward を記録
+                    _autoForwardLockedForward = Vector3.ProjectOnPlane(transform.forward, Vector3.up);
+                    if (_autoForwardLockedForward.sqrMagnitude < 0.001f && cameraTransform != null)
+                        _autoForwardLockedForward = Vector3.ProjectOnPlane(cameraTransform.forward, Vector3.up);
+                    _autoForwardLockedForward      = _autoForwardLockedForward.normalized;
+                    _autoForwardFreeLookActive     = true;
+                    _autoForwardCameraReturnActive = false; // 回正を中断
+                }
+            }
+
+            // 左键が離れた → 自由镜头 終了、回正開始
+            if (!leftHeld && _autoForwardFreeLookActive)
+            {
+                _autoForwardFreeLookActive     = false;
+                _autoForwardCameraReturnActive = true;
+            }
+        }
     }
 
+    // ─────────────────────────────────────────────────────────────
     void FixedUpdate()
     {
         var keyboard = Keyboard.current;
@@ -114,31 +187,41 @@ public class PlayerController : MonoBehaviour
         if (keyboard.sKey.isPressed) v -= 1f;
         if (keyboard.wKey.isPressed) v += 1f;
 
-        // LMB + RMB = move toward camera forward (MMO dual-button forward)
-        // 両方ともワールド起点で押されている場合のみ前進。UI 起点は無視。
+        // ── 双键前進 / 自动前进（MouseInputGate 必須、fallback なし） ─
         if (mouseInputGate != null)
         {
             if (mouseInputGate.BothWorldButtonsHeld)
                 v = Mathf.Max(v, 1f);
-        }
-        else
-        {
-            // fallback: MouseInputGate がない場合は旧ロジック（UI 区別なし）
-            var mouse = Mouse.current;
-            if (mouse != null && mouse.leftButton.isPressed && mouse.rightButton.isPressed)
+            if (autoForwardActive)
                 v = Mathf.Max(v, 1f);
+        }
+        else if (autoForwardActive)
+        {
+            // MouseInputGate なしでも自动前进の基本 W 相当だけは動かす
+            v = Mathf.Max(v, 1f);
         }
 
         bool  hasMoveInput = (h != 0f || v != 0f);
         bool  isSprinting  = hasMoveInput && keyboard.leftShiftKey.isPressed;
         float currentSpeed = isSprinting ? sprintSpeed : moveSpeed;
 
+        // ── 移動方向の決定 ────────────────────────────────────────
         Vector3 dir = Vector3.zero;
         if (hasMoveInput)
         {
             if (cameraTransform == null && Camera.main != null)
                 cameraTransform = Camera.main.transform;
-            if (cameraTransform != null)
+
+            // 自动前进 + 左键自由镜头中：locked forward を使う
+            if (autoForwardActive && _autoForwardFreeLookActive && _autoForwardLockedForward.sqrMagnitude > 0.001f)
+            {
+                Vector3 lockedFwd = _autoForwardLockedForward;
+                Vector3 camRight  = cameraTransform != null
+                    ? Vector3.ProjectOnPlane(cameraTransform.right, Vector3.up).normalized
+                    : transform.right;
+                dir = (lockedFwd * v + camRight * h).normalized;
+            }
+            else if (cameraTransform != null)
             {
                 Vector3 camForward = Vector3.ProjectOnPlane(cameraTransform.forward, Vector3.up).normalized;
                 Vector3 camRight   = Vector3.ProjectOnPlane(cameraTransform.right,   Vector3.up).normalized;
@@ -146,7 +229,6 @@ public class PlayerController : MonoBehaviour
             }
             else
             {
-                Debug.LogWarning("[PlayerController] cameraTransform not set.");
                 dir = (transform.forward * v + transform.right * h).normalized;
             }
         }
@@ -169,6 +251,14 @@ public class PlayerController : MonoBehaviour
         }
     }
 
+    // ─────────────────────────────────────────────────────────────
+    /// <summary>RPGCameraController から呼ばれる：カメラ回正完了通知</summary>
+    public void NotifyCameraReturnComplete()
+    {
+        _autoForwardCameraReturnActive = false;
+    }
+
+    // ─────────────────────────────────────────────────────────────
     private void ApplyJumpGravityTuning()
     {
         if (isGrounded) return;

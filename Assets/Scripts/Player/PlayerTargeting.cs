@@ -4,33 +4,24 @@ using System.Collections.Generic;
 
 /// <summary>
 /// 玩家目标选择系统（New Input System）
-/// 挂载在 Player 对象上。
-///
-/// 支持两种选择方式：
-///   1. 鼠标左键 Raycast 点击（MouseInputGate.LeftWorldPressedThisFrame で UI 起点を除外）
-///   2. Tab 键从屏幕左到右循环选中敌人
+/// 左键選択は MouseInputGate.LeftWorldPressedThisFrame のみで判定。
+/// MouseInputGate がない場合は左键選択を無効化（安全失敗）、Tab は継続。
 /// </summary>
 public class PlayerTargeting : MonoBehaviour
 {
-    // ─── Public API ───────────────────────────────────────────────
-
     public Transform CurrentTarget { get; private set; }
 
-    // ─── Tab 目标选择設定 ─────────────────────────────────────────
-
     [Header("Tab 目标选择")]
-    [SerializeField] private bool    allowTabTargeting           = true;
-    [SerializeField] private float   tabTargetMaxDistance        = 30f;
-    [SerializeField] private Vector2 tabTargetViewportPadding   = Vector2.zero;
+    [SerializeField] private bool    allowTabTargeting         = true;
+    [SerializeField] private float   tabTargetMaxDistance      = 30f;
+    [SerializeField] private Vector2 tabTargetViewportPadding  = Vector2.zero;
 
     [Header("Input")]
     [SerializeField] private MouseInputGate mouseInputGate;
 
-    // ─── 运行时 ───────────────────────────────────────────────────
-
     private FactionComponent _selfFaction;
+    private bool             _gateWarned;
 
-    // Tab 候選キャッシュ用構造体
     private struct TabTargetCandidate
     {
         public Transform Target;
@@ -38,19 +29,20 @@ public class PlayerTargeting : MonoBehaviour
         public float     Distance;
     }
 
-    // ─── Unity 生命周期 ───────────────────────────────────────────
-
     private void Awake()
     {
         _selfFaction = GetComponent<FactionComponent>();
         if (_selfFaction == null)
-            Debug.LogWarning("[PlayerTargeting] Player 上找不到 FactionComponent，敌对判断将失效。");
+            Debug.LogWarning("[PlayerTargeting] FactionComponent not found. Enemy targeting disabled.");
 
         if (mouseInputGate == null)
-            mouseInputGate = GetComponentInChildren<MouseInputGate>()
+            mouseInputGate = GetComponent<MouseInputGate>()
                           ?? FindFirstObjectByType<MouseInputGate>();
         if (mouseInputGate == null)
-            Debug.LogWarning("[PlayerTargeting] MouseInputGate not found. Left-click targeting will be disabled.");
+        {
+            Debug.LogWarning("[PlayerTargeting] MouseInputGate not found. Left-click targeting disabled.");
+            _gateWarned = true;
+        }
     }
 
     private void Update()
@@ -59,33 +51,29 @@ public class PlayerTargeting : MonoBehaviour
         HandleTabTargetInput();
     }
 
-    // ─── Public メソッド ──────────────────────────────────────────
-
     public void ClearTarget()
     {
         CurrentTarget = null;
         Debug.Log("[PlayerTargeting] CurrentTarget cleared.");
     }
 
-    // ─── Mouse 选择ロジック ───────────────────────────────────────
-
+    // ── 左键選択：MouseInputGate 必須、fallback なし ──────────────
     private void HandleMouseTargetInput()
     {
-        // MouseInputGate.LeftWorldPressedThisFrame : UI 上でのクリックは除外済み
-        bool shouldProcess = mouseInputGate != null
-            ? mouseInputGate.LeftWorldPressedThisFrame
-            : (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame);  // fallback
-
-        if (!shouldProcess) return;
+        // MouseInputGate がない場合は何もしない（安全失敗）
+        if (mouseInputGate == null) return;
+        if (!mouseInputGate.LeftWorldPressedThisFrame) return;
 
         if (Camera.main == null)
         {
-            Debug.LogWarning("[PlayerTargeting] Camera.main 为空，无法发射射线。");
+            Debug.LogWarning("[PlayerTargeting] Camera.main is null.");
             return;
         }
 
-        Vector2 mousePos = Mouse.current != null ? Mouse.current.position.ReadValue() : Vector2.zero;
-        Ray ray = Camera.main.ScreenPointToRay(mousePos);
+        var mouse = Mouse.current;
+        if (mouse == null) return;
+
+        Ray ray = Camera.main.ScreenPointToRay(mouse.position.ReadValue());
         if (!Physics.Raycast(ray, out RaycastHit hit)) return;
 
         var health  = hit.collider.GetComponentInParent<HealthComponent>();
@@ -106,33 +94,22 @@ public class PlayerTargeting : MonoBehaviour
         SetTarget(faction.transform);
     }
 
-    // ─── Tab 選択ロジック ─────────────────────────────────────────
-
+    // ── Tab 選択 ────────────────────────────────────────────────
     private void HandleTabTargetInput()
     {
-        if (!allowTabTargeting)  return;
+        if (!allowTabTargeting) return;
         if (Keyboard.current == null) return;
         if (!Keyboard.current.tabKey.wasPressedThisFrame) return;
-
         SelectNextTargetFromLeftToRight();
     }
 
     private void SelectNextTargetFromLeftToRight()
     {
         Camera cam = Camera.main;
-        if (cam == null)
-        {
-            Debug.LogWarning("[PlayerTargeting] Camera.main 为空，无法进行 Tab 选择。");
-            return;
-        }
+        if (cam == null) { Debug.LogWarning("[PlayerTargeting] Camera.main is null."); return; }
 
         var candidates = BuildTabCandidates(cam);
-
-        if (candidates.Count == 0)
-        {
-            ClearTarget();
-            return;
-        }
+        if (candidates.Count == 0) { ClearTarget(); return; }
 
         candidates.Sort((a, b) =>
         {
@@ -142,22 +119,11 @@ public class PlayerTargeting : MonoBehaviour
 
         int currentIndex = -1;
         for (int i = 0; i < candidates.Count; i++)
-        {
-            if (candidates[i].Target == CurrentTarget)
-            {
-                currentIndex = i;
-                break;
-            }
-        }
+            if (candidates[i].Target == CurrentTarget) { currentIndex = i; break; }
 
-        int nextIndex;
-        if (currentIndex < 0)
-            nextIndex = 0;
-        else
-            nextIndex = (currentIndex + 1) % candidates.Count;
-
+        int nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % candidates.Count;
         SetTarget(candidates[nextIndex].Target);
-        Debug.Log($"[PlayerTargeting] Tab 选择目标：{CurrentTarget.name} (viewport.x={candidates[nextIndex].ViewportX:F2})");
+        Debug.Log($"[PlayerTargeting] Tab 选择目标：{CurrentTarget.name}");
     }
 
     private List<TabTargetCandidate> BuildTabCandidates(Camera cam)
@@ -167,24 +133,18 @@ public class PlayerTargeting : MonoBehaviour
 
         foreach (var health in allHealth)
         {
-            if (health == null)                continue;
-            if (health.IsDead)                 continue;
-            if (health.transform == transform) continue;
-
+            if (health == null || health.IsDead || health.transform == transform) continue;
             var faction = health.GetComponent<FactionComponent>();
-            if (faction == null) continue;
-            if (!IsValidEnemyTarget(health, faction)) continue;
+            if (faction == null || !IsValidEnemyTarget(health, faction)) continue;
 
             float dist = Vector3.Distance(transform.position, health.transform.position);
             if (dist > tabTargetMaxDistance) continue;
 
             Vector3 viewport = cam.WorldToViewportPoint(health.transform.position);
             if (viewport.z <= 0f) continue;
-
-            float padX = tabTargetViewportPadding.x;
-            float padY = tabTargetViewportPadding.y;
-            if (viewport.x < -padX || viewport.x > 1f + padX) continue;
-            if (viewport.y < -padY || viewport.y > 1f + padY) continue;
+            float px = tabTargetViewportPadding.x, py = tabTargetViewportPadding.y;
+            if (viewport.x < -px || viewport.x > 1f + px) continue;
+            if (viewport.y < -py || viewport.y > 1f + py) continue;
 
             candidates.Add(new TabTargetCandidate
             {
@@ -193,22 +153,18 @@ public class PlayerTargeting : MonoBehaviour
                 Distance  = dist,
             });
         }
-
         return candidates;
     }
 
-    // ─── 共通ユーティリティ ───────────────────────────────────────
-
     private bool IsValidEnemyTarget(HealthComponent health, FactionComponent faction)
     {
-        if (health == null || faction == null) return false;
-        if (_selfFaction == null)              return false;
+        if (health == null || faction == null || _selfFaction == null) return false;
         return _selfFaction.ShouldAttack(faction.faction);
     }
 
-    private void SetTarget(Transform target)
+    private void SetTarget(Transform t)
     {
-        CurrentTarget = target;
+        CurrentTarget = t;
         Debug.Log($"[PlayerTargeting] 当前目标：{CurrentTarget.name}");
     }
 }

@@ -2,19 +2,16 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// 传统 RPG 摄像机
-///   左键ドラッグ → 镜頭回転（ワールド起点の場合のみ）
-///   右键ドラッグ → 镜頭回転（ワールド起点の場合のみ）
-///   滚轮         → 推拉距离
-///   拖拽时隐藏鼠标，松开后恢复显示。
-///
-/// 入力帰属の判定は MouseInputGate に委譲する。
+/// 传统 RPG 摄像机。
+///   左/右键ドラッグ → 镜頭回転（MouseInputGate.AnyWorldMouseHeld ベース）
+///   滚轮            → 推拉
+///   自动前进 + 左键自由镜头終了後 → yaw 慢速回正
 /// </summary>
 public class RPGCameraController : MonoBehaviour
 {
     [Header("目标")]
     public Transform target;
-    public Vector3 targetOffset = new Vector3(0f, 1.0f, 0f);
+    public Vector3   targetOffset = new Vector3(0f, 1.0f, 0f);
 
     [Header("距离")]
     public float distance    = 6f;
@@ -31,16 +28,17 @@ public class RPGCameraController : MonoBehaviour
     public float followSmooth = 10f;
 
     [Header("Input")]
-    [SerializeField] private MouseInputGate mouseInputGate;
+    [SerializeField] private MouseInputGate     mouseInputGate;
+    [SerializeField] private PlayerController   playerController;
 
-    private float _yaw;
-    private float _pitch = 30f;
-
-    // ドラッグ開始時のマウス座標（カーソル復元用）
+    // ── 内部状態 ────────────────────────────────────────────────────
+    private float   _yaw;
+    private float   _pitch = 30f;
     private Vector2 _dragStartMousePos;
-    // 前フレームに AnyWorldMouseHeld だったか（On→Off 検出用）
     private bool    _wasDragging;
+    private bool    _gateWarned;
 
+    // ─────────────────────────────────────────────────────────────
     void Start()
     {
         var angles = transform.eulerAngles;
@@ -52,9 +50,18 @@ public class RPGCameraController : MonoBehaviour
         if (mouseInputGate == null)
             mouseInputGate = FindFirstObjectByType<MouseInputGate>();
         if (mouseInputGate == null)
-            Debug.LogWarning("[RPGCameraController] MouseInputGate not found. Camera drag will be disabled.");
+        {
+            Debug.LogWarning("[RPGCameraController] MouseInputGate not found. Camera drag disabled.");
+            _gateWarned = true;
+        }
+
+        if (playerController == null)
+            playerController = FindFirstObjectByType<PlayerController>();
+        if (playerController == null)
+            Debug.LogWarning("[RPGCameraController] PlayerController not found. Auto-forward camera return disabled.");
     }
 
+    // ─────────────────────────────────────────────────────────────
     void LateUpdate()
     {
         if (target == null) return;
@@ -62,15 +69,12 @@ public class RPGCameraController : MonoBehaviour
         var mouse = Mouse.current;
         if (mouse == null) return;
 
-        // MouseInputGate が見つからない場合は安全に何もしない
+        // MouseInputGate がない場合は一切動かさない
         bool anyWorldHeld = mouseInputGate != null && mouseInputGate.AnyWorldMouseHeld;
-        bool leftWorld    = mouseInputGate != null && mouseInputGate.LeftWorldHeld;
-        bool rightWorld   = mouseInputGate != null && mouseInputGate.RightWorldHeld;
 
-        // ─── ドラッグ開始：ワールド起点でいずれかのボタンが押された瞬間 ─
+        // ── ドラッグ開始 → Cursor 隠す ─────────────────────────────
         bool dragStartThisFrame = mouseInputGate != null &&
-            (mouseInputGate.LeftWorldPressedThisFrame || mouseInputGate.RightWorldPressedThisFrame)
-            && !_wasDragging;
+            mouseInputGate.AnyWorldMousePressedThisFrame && !_wasDragging;
 
         if (dragStartThisFrame)
         {
@@ -79,7 +83,7 @@ public class RPGCameraController : MonoBehaviour
             Cursor.lockState   = CursorLockMode.Locked;
         }
 
-        // ─── ドラッグ中：左または右のワールドボタンが押されていれば回転 ──
+        // ── ドラッグ中：マウスデルタでカメラ回転 ───────────────────
         if (anyWorldHeld)
         {
             Vector2 delta = mouse.delta.ReadValue();
@@ -88,22 +92,24 @@ public class RPGCameraController : MonoBehaviour
             _pitch  = Mathf.Clamp(_pitch, minPitch, maxPitch);
         }
 
-        // ─── ドラッグ終了：前フレームは押されていたが今フレームは離れた ──
+        // ── ドラッグ終了 → Cursor 復元 ─────────────────────────────
         if (_wasDragging && !anyWorldHeld)
         {
             Cursor.lockState = CursorLockMode.None;
             mouse.WarpCursorPosition(_dragStartMousePos);
             Cursor.visible   = true;
         }
-
         _wasDragging = anyWorldHeld;
 
-        // ─── スクロール拡縮 ───────────────────────────────────────
+        // ── カメラ yaw 回正（自动前进 + 自由镜头終了後） ─────────────
+        HandleCameraReturn();
+
+        // ── スクロール ────────────────────────────────────────────
         float scroll = mouse.scroll.ReadValue().y;
         if (Mathf.Abs(scroll) > 0.01f)
             distance = Mathf.Clamp(distance - scroll * zoomSpeed * 0.01f, minDistance, maxDistance);
 
-        // ─── カメラ位置更新 ───────────────────────────────────────
+        // ── カメラ位置更新 ────────────────────────────────────────
         Quaternion rotation = Quaternion.Euler(_pitch, _yaw, 0f);
         Vector3    lookAt   = target.position + targetOffset;
         Vector3    desired  = lookAt - rotation * Vector3.forward * distance;
@@ -112,6 +118,35 @@ public class RPGCameraController : MonoBehaviour
         transform.LookAt(lookAt);
     }
 
+    // ─────────────────────────────────────────────────────────────
+    private void HandleCameraReturn()
+    {
+        if (playerController == null) return;
+        if (!playerController.AutoForwardCameraReturnActive) return;
+
+        // ドラッグ中・自由镜头中は回正しない
+        if (mouseInputGate != null && mouseInputGate.AnyWorldMouseHeld) return;
+
+        // 目標 yaw：locked forward の水平方向から計算
+        Vector3 lockedFwd = playerController.AutoForwardLockedForward;
+        if (lockedFwd.sqrMagnitude < 0.001f) lockedFwd = target != null
+            ? Vector3.ProjectOnPlane(target.forward, Vector3.up).normalized
+            : Vector3.forward;
+
+        float targetYaw = Mathf.Atan2(lockedFwd.x, lockedFwd.z) * Mathf.Rad2Deg;
+        float speed     = playerController.AutoForwardCameraReturnYawSpeed;
+
+        _yaw = Mathf.MoveTowardsAngle(_yaw, targetYaw, speed * Time.deltaTime);
+
+        // 差が 0.5 度以内に収まったら完了通知
+        if (Mathf.Abs(Mathf.DeltaAngle(_yaw, targetYaw)) < 0.5f)
+        {
+            _yaw = targetYaw;
+            playerController.NotifyCameraReturnComplete();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
     void OnDisable()
     {
         _wasDragging     = false;

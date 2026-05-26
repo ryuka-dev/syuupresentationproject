@@ -1412,6 +1412,7 @@ MonoBehaviour:
   maxPitch: 75
   followSmooth: 10
   mouseInputGate: {fileID: 919417079}
+  playerController: {fileID: 919417044}
 --- !u!4 &331741802 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5824913119551717642, guid: 35e318cbf76204446ae5bbd2efb2236a, type: 3}
@@ -5893,6 +5894,8 @@ MonoBehaviour:
   rotationSpeed: 12
   cameraTransform: {fileID: 330585546}
   mouseInputGate: {fileID: 919417079}
+  autoForwardActive: 0
+  autoForwardCameraReturnYawSpeed: 180
 --- !u!114 &919417046
 MonoBehaviour:
   m_ObjectHideFlags: 0
