@@ -1,6 +1,6 @@
 ﻿# DEV_RULES
 
-最后更新：2026-05-25
+最后更新：2026-05-26
 
 修改任何代码前必须阅读本文件。以下规则不可违反。
 
@@ -10,7 +10,7 @@
 
 - 当前项目使用 Unity 6（6000.4.3f1）。
 - Rigidbody 速度使用 rb.linearVelocity，不使用 rb.velocity（Unity 6 已弃用）。
-- 使用 New Input System（Mouse.current / Keyboard.current），不要新增旧 UnityEngine.Input 逻辑。
+- 使用 New Input System（Mouse.current / Keyboard.current），不要新增旧 UnityEngine.Input / KeyCode 逻辑。正式或临时测试输入也必须走 New Input System。
 - 不要随意重命名 public / SerializeField 字段，Inspector 可能已绑定序列化数据。
 - 不要重构与本次任务无关的代码。
 - 不要扫描完整 Assets 文件夹、完整 Console 或完整 Scene Hierarchy。
@@ -22,6 +22,9 @@
 
 - Player 移动由 PlayerController 负责，使用相机水平 forward / right 为基准。
 - RPGCameraController 只负责相机，不直接旋转 Player。
+- 鼠标输入属于 UI 还是场景的判断统一走 `MouseInputGate`，不要在 PlayerController / RPGCameraController / PlayerTargeting 中各自新增 UI 命中判断。
+- 左键 / 右键视角拖动、双键前进、左键选目标都必须基于 MouseInputGate 的 World 状态；UI 起始鼠标输入不能触发场景操作。
+- 自动前进（R）由 PlayerController 管理：W/A/S/D 任意方向输入和重新形成的场景双键会打断；持续方向输入或双键状态下按 R 时，应由自动前进接管当前输入直到该输入松开。
 - 鼠标位于 UI 上时，右键不应触发相机旋转；当前使用 EventSystem RaycastAll 做 UI 命中检测，不要改回单纯 `IsPointerOverGameObject()` 或旧 Input。
 - 玩家朝向由 PlayerController 在有移动输入时负责；无输入时 Player 不因相机旋转转身。
 - 鼠标视角旋转使用 Mouse.delta * rotationSpeed，不要再乘 Time.deltaTime。
@@ -76,6 +79,9 @@
 - OnGUI 只作为 Debug / Developer Menu（F1 Debug UI）。
 - 正式 UI 使用 Canvas + TMP + Button 或 UI Toolkit。
 - 正式背包 UI 位于 `UI/InventoryCanvas`，不要把 F1 Debug 背包当正式 UI 修改。
+- `TeaShopCanvas` 是正式茶商店 UI，不能用 F1 Debug 或 OnGUI 实现；当前 T 键仅为临时测试入口，必须使用 New Input System，NPC 接入后再移除或隐藏。
+- 茶道具属于 ItemData.Tea，可进入 PlayerInventory；金币属于 PlayerWallet，不是 ItemData，不进入背包。
+- 茶 Buff 不应影响 Hikari 光负荷、玩家攻击力、减伤、HP 或技能系统；金币掉落不受茶 Buff 影响。
 - `InventoryCanvas` 需要压住 HUD：Canvas sortingOrder 当前为 1000；内部窗口置顶用 `SetAsLastSibling()`。
 - `ItemDetailWindow` 是纯 Hover Tooltip：不要加回 TitleBar / DraggableUIWindow / 操作按钮；必须保持不挡鼠标 Raycast。
 - `InventoryContextMenu` 是右键操作菜单：必须接收 Raycast；菜单项执行、点击外部、拖动窗口、关闭背包时应关闭。
@@ -118,11 +124,11 @@
 以下脚本改动风险高，修改前请先确认架构关系（见 ARCHITECTURE_REFERENCE.md）：
 
 Enemy：EnemyAI / EnemyWorldManager / EnemySpawnPoint / EnemySpawnArea / EnemyDeathHandler / EnemyPlayerCollisionIgnore / EnemySkillData / EnemySkillController / EnemyCastBarUI / DonutAoETelegraphController
-Player：PlayerController / RPGCameraController / PlayerTargeting / TargetSelectionIndicator / PlayerSkillController / PlayerBasicAttackController / PlayerGuardCounterController / PlayerDeathHandler / PlayerRespawnPointTracker / PlayerInventory / PlayerEquipment / PlayerCombatStats / PlayerSkillManager / PlayerStatusEffectController / PlayerSkillCanvasUI / PlayerSkillBarCanvasUI / PlayerMitigationVisualFeedback
-Inventory UI：InventoryInputController / InventoryCanvasUI / InventoryGridSlotUI / EquipmentSlotUI / ItemDetailPanelUI / InventoryContextMenuUI / DraggableUIWindow / UIWindowBringToFront
+Player：PlayerController / MouseInputGate / RPGCameraController / PlayerTargeting / TargetSelectionIndicator / PlayerSkillController / PlayerBasicAttackController / PlayerGuardCounterController / PlayerDeathHandler / PlayerRespawnPointTracker / PlayerInventory / PlayerEquipment / PlayerCombatStats / PlayerWallet / PlayerTeaBuffController / PlayerSkillManager / PlayerStatusEffectController / PlayerSkillCanvasUI / PlayerSkillBarCanvasUI / PlayerMitigationVisualFeedback
+Inventory UI：InventoryInputController / InventoryCanvasUI / InventoryGridSlotUI / EquipmentSlotUI / ItemDetailPanelUI / InventoryContextMenuUI / DraggableUIWindow / UIWindowBringToFront / TeaShopCanvasUI / TeaShopItemSlotUI
 Hikari：HikariSupportController
 Combat：HealthComponent / DamageNumberPopup / DamageNumberSpawner / CombatTextSourceLabel
-Items：ItemData / ItemStack / PickupItem / EnemyDropper
+Items：ItemData / ItemStack / PickupItem / GoldPickup / TeaBuffData / TeaShopItemData / TeaShopCatalogData / EnemyDropper
 Level：SavePoint
 Debug：SkeletonDebugUI / SkeletonSpawner
 
