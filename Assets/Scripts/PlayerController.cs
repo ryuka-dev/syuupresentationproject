@@ -138,17 +138,39 @@ public class PlayerController : MonoBehaviour
             }
         }
 
+        // ── W 押下で自动前進をキャンセル ──────────────────────────
+        // wasPressedThisFrame なので吞み込まない。当フレームの W 入力は FixedUpdate で正常に読まれる。
+        if (autoForwardActive && keyboard.wKey.wasPressedThisFrame)
+        {
+            autoForwardActive              = false;
+            _autoForwardFreeLookActive     = false;
+            _autoForwardCameraReturnActive = false;
+        }
+
+        // ── 左右键双键で自动前進をキャンセル ─────────────────────
+        // BothWorldButtonsHeld は UI 起点を除外済み。当フレームの双键前進は FixedUpdate で正常に読まれる。
+        if (autoForwardActive && mouseInputGate != null && mouseInputGate.BothWorldButtonsHeld)
+        {
+            autoForwardActive              = false;
+            _autoForwardFreeLookActive     = false;
+            _autoForwardCameraReturnActive = false;
+        }
+
         // ── 自由镜头 状態更新（mouseInputGate がある場合のみ） ───────
         if (mouseInputGate != null && autoForwardActive)
         {
             bool leftHeld  = mouseInputGate.LeftWorldHeld;
             bool rightHeld = mouseInputGate.RightWorldHeld;
 
-            // 右键優先：自由镜头を強制終了
-            if (rightHeld && _autoForwardFreeLookActive)
+            // 右键優先：FreeLook 中 or CameraReturn 中どちらでも右键が来たら locked forward を解放
+            // BothWorldButtonsHeld の場合は上の打断ブロックで autoForwardActive=false になっているので
+            // ここへ来るのは「右键単独」または「左键自由視角中に右键追加で双键にならないケース」は
+            // 発生しないため、このブランチは常に「右键単独接管」を意味する。
+            if (rightHeld && (_autoForwardFreeLookActive || _autoForwardCameraReturnActive))
             {
                 _autoForwardFreeLookActive     = false;
                 _autoForwardCameraReturnActive = false;
+                // autoForwardActive はそのまま維持（右键単独は打断しない）
             }
 
             // 左键のみ押されているとき（右键なし）→ 自由镜头モード
@@ -212,8 +234,15 @@ public class PlayerController : MonoBehaviour
             if (cameraTransform == null && Camera.main != null)
                 cameraTransform = Camera.main.transform;
 
-            // 自动前进 + 左键自由镜头中：locked forward を使う
-            if (autoForwardActive && _autoForwardFreeLookActive && _autoForwardLockedForward.sqrMagnitude > 0.001f)
+            // 自动前进 + 自由镜头中 or カメラ回正中 かつ右键なし：locked forward を使う
+            // _autoForwardCameraReturnActive も含めることで、松手後に相機がまだ回正中でも
+            // 角色が相機の自由視角方向に転向しないようにする。
+            bool rightHeld = mouseInputGate != null && mouseInputGate.RightWorldHeld;
+            bool useLockedFwd = autoForwardActive
+                && (_autoForwardFreeLookActive || _autoForwardCameraReturnActive)
+                && !rightHeld
+                && _autoForwardLockedForward.sqrMagnitude > 0.001f;
+            if (useLockedFwd)
             {
                 Vector3 lockedFwd = _autoForwardLockedForward;
                 Vector3 camRight  = cameraTransform != null
