@@ -1,6 +1,6 @@
 ﻿# DEBUG_GUIDE
 
-最后更新：2026-05-25
+最后更新：2026-05-26
 
 F1 Debug UI 的使用方法与测试流程。本文件记录开发 / 调试用途，不是正式 UI 说明。
 
@@ -57,6 +57,13 @@ F1 Debug UI 的使用方法与测试流程。本文件记录开发 / 调试用�
 - 玩家减伤状态：读取 PlayerSkillManager.GetStateBySkillId(skillId: iron_bulwark)
   - 显示：Skill Source / Skill Id / Mitigation Active / Active Remaining / Cooldown Remaining / Damage Taken Multiplier
   - 找不到 PlayerSkillManager 或对应 state 时显示 PlayerSkillManager state not found
+
+### Tea / Wallet 调试（只读显示）
+- 当前茶 Buff：无 / DisplayName
+- 剩余时间：xx.xs
+- 非必定掉落倍率：x1.00 / x1.15 等
+- Material 额外概率：0% / 20% 等
+- Wallet：显示当前 Gold；找不到 PlayerWallet 时显示 not found
 
 ---
 
@@ -162,6 +169,26 @@ F1 Debug UI 的使用方法与测试流程。本文件记录开发 / 调试用�
 5. 确认 Boss 收到 3 PDU（Tier 1 = 60）反击伤害
 6. 测试 Overflow Counter：先用增加光负荷 25 让 Burden 达到 80%~99%
    激活 Iron Bulwark 后承受 CastAttack，确认 Boss 受到 30 溢光反震伤害
+
+### 测试茶道具 Buff
+1. 背包中准备 Tea 类型物品（例如 `Item_Tea_DropChance.asset` / `Item_Tea_MaterialExtra.asset`）
+2. B 打开背包，右键 Tea → Use
+3. F1 左侧 Tea Buff 状态确认当前茶名、剩余时间与倍率 / 概率
+4. 掉率茶：用低 dropChance 的 ItemData 掉落验证非 100% 掉率倍率
+5. 素材茶：用 Material 掉落验证成功掉落后概率额外 +1
+6. 使用新茶会覆盖当前茶 Buff
+
+### 测试金币钱包 / GoldPickup
+1. 确认测试敌人 EnemyDropper 的 Gold Drop 已配置 `GoldPickup.prefab`
+2. 击杀敌人，地面生成 GoldPickup
+3. 靠近 GoldPickup，按 E 拾取
+4. F1 左侧 Wallet 显示 Gold 增加
+5. 打开背包确认金币不会进入 PlayerInventory
+
+### 测试 TeaShopCanvas（当前有已知问题）
+1. `TeaShopCanvas` 是正式 Canvas UI，不在 F1 Debug 中
+2. 当前 Play Mode 按 T 未打开茶商店 UI，需先修复临时 T 入口（New Input System）或 Canvas active 状态
+3. 修复后再验证分类、分页、购买、试饮、赠送、金币显示与持有数刷新
 
 ### 测试玩家死亡 / 复活
 1. 靠近场景中的 SavePoint 并进入 Trigger（日志确认复活点更新）
