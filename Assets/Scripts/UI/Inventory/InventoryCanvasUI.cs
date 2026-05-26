@@ -156,15 +156,16 @@ public class InventoryCanvasUI : MonoBehaviour
 private void RefreshInventory()
     {
         if (!_isOpen || _gridSlots == null) return;
-        var items     = playerInventory?.Items;
-        int itemCount = items != null ? items.Count : 0;
-        if (itemCount > visibleSlotCount)
-            Debug.LogWarning($"[InventoryCanvasUI] Item count ({itemCount}) exceeds {visibleSlotCount} visible slots.");
+        var items = playerInventory?.Items;
 
         for (int i = 0; i < visibleSlotCount; i++)
         {
-            if (i < itemCount) _gridSlots[i].SetItem(items[i], OnItemSlotClicked, OnItemSlotHoverEnter, OnItemSlotHoverExit, OnItemSlotRightClicked);
-            else               _gridSlots[i].SetEmpty();
+            _gridSlots[i].SlotIndex = i;
+            var stack = (items != null && i < items.Count) ? items[i] : null;
+            if (stack != null)
+                _gridSlots[i].SetItem(stack, OnItemSlotClicked, OnItemSlotHoverEnter, OnItemSlotHoverExit, OnItemSlotRightClicked);
+            else
+                _gridSlots[i].SetEmpty(OnEmptySlotClicked);
         }
     }
 
@@ -274,6 +275,19 @@ private void RefreshInventory()
         _selectionMode    = SelectionMode.InventoryItem;
         _selectedStack    = stack;
         _selectedSlotType = EquipmentSlotType.None;
+    }
+
+    // ── Empty Slot Click ─────────────────────────────────────────────
+    private void OnEmptySlotClicked(int slotIndex)
+    {
+        if (_pendingMoveSourceIndex < 0) return;   // 移動元がなければ何もしない
+        if (playerInventory == null) return;
+
+        // 移動元から空スロットへ移動（SwapStacks で null <-> stack を交換）
+        playerInventory.SwapStacks(_pendingMoveSourceIndex, slotIndex);
+        // OnInventoryChanged イベント経由で RefreshInventory が呼ばれる
+        ClearMoveState();
+        ClearSelection();
     }
 
     // ── Hover Handlers ──────────────────────────────────────────────

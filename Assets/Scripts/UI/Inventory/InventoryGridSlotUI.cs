@@ -20,23 +20,31 @@ public class InventoryGridSlotUI : MonoBehaviour,
     private Action<InventoryGridSlotUI, ItemStack> _onHoverEnter;
     private Action<InventoryGridSlotUI>            _onHoverExit;
     private Action<InventoryGridSlotUI, ItemStack, Vector2> _onRightClicked;
+    private Action<int>        _onEmptyClicked;
 
+    public int       SlotIndex  { get; set; }
     public bool      IsEmpty    => _stack == null;
     public ItemStack BoundStack => _stack;
     public RectTransform SlotRect => GetComponent<RectTransform>();
 
     // ── Empty ──────────────────────────────────────────────────────
-    public void SetEmpty()
+    public void SetEmpty(Action<int> onEmptyClicked = null)
     {
-        _stack        = null;
-        _onClicked    = null;
+        _stack          = null;
+        _onClicked      = null;
         _onHoverEnter   = null;
         _onHoverExit    = null;
         _onRightClicked = null;
+        _onEmptyClicked = onEmptyClicked;
         if (iconImage)  { iconImage.sprite = null; iconImage.enabled = false; }
         if (countText)    countText.gameObject.SetActive(false);
         SetSelected(false);
-        if (button) button.onClick.RemoveAllListeners();
+        if (button)
+        {
+            button.onClick.RemoveAllListeners();
+            if (_onEmptyClicked != null)
+                button.onClick.AddListener(() => _onEmptyClicked?.Invoke(SlotIndex));
+        }
     }
 
     // ── Occupied ───────────────────────────────────────────────────
