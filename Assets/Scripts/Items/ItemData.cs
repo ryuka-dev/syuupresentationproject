@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public enum ItemType { Material, Equipment, Consumable, Currency, Quest, Cosmetic }
+public enum ItemType { Material, Equipment, Consumable, Currency, Quest, Cosmetic, Tea }
 public enum ItemRarity { Common, Rare, Epic, Legendary }
 public enum EquipmentSlotType { None, Core, Armor, Accessory }
 
@@ -37,6 +37,10 @@ public class ItemData : ScriptableObject
     [SerializeField] private Sprite icon;
     public Sprite Icon => icon;
 
+    [Header("Tea")]
+    [SerializeField] private TeaBuffData teaBuffData;
+    public TeaBuffData TeaBuffData => teaBuffData;
+
 #if UNITY_EDITOR
     private void OnValidate()
     {
@@ -47,6 +51,8 @@ public class ItemData : ScriptableObject
         if (attackPowerBonus < 0f) attackPowerBonus = 0f;
         if (itemType != ItemType.Equipment) maxHealthBonus = 0f;
         if (maxHealthBonus < 0f) maxHealthBonus = 0f;
+        if (itemType == ItemType.Tea && teaBuffData == null)
+            Debug.LogWarning($"[ItemData] '{name}' is Tea but has no TeaBuffData assigned.");
     }
 #endif
 }

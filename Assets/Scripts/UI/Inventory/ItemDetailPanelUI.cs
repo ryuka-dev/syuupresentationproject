@@ -7,6 +7,7 @@ using UnityEngine.UI;
 /// 選択されたアイテムの基礎情報と操作ボタンを表示する詳細パネル。
 /// ShowInventoryItem: 背包内物品用（Equip ボタン表示）
 /// ShowEquippedItem:  装備槽用（Unequip ボタン表示）
+/// 純 Tooltip：ボタンなし、Raycast ブロックなし
 /// </summary>
 public class ItemDetailPanelUI : MonoBehaviour
 {
@@ -58,15 +59,56 @@ public class ItemDetailPanelUI : MonoBehaviour
         if (stack == null || stack.ItemData == null) { Hide(); return; }
         var item = stack.ItemData;
         bool isEquipment = item.ItemType == ItemType.Equipment;
+        bool isTea       = item.ItemType == ItemType.Tea;
 
         SetIcon(item.Icon);
-        FillTexts(
-            item.ItemName, item.ItemId, item.ItemType.ToString(), stack.Count.ToString(),
-            isEquipment ? item.EquipmentSlotType.ToString() : "",
-            isEquipment ? $"+{item.AttackPowerBonus}" : "",
-            isEquipment ? $"+{item.MaxHealthBonus}" : "",
-            item.Description
-        );
+
+        if (isTea)
+        {
+            // Tea 向け表示
+            string buffName   = "";
+            string effectDesc = "";
+            string duration   = "";
+
+            if (item.TeaBuffData != null)
+            {
+                buffName = item.TeaBuffData.DisplayName;
+                duration = $"{item.TeaBuffData.DurationSeconds:F0}秒";
+                switch (item.TeaBuffData.EffectType)
+                {
+                    case TeaBuffEffectType.NonGuaranteedDropChanceMultiplier:
+                        effectDesc = $"非必定掉落概率 x{item.TeaBuffData.Value:F2}";
+                        break;
+                    case TeaBuffEffectType.MaterialExtraQuantityChance:
+                        effectDesc = $"Material 掉落时 {item.TeaBuffData.Value * 100f:F0}% 概率额外 +1";
+                        break;
+                    default:
+                        effectDesc = item.TeaBuffData.EffectType.ToString();
+                        break;
+                }
+            }
+
+            string teaDesc = item.Description ?? "";
+            if (!string.IsNullOrEmpty(buffName))   teaDesc += $"\n[{buffName}]";
+            if (!string.IsNullOrEmpty(effectDesc)) teaDesc += $"\n{effectDesc}";
+            if (!string.IsNullOrEmpty(duration))   teaDesc += $"\n持续时间：{duration}";
+
+            FillTexts(
+                item.ItemName, item.ItemId, "Tea", stack.Count.ToString(),
+                "", "", "", teaDesc
+            );
+        }
+        else
+        {
+            FillTexts(
+                item.ItemName, item.ItemId, item.ItemType.ToString(), stack.Count.ToString(),
+                isEquipment ? item.EquipmentSlotType.ToString() : "",
+                isEquipment ? $"+{item.AttackPowerBonus}" : "",
+                isEquipment ? $"+{item.MaxHealthBonus}" : "",
+                item.Description
+            );
+        }
+
         SetButton(equipButton,   false, null);
         SetButton(unequipButton, false, null);
         if (rootPanel) { rootPanel.SetActive(true); rootPanel.transform.SetAsLastSibling(); }

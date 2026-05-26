@@ -16,6 +16,9 @@ public class InventoryCanvasUI : MonoBehaviour
     [SerializeField] private PlayerEquipment   playerEquipment;
     [SerializeField] private PlayerCombatStats playerCombatStats;
 
+    [Header("Tea")]
+    [SerializeField] private PlayerTeaBuffController playerTeaBuffController;
+
     [Header("Root")]
     [SerializeField] private GameObject rootPanel;
 
@@ -94,9 +97,10 @@ public class InventoryCanvasUI : MonoBehaviour
     private void Awake()
     {
         _canvas = GetComponent<Canvas>();
-        if (playerInventory   == null) playerInventory   = FindFirstObjectByType<PlayerInventory>();
-        if (playerEquipment   == null) playerEquipment   = FindFirstObjectByType<PlayerEquipment>();
-        if (playerCombatStats == null) playerCombatStats = FindFirstObjectByType<PlayerCombatStats>();
+        if (playerInventory       == null) playerInventory       = FindFirstObjectByType<PlayerInventory>();
+        if (playerEquipment       == null) playerEquipment       = FindFirstObjectByType<PlayerEquipment>();
+        if (playerCombatStats     == null) playerCombatStats     = FindFirstObjectByType<PlayerCombatStats>();
+        if (playerTeaBuffController == null) playerTeaBuffController = FindFirstObjectByType<PlayerTeaBuffController>();
         if (rootPanel) rootPanel.SetActive(false);
         InitializeGrid();
     }
@@ -314,7 +318,10 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
         _selectedSlotType = EquipmentSlotType.None;
         _selectionMode    = SelectionMode.InventoryItem;
         var rootRT = rootPanel?.GetComponent<RectTransform>();
-        contextMenu?.ShowForInventoryItem(stack, rootRT, screenPos, OnEquipButtonClicked);
+
+        // Tea 物品：Use ボタンを表示
+        System.Action onUse = stack.ItemData.ItemType == ItemType.Tea ? (System.Action)OnUseButtonClicked : null;
+        contextMenu?.ShowForInventoryItem(stack, rootRT, screenPos, OnEquipButtonClicked, onUse);
     }
 
     private void OnEquipSlotRightClicked(EquipmentSlotUI slot, ItemData item,
@@ -349,6 +356,30 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
         if (!playerInventory.RemoveItem(item))
             Debug.LogError("[InventoryCanvasUI] Equip succeeded but RemoveItem failed!");
         if (replaced != null) playerInventory.AddItem(replaced);
+
+        ClearSelection();
+        if (detailPanel) detailPanel.Hide();
+    }
+
+    // ── Use Tea ─────────────────────────────────────────────────────
+    private void OnUseButtonClicked()
+    {
+        if (_selectionMode != SelectionMode.InventoryItem || _selectedStack == null) return;
+        var item = _selectedStack.ItemData;
+        if (item == null || item.ItemType != ItemType.Tea) return;
+        if (playerInventory == null) return;
+
+        if (playerTeaBuffController == null)
+        {
+            Debug.LogWarning("[InventoryCanvasUI] PlayerTeaBuffController not found. Cannot use tea.");
+            return;
+        }
+
+        bool success = playerTeaBuffController.TryUseTea(item);
+        if (!success) return;   // TryUseTea が Warning を出す
+
+        if (!playerInventory.RemoveItem(item))
+            Debug.LogError("[InventoryCanvasUI] Use tea succeeded but RemoveItem failed!");
 
         ClearSelection();
         if (detailPanel) detailPanel.Hide();

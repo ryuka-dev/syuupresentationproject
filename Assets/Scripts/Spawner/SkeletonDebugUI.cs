@@ -173,6 +173,9 @@ public class SkeletonDebugUI : MonoBehaviour
         DrawMitigationStatusSection();
 
 
+        GUILayout.Space(6);
+        DrawTeaBuffSection();
+
         GUILayout.Space(4);
         GUILayout.Label("F1: Toggle");
 
@@ -723,6 +726,43 @@ private PlayerSkillManager ResolvePlayerSkillManager()
     }
 
 private HikariSupportController _hikariSupportController;
+    private PlayerTeaBuffController  _teaBuffController;
+
+    
+    // ── Tea Buff Debug ───────────────────────────────────────────────
+    private void DrawTeaBuffSection()
+    {
+        GUILayout.Label("--- 茶 Buff 状态 ---");
+        var tea = ResolveTeaBuffController();
+        if (tea == null)
+        {
+            GUILayout.Label("  PlayerTeaBuffController: not found");
+            return;
+        }
+        if (!tea.HasActiveTeaBuff)
+        {
+            GUILayout.Label("  当前茶 Buff: 无");
+            GUILayout.Label("  非必定掉落倍率: x1.00");
+            GUILayout.Label("  Material 额外概率: 0%");
+        }
+        else
+        {
+            var buff = tea.ActiveTeaBuff;
+            GUILayout.Label($"  当前茶 Buff: {buff.DisplayName}");
+            GUILayout.Label($"  剩余时间: {tea.RemainingSeconds:F1}s");
+            float mult  = tea.GetNonGuaranteedDropChanceMultiplier();
+            float extra = tea.GetMaterialExtraQuantityChance();
+            GUILayout.Label($"  非必定掉落倍率: x{mult:F2}");
+            GUILayout.Label($"  Material 额外概率: {extra * 100f:F0}%");
+        }
+    }
+
+    private PlayerTeaBuffController ResolveTeaBuffController()
+    {
+        if (_teaBuffController != null) return _teaBuffController;
+        _teaBuffController = FindFirstObjectByType<PlayerTeaBuffController>();
+        return _teaBuffController;
+    }
 
     private HikariSupportController ResolveHikariSupportController()
     {

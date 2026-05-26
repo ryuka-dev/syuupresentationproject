@@ -14,6 +14,7 @@ public class InventoryContextMenuUI : MonoBehaviour
     [SerializeField] private GameObject rootPanel;
     [SerializeField] private Button     equipButton;
     [SerializeField] private Button     unequipButton;
+    [SerializeField] private Button     useButton;
     [SerializeField] private float      screenPadding = 8f;
 
     private RectTransform _rt;
@@ -43,12 +44,14 @@ public class InventoryContextMenuUI : MonoBehaviour
 
     // ── Public API ──────────────────────────────────────────────────
     public void ShowForInventoryItem(ItemStack stack, RectTransform rootRT,
-                                     Vector2 screenPos, Action onEquip)
+                                     Vector2 screenPos, Action onEquip, Action onUse = null)
     {
         if (stack?.ItemData == null) { Hide(); return; }
         bool isEquip = stack.ItemData.ItemType == ItemType.Equipment;
+        bool isTea   = stack.ItemData.ItemType == ItemType.Tea;
         SetButton(equipButton,   isEquip, onEquip);
         SetButton(unequipButton, false,   null);
+        SetButton(useButton,     isTea,   onUse);
         Show(rootRT, screenPos);
     }
 
@@ -56,6 +59,7 @@ public class InventoryContextMenuUI : MonoBehaviour
     {
         SetButton(equipButton,   false, null);
         SetButton(unequipButton, true,  onUnequip);
+        SetButton(useButton,     false, null);
         Show(rootRT, screenPos);
     }
 

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -7,6 +7,7 @@ using UnityEngine;
 /// drops が空の場合は旧来の dropItem を 100% 掉落 (fallback)。
 /// alignDropsToGround が有効な場合は Raycast で地面を検出し、掉落物を地面に密着させる。
 /// Raycast の命中点が敵自身の Collider 上端より高い場合は無効と判断し candidatePosition へ fallback する。
+/// 茶 Buff 対応：PlayerTeaBuffController から掉率倍率 / Material 額外数量概率を取得する。
 /// </summary>
 public class EnemyDropper : MonoBehaviour
 {
@@ -33,7 +34,7 @@ public class EnemyDropper : MonoBehaviour
 
     // ─── Ground Placement ──────────────────────────────────────
     [Header("Ground Placement")]
-    [Tooltip("有効にすると Raycast で地面を検出し、掉落物を地面に密着させる")]
+    [Tooltip("有效にすると Raycast で地面を検出し、掉落物を地面に密着させる")]
     [SerializeField] private bool alignDropsToGround = true;
     [Tooltip("候補位置から上方にどれだけ Raycast 開始点を上げるか（m）")]
     [SerializeField] private float groundRaycastStartHeight = 5f;
@@ -47,6 +48,7 @@ public class EnemyDropper : MonoBehaviour
     [SerializeField] private float maxDropHeightAboveOwnerBounds = 0.2f;
 
     private HealthComponent _health;
+    private PlayerTeaBuffController _teaBuffController;
 
     private void Awake()
     {
@@ -73,6 +75,14 @@ public class EnemyDropper : MonoBehaviour
         if (maxDropHeightAboveOwnerBounds < 0f)   maxDropHeightAboveOwnerBounds = 0f;
     }
 
+    // PlayerTeaBuffController はキャッシュして毎回 Find しない
+    private PlayerTeaBuffController GetTeaBuffController()
+    {
+        if (_teaBuffController == null)
+            _teaBuffController = FindFirstObjectByType<PlayerTeaBuffController>();
+        return _teaBuffController;
+    }
+
     private void HandleDied()
     {
         if (pickupPrefab == null)
@@ -80,6 +90,10 @@ public class EnemyDropper : MonoBehaviour
             Debug.LogWarning("[EnemyDropper] pickupPrefab is not assigned. No item will drop.");
             return;
         }
+
+        var teaBuff = GetTeaBuffController();
+        float dropChanceMult   = teaBuff != null ? teaBuff.GetNonGuaranteedDropChanceMultiplier() : 1f;
+        float materialExtraChance = teaBuff != null ? teaBuff.GetMaterialExtraQuantityChance()    : 0f;
 
         // ─── drops リストが設定されている場合 ──────────────────
         if (drops != null && drops.Count > 0)
@@ -91,13 +105,30 @@ public class EnemyDropper : MonoBehaviour
                     Debug.LogWarning("[EnemyDropper] DropEntry has null item, skipping.");
                     continue;
                 }
-                if (Random.value <= entry.dropChance)
+
+                // 茶の掉率倍率：dropChance < 1f の場合のみ適用
+                float finalChance = entry.dropChance < 1f
+                    ? Mathf.Clamp01(entry.dropChance * dropChanceMult)
+                    : entry.dropChance;
+
+                if (Random.value <= finalChance)
                 {
                     Vector3 candidate = transform.position + dropOffset + entry.offset;
                     Vector3 pos       = GetGroundedDropPosition(candidate);
-                    PickupItem dropped = Instantiate(pickupPrefab, pos, Quaternion.identity);
-                    dropped.SetItemData(entry.item);
-                    Debug.Log($"[EnemyDropper] Dropped: {entry.item.ItemName} at {pos} (chance={entry.dropChance:P0})");
+                    SpawnDrop(entry.item, pos);
+
+                    // Material 額外数量概率
+                    if (entry.item.ItemType == ItemType.Material && materialExtraChance > 0f)
+                    {
+                        if (Random.value < materialExtraChance)
+                        {
+                            // 少しオフセットして重ならないようにする
+                            Vector3 extraCandidate = candidate + new Vector3(0.3f, 0f, 0.3f);
+                            Vector3 extraPos       = GetGroundedDropPosition(extraCandidate);
+                            SpawnDrop(entry.item, extraPos);
+                            Debug.Log($"[EnemyDropper] Material extra drop: {entry.item.ItemName} at {extraPos}");
+                        }
+                    }
                 }
             }
             return;
@@ -112,9 +143,15 @@ public class EnemyDropper : MonoBehaviour
 
         Vector3 legacyCandidate = transform.position + dropOffset;
         Vector3 spawnPos        = GetGroundedDropPosition(legacyCandidate);
-        PickupItem legacy = Instantiate(pickupPrefab, spawnPos, Quaternion.identity);
-        legacy.SetItemData(dropItem);
+        SpawnDrop(dropItem, spawnPos);
         Debug.Log($"[EnemyDropper] Dropped (legacy): {dropItem.ItemName} at {spawnPos}");
+    }
+
+    private void SpawnDrop(ItemData item, Vector3 pos)
+    {
+        PickupItem dropped = Instantiate(pickupPrefab, pos, Quaternion.identity);
+        dropped.SetItemData(item);
+        Debug.Log($"[EnemyDropper] Dropped: {item.ItemName} at {pos}");
     }
 
     /// <summary>

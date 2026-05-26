@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e3c792f818b34d1468beb9f79ff6951a, type: 3}
+  m_Name: TeaBuff_DropChance
+  m_EditorClassIdentifier: Assembly-CSharp::TeaBuffData
+  buffId: tea_drop_chance
+  displayName: "\u6389\u7387\u8336"
+  effectType: 1
+  value: 1.15
+  durationSeconds: 600
