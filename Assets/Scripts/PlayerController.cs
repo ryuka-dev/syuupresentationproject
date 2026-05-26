@@ -47,6 +47,8 @@ public class PlayerController : MonoBehaviour
     private bool    _autoForwardCameraReturnActive; // カメラ回正中
     private Vector3 _autoForwardLockedForward;     // 自由镜头進入時の前進方向
     private bool    _mouseGateWarned;              // Warning 一回だけ
+    // R 開启時に既に双键が押されていた場合、その双键が松开されるまで打断を抑制するフラグ
+    private bool    _suppressBothMouseBreakUntilReleased;
 
     // ── Rigidbody / Animator ──────────────────────────────────────
     private Rigidbody rb;
@@ -130,11 +132,18 @@ public class PlayerController : MonoBehaviour
         if (keyboard.rKey.wasPressedThisFrame)
         {
             autoForwardActive = !autoForwardActive;
-            if (!autoForwardActive)
+            if (autoForwardActive)
             {
-                // 自动前进 OFF 時に自由镜头 / 回正も全てキャンセル
-                _autoForwardFreeLookActive     = false;
-                _autoForwardCameraReturnActive = false;
+                // 自动前进 ON：双键が既に押されていたらその打断を次回松开まで抑制
+                if (mouseInputGate != null && mouseInputGate.BothWorldButtonsHeld)
+                    _suppressBothMouseBreakUntilReleased = true;
+            }
+            else
+            {
+                // 自动前进 OFF 時に自由镜头 / 回正 / suppress も全てキャンセル
+                _autoForwardFreeLookActive            = false;
+                _autoForwardCameraReturnActive        = false;
+                _suppressBothMouseBreakUntilReleased  = false;
             }
         }
 
@@ -149,11 +158,19 @@ public class PlayerController : MonoBehaviour
 
         // ── 左右键双键で自动前進をキャンセル ─────────────────────
         // BothWorldButtonsHeld は UI 起点を除外済み。当フレームの双键前進は FixedUpdate で正常に読まれる。
-        if (autoForwardActive && mouseInputGate != null && mouseInputGate.BothWorldButtonsHeld)
+        // suppress フラグ更新：双键が松开されたら suppress を解除
+        if (mouseInputGate == null || !mouseInputGate.BothWorldButtonsHeld)
+            _suppressBothMouseBreakUntilReleased = false;
+        // 打断：suppress されていない（R 接管前から押されていた双键ではない）場合のみ
+        if (autoForwardActive
+            && mouseInputGate != null
+            && mouseInputGate.BothWorldButtonsHeld
+            && !_suppressBothMouseBreakUntilReleased)
         {
-            autoForwardActive              = false;
-            _autoForwardFreeLookActive     = false;
-            _autoForwardCameraReturnActive = false;
+            autoForwardActive                    = false;
+            _autoForwardFreeLookActive           = false;
+            _autoForwardCameraReturnActive       = false;
+            _suppressBothMouseBreakUntilReleased = false;
         }
 
         // ── 自由镜头 状態更新（mouseInputGate がある場合のみ） ───────
