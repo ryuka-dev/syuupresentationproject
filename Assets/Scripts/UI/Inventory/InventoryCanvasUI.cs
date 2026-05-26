@@ -80,6 +80,8 @@ public class InventoryCanvasUI : MonoBehaviour
         if (_canvas != null) _canvas.sortingOrder = 1000;
         transform.SetAsLastSibling();
         ClearSelection();
+        // UI 格子数をデータ層に同期（SerializeField 差異・容量不一致を防ぐ）
+        playerInventory?.EnsureSlotCapacity(visibleSlotCount);
         RefreshAll();
         Cursor.visible   = true;
         Cursor.lockState = CursorLockMode.None;

@@ -12,7 +12,8 @@ using UnityEngine;
 /// </summary>
 public class PlayerInventory : MonoBehaviour
 {
-    [SerializeField] private int maxSlots = 30;
+    private const int DefaultMinimumSlots = 54;
+    [SerializeField] private int maxSlots = DefaultMinimumSlots;
 
     private readonly List<ItemStack> _items = new List<ItemStack>();
 
@@ -56,16 +57,35 @@ public class PlayerInventory : MonoBehaviour
 
     private void Awake()
     {
+        // Inspector に古い値 (30 など) がシリアライズされていても最低容量を保証
+        if (maxSlots < DefaultMinimumSlots)
+            maxSlots = DefaultMinimumSlots;
         EnsureSlotCapacity();
     }
 
     // ─── Slot Helpers ──────────────────────────────────────────────
 
-    /// <summary>_items が maxSlots 個になるよう null 埋めで拡張する。</summary>
+    /// <summary>_items が maxSlots 個になるよう null 埋めで拡張する（内部用）。</summary>
     private void EnsureSlotCapacity()
     {
         while (_items.Count < maxSlots)
             _items.Add(null);
+    }
+
+    /// <summary>
+    /// UI などが必要なスロット数を通知するための外部向け拡張。
+    /// requiredSlotCount が現在の maxSlots より大きければ maxSlots を引き上げ
+    /// _items を null 埋めで拡張する。縮小は行わない。既存物品は保持する。
+    /// </summary>
+    public void EnsureSlotCapacity(int requiredSlotCount)
+    {
+        if (requiredSlotCount <= 0) return;
+        if (maxSlots < requiredSlotCount)
+        {
+            Debug.Log($"[PlayerInventory] EnsureSlotCapacity: maxSlots {maxSlots} → {requiredSlotCount}");
+            maxSlots = requiredSlotCount;
+        }
+        EnsureSlotCapacity();
     }
 
     /// <summary>指定インデックスのスタックを返す。越界または空なら null。</summary>

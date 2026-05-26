@@ -34,7 +34,12 @@ private void Update()
             return;
         }
 
-        _playerInventory.AddItem(itemData);
+        bool added = _playerInventory.AddItem(itemData);
+        if (!added)
+        {
+            Debug.LogWarning($"[PickupItem] 背包已满，无法拾取 {itemData.ItemName}。");
+            return;   // 地上物品を残す
+        }
         Destroy(gameObject);
     }
 
