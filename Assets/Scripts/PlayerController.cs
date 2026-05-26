@@ -27,28 +27,25 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private MouseInputGate mouseInputGate;
 
     [Header("自动前进")]
-    [SerializeField] private bool  autoForwardActive;                          // Inspector 可读（调试用）
-    [SerializeField] private float autoForwardCameraReturnYawSpeed = 180f;    // yaw 回正速度（度/秒）
+    [SerializeField] private bool  autoForwardActive;
+    [SerializeField] private float autoForwardCameraReturnYawSpeed = 180f;
 
     // ── 自动前进状態（RPGCameraController から参照） ──────────────
-    /// <summary>自动前进が有効か</summary>
-    public bool  AutoForwardActive          => autoForwardActive;
-    /// <summary>左键自由镜头中か</summary>
-    public bool  AutoForwardFreeLookActive  => _autoForwardFreeLookActive;
-    /// <summary>カメラ yaw 回正処理中か</summary>
-    public bool  AutoForwardCameraReturnActive => _autoForwardCameraReturnActive;
-    /// <summary>自由镜头進入時に固定した前進方向（水平 normalized）</summary>
-    public Vector3 AutoForwardLockedForward => _autoForwardLockedForward;
-    /// <summary>カメラ回正速度（度/秒）を RPGCameraController が読み取る用</summary>
-    public float AutoForwardCameraReturnYawSpeed => autoForwardCameraReturnYawSpeed;
+    public bool    AutoForwardActive              => autoForwardActive;
+    public bool    AutoForwardFreeLookActive      => _autoForwardFreeLookActive;
+    public bool    AutoForwardCameraReturnActive  => _autoForwardCameraReturnActive;
+    public Vector3 AutoForwardLockedForward       => _autoForwardLockedForward;
+    public float   AutoForwardCameraReturnYawSpeed => autoForwardCameraReturnYawSpeed;
 
     // ── 自动前进内部状態 ──────────────────────────────────────────
-    private bool    _autoForwardFreeLookActive;    // 左键自由镜头中
-    private bool    _autoForwardCameraReturnActive; // カメラ回正中
-    private Vector3 _autoForwardLockedForward;     // 自由镜头進入時の前進方向
-    private bool    _mouseGateWarned;              // Warning 一回だけ
+    private bool    _autoForwardFreeLookActive;
+    private bool    _autoForwardCameraReturnActive;
+    private Vector3 _autoForwardLockedForward;
+    private bool    _mouseGateWarned;
     // R 開启時に既に双键が押されていた場合、その双键が松开されるまで打断を抑制するフラグ
     private bool    _suppressBothMouseBreakUntilReleased;
+    // R 開启時に既に方向入力があった場合、その入力が中立に戻るまで打断を抑制するフラグ
+    private bool    _suppressDirectionalBreakUntilReleased;
 
     // ── Rigidbody / Animator ──────────────────────────────────────
     private Rigidbody rb;
@@ -99,6 +96,9 @@ public class PlayerController : MonoBehaviour
         var keyboard = Keyboard.current;
         if (keyboard == null) return;
 
+        // ── 方向入力の有無（Update 先頭で一度だけ計算） ───────────
+        bool hasDirectionalInput = HasManualDirectionalInput(keyboard);
+
         // ── IsJumping 1フレームクリア ──────────────────────────────
         if (_clearIsJumpingNextFrame)
         {
@@ -112,7 +112,7 @@ public class PlayerController : MonoBehaviour
             if (anim != null) anim.SetBool("IsJumping", false);
         }
 
-        // ── ジャンプ ───────────────────────────────────────────────
+        // ── ジャンプ（Space は方向入力ではないため自动前進を打断しない） ─
         if (keyboard.spaceKey.wasPressedThisFrame && isGrounded && !_jumpConsumed)
         {
             _jumpConsumed            = true;
@@ -137,40 +137,55 @@ public class PlayerController : MonoBehaviour
                 // 自动前进 ON：双键が既に押されていたらその打断を次回松开まで抑制
                 if (mouseInputGate != null && mouseInputGate.BothWorldButtonsHeld)
                     _suppressBothMouseBreakUntilReleased = true;
+                // 自动前进 ON：方向入力が既にあったらその打断を中立に戻るまで抑制
+                if (hasDirectionalInput)
+                    _suppressDirectionalBreakUntilReleased = true;
             }
             else
             {
-                // 自动前进 OFF 時に自由镜头 / 回正 / suppress も全てキャンセル
-                _autoForwardFreeLookActive            = false;
-                _autoForwardCameraReturnActive        = false;
-                _suppressBothMouseBreakUntilReleased  = false;
+                // 自动前进 OFF 時：全 suppress と自由镜头 / 回正を一斉クリア
+                _autoForwardFreeLookActive             = false;
+                _autoForwardCameraReturnActive         = false;
+                _suppressBothMouseBreakUntilReleased   = false;
+                _suppressDirectionalBreakUntilReleased = false;
             }
         }
 
-        // ── W 押下で自动前進をキャンセル ──────────────────────────
-        // wasPressedThisFrame なので吞み込まない。当フレームの W 入力は FixedUpdate で正常に読まれる。
-        if (autoForwardActive && keyboard.wKey.wasPressedThisFrame)
+        // ── suppress フラグ更新 ────────────────────────────────────
+        // 方向入力が中立に戻ったら directional suppress を解除
+        if (!hasDirectionalInput)
+            _suppressDirectionalBreakUntilReleased = false;
+        // 双键が松开されたら mouse suppress を解除
+        if (mouseInputGate == null || !mouseInputGate.BothWorldButtonsHeld)
+            _suppressBothMouseBreakUntilReleased = false;
+
+        // ── 方向入力で自动前進をキャンセル ──────────────────────────
+        // WASD いずれかが押されているとき、suppress でなければ打断する。
+        // FixedUpdate の h / v は独立して読まれるため入力は吞まない。
+        // Space / Shift / マウスは HasManualDirectionalInput に含まれないため打断しない。
+        if (autoForwardActive
+            && hasDirectionalInput
+            && !_suppressDirectionalBreakUntilReleased)
         {
-            autoForwardActive              = false;
-            _autoForwardFreeLookActive     = false;
-            _autoForwardCameraReturnActive = false;
+            autoForwardActive                      = false;
+            _autoForwardFreeLookActive             = false;
+            _autoForwardCameraReturnActive         = false;
+            _suppressBothMouseBreakUntilReleased   = false;
+            _suppressDirectionalBreakUntilReleased = false;
         }
 
         // ── 左右键双键で自动前進をキャンセル ─────────────────────
         // BothWorldButtonsHeld は UI 起点を除外済み。当フレームの双键前進は FixedUpdate で正常に読まれる。
-        // suppress フラグ更新：双键が松开されたら suppress を解除
-        if (mouseInputGate == null || !mouseInputGate.BothWorldButtonsHeld)
-            _suppressBothMouseBreakUntilReleased = false;
-        // 打断：suppress されていない（R 接管前から押されていた双键ではない）場合のみ
         if (autoForwardActive
             && mouseInputGate != null
             && mouseInputGate.BothWorldButtonsHeld
             && !_suppressBothMouseBreakUntilReleased)
         {
-            autoForwardActive                    = false;
-            _autoForwardFreeLookActive           = false;
-            _autoForwardCameraReturnActive       = false;
-            _suppressBothMouseBreakUntilReleased = false;
+            autoForwardActive                      = false;
+            _autoForwardFreeLookActive             = false;
+            _autoForwardCameraReturnActive         = false;
+            _suppressBothMouseBreakUntilReleased   = false;
+            _suppressDirectionalBreakUntilReleased = false;
         }
 
         // ── 自由镜头 状態更新（mouseInputGate がある場合のみ） ───────
@@ -180,9 +195,6 @@ public class PlayerController : MonoBehaviour
             bool rightHeld = mouseInputGate.RightWorldHeld;
 
             // 右键優先：FreeLook 中 or CameraReturn 中どちらでも右键が来たら locked forward を解放
-            // BothWorldButtonsHeld の場合は上の打断ブロックで autoForwardActive=false になっているので
-            // ここへ来るのは「右键単独」または「左键自由視角中に右键追加で双键にならないケース」は
-            // 発生しないため、このブランチは常に「右键単独接管」を意味する。
             if (rightHeld && (_autoForwardFreeLookActive || _autoForwardCameraReturnActive))
             {
                 _autoForwardFreeLookActive     = false;
@@ -195,13 +207,12 @@ public class PlayerController : MonoBehaviour
             {
                 if (!_autoForwardFreeLookActive)
                 {
-                    // 自由镜头 進入：プレイヤーの現在の水平 forward を記録
                     _autoForwardLockedForward = Vector3.ProjectOnPlane(transform.forward, Vector3.up);
                     if (_autoForwardLockedForward.sqrMagnitude < 0.001f && cameraTransform != null)
                         _autoForwardLockedForward = Vector3.ProjectOnPlane(cameraTransform.forward, Vector3.up);
                     _autoForwardLockedForward      = _autoForwardLockedForward.normalized;
                     _autoForwardFreeLookActive     = true;
-                    _autoForwardCameraReturnActive = false; // 回正を中断
+                    _autoForwardCameraReturnActive = false;
                 }
             }
 
@@ -226,7 +237,7 @@ public class PlayerController : MonoBehaviour
         if (keyboard.sKey.isPressed) v -= 1f;
         if (keyboard.wKey.isPressed) v += 1f;
 
-        // ── 双键前進 / 自动前进（MouseInputGate 必須、fallback なし） ─
+        // ── 双键前進 / 自动前进 ────────────────────────────────────
         if (mouseInputGate != null)
         {
             if (mouseInputGate.BothWorldButtonsHeld)
@@ -236,7 +247,6 @@ public class PlayerController : MonoBehaviour
         }
         else if (autoForwardActive)
         {
-            // MouseInputGate なしでも自动前进の基本 W 相当だけは動かす
             v = Mathf.Max(v, 1f);
         }
 
@@ -251,14 +261,12 @@ public class PlayerController : MonoBehaviour
             if (cameraTransform == null && Camera.main != null)
                 cameraTransform = Camera.main.transform;
 
-            // 自动前进 + 自由镜头中 or カメラ回正中 かつ右键なし：locked forward を使う
-            // _autoForwardCameraReturnActive も含めることで、松手後に相機がまだ回正中でも
-            // 角色が相機の自由視角方向に転向しないようにする。
-            bool rightHeld = mouseInputGate != null && mouseInputGate.RightWorldHeld;
+            bool rightHeld   = mouseInputGate != null && mouseInputGate.RightWorldHeld;
             bool useLockedFwd = autoForwardActive
                 && (_autoForwardFreeLookActive || _autoForwardCameraReturnActive)
                 && !rightHeld
                 && _autoForwardLockedForward.sqrMagnitude > 0.001f;
+
             if (useLockedFwd)
             {
                 Vector3 lockedFwd = _autoForwardLockedForward;
@@ -302,6 +310,21 @@ public class PlayerController : MonoBehaviour
     public void NotifyCameraReturnComplete()
     {
         _autoForwardCameraReturnActive = false;
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    /// <summary>
+    /// キーボードのプレイヤー移動方向入力が存在するかを返す。
+    /// Space（ジャンプ）/ Shift（ダッシュ）/ マウスは含まない。
+    /// 将来のゲームパッド対応時はここにスティック入力を追加する。
+    /// </summary>
+    private bool HasManualDirectionalInput(Keyboard keyboard)
+    {
+        if (keyboard == null) return false;
+        return keyboard.wKey.isPressed
+            || keyboard.aKey.isPressed
+            || keyboard.sKey.isPressed
+            || keyboard.dKey.isPressed;
     }
 
     // ─────────────────────────────────────────────────────────────
