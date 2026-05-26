@@ -67,6 +67,28 @@ public class PlayerInventory : MonoBehaviour
         return true;
     }
 
+    // ─── Swap ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// インデックス A とインデックス B のスタックを交換する。
+    /// UI 層の背包内移動に使用する。
+    /// </summary>
+    public bool SwapStacks(int indexA, int indexB)
+    {
+        if (indexA < 0 || indexA >= _items.Count || indexB < 0 || indexB >= _items.Count)
+        {
+            Debug.LogWarning($"[PlayerInventory] SwapStacks: invalid indices ({indexA}, {indexB}). Count={_items.Count}");
+            return false;
+        }
+        if (indexA == indexB) return false;
+        var tmp       = _items[indexA];
+        _items[indexA] = _items[indexB];
+        _items[indexB] = tmp;
+        Debug.Log($"[PlayerInventory] SwapStacks: swapped index {indexA} <-> {indexB}");
+        OnInventoryChanged?.Invoke();
+        return true;
+    }
+
     // ─── Remove ──────────────────────────────────────────────────
 
     /// <summary>

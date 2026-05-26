@@ -64,6 +64,10 @@ public class InventoryCanvasUI : MonoBehaviour
     private ItemStack        _selectedStack;
     private EquipmentSlotType _selectedSlotType;
 
+    // ── Move State (two-click swap) ──────────────────────────────────
+    private InventoryGridSlotUI _pendingMoveSourceSlot;
+    private int                 _pendingMoveSourceIndex = -1;
+
     public bool IsOpen => _isOpen;
 
     // ── Open / Close ────────────────────────────────────────────────
@@ -183,8 +187,32 @@ private void RefreshInventory()
     }
 
     // ── Selection ───────────────────────────────────────────────────
+    private void ClearMoveState()
+    {
+        if (_pendingMoveSourceSlot != null) { _pendingMoveSourceSlot.SetSelected(false); _pendingMoveSourceSlot = null; }
+        _pendingMoveSourceIndex = -1;
+    }
+
+    private InventoryGridSlotUI FindGridSlotByStack(ItemStack stack)
+    {
+        if (_gridSlots == null || stack == null) return null;
+        foreach (var s in _gridSlots)
+            if (s != null && s.BoundStack == stack) return s;
+        return null;
+    }
+
+    private int FindInventoryIndex(ItemStack stack)
+    {
+        if (playerInventory == null || stack == null) return -1;
+        var items = playerInventory.Items;
+        for (int i = 0; i < items.Count; i++)
+            if (items[i] == stack) return i;
+        return -1;
+    }
+
     private void ClearSelection()
     {
+        ClearMoveState();
         if (_currentSelectedSlot != null) { _currentSelectedSlot.SetSelected(false); _currentSelectedSlot = null; }
         if (_currentSelectedEquipSlot != null) { _currentSelectedEquipSlot.SetSelected(false); _currentSelectedEquipSlot = null; }
         _selectionMode    = SelectionMode.None;
@@ -197,17 +225,55 @@ private void RefreshInventory()
     private void OnItemSlotClicked(ItemStack stack)
     {
         if (inventoryWindowRect != null) inventoryWindowRect.SetAsLastSibling();
+        contextMenu?.Hide();
+
+        // ── 移動待機中：2回目のクリック ──────────────────────────────
+        if (_pendingMoveSourceIndex >= 0)
+        {
+            int targetIndex             = FindInventoryIndex(stack);
+            InventoryGridSlotUI targetSlot = FindGridSlotByStack(stack);
+
+            // 同じ格子をクリック → キャンセル
+            if (targetSlot == _pendingMoveSourceSlot || targetIndex == _pendingMoveSourceIndex)
+            {
+                ClearMoveState();
+                ClearSelection();
+                return;
+            }
+
+            // 別の格子で物品あり → 交換
+            if (targetIndex >= 0 && playerInventory != null)
+                playerInventory.SwapStacks(_pendingMoveSourceIndex, targetIndex);
+            else
+                Debug.Log("[InventoryCanvasUI] Target slot is empty; compact list does not support empty slot move. Cancelling.");
+
+            ClearMoveState();
+            ClearSelection();
+            return;
+        }
+
+        // ── 移動元選択：1回目のクリック ──────────────────────────────
+        if (stack == null || stack.ItemData == null) return;
+
+        int sourceIndex = FindInventoryIndex(stack);
+        if (sourceIndex < 0)
+        {
+            Debug.LogWarning("[InventoryCanvasUI] OnItemSlotClicked: stack not found in inventory.");
+            return;
+        }
+
         if (_currentSelectedSlot != null) _currentSelectedSlot.SetSelected(false);
         _currentSelectedSlot = null;
-        if (_gridSlots != null)
-            foreach (var s in _gridSlots)
-                if (s != null && s.BoundStack == stack) { _currentSelectedSlot = s; s.SetSelected(true); break; }
+
+        InventoryGridSlotUI sourceSlot  = FindGridSlotByStack(stack);
+        _pendingMoveSourceSlot          = sourceSlot;
+        _pendingMoveSourceIndex         = sourceIndex;
+        if (sourceSlot != null) sourceSlot.SetSelected(true);
+        _currentSelectedSlot = sourceSlot;
 
         _selectionMode    = SelectionMode.InventoryItem;
         _selectedStack    = stack;
         _selectedSlotType = EquipmentSlotType.None;
-        // 左クリック：選中ハイライトのみ、Tooltip 固定なし
-        contextMenu?.Hide();
     }
 
     // ── Hover Handlers ──────────────────────────────────────────────
@@ -313,6 +379,14 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
     // ── Right-Click Handlers ────────────────────────────────────────
     private void OnItemSlotRightClicked(InventoryGridSlotUI slot, ItemStack stack, Vector2 screenPos)
     {
+        // 移動待機中は右クリックでキャンセルのみ（メニューは開かない）
+        if (_pendingMoveSourceIndex >= 0)
+        {
+            ClearMoveState();
+            ClearSelection();
+            return;
+        }
+
         if (stack?.ItemData == null) return;
         _selectedStack    = stack;
         _selectedSlotType = EquipmentSlotType.None;
