@@ -63,6 +63,7 @@ public class InventoryCanvasUI : MonoBehaviour
     private SelectionMode    _selectionMode = SelectionMode.None;
     private ItemStack        _selectedStack;
     private EquipmentSlotType _selectedSlotType;
+    private int              _selectedSlotIndex = -1;   // 右クリック時の slot index
 
     // ── Move State (two-click swap) ──────────────────────────────────
     private InventoryGridSlotUI _pendingMoveSourceSlot;
@@ -221,6 +222,7 @@ private void RefreshInventory()
         _selectionMode    = SelectionMode.None;
         _selectedStack    = null;
         _selectedSlotType = EquipmentSlotType.None;
+        _selectedSlotIndex = -1;
         _selectionLocked  = false;
     }
 
@@ -404,9 +406,10 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
         }
 
         if (stack?.ItemData == null) return;
-        _selectedStack    = stack;
-        _selectedSlotType = EquipmentSlotType.None;
-        _selectionMode    = SelectionMode.InventoryItem;
+        _selectedStack     = stack;
+        _selectedSlotIndex = slot.SlotIndex;   // slot index を保存（同名複数物品対応）
+        _selectedSlotType  = EquipmentSlotType.None;
+        _selectionMode     = SelectionMode.InventoryItem;
         var rootRT = rootPanel?.GetComponent<RectTransform>();
 
         // Tea 物品：Use ボタンを表示
@@ -443,8 +446,9 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
         }
         if (!success) return;
 
-        if (!playerInventory.RemoveItem(item))
-            Debug.LogError("[InventoryCanvasUI] Equip succeeded but RemoveItem failed!");
+        // slot index を使って正確なスロットを消費（同名複数物品対応）
+        if (!playerInventory.RemoveOneAt(_selectedSlotIndex))
+            Debug.LogError("[InventoryCanvasUI] Equip succeeded but RemoveOneAt(" + _selectedSlotIndex + ") failed!");
         if (replaced != null) playerInventory.AddItem(replaced);
 
         ClearSelection();
@@ -468,8 +472,9 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
         bool success = playerTeaBuffController.TryUseTea(item);
         if (!success) return;   // TryUseTea が Warning を出す
 
-        if (!playerInventory.RemoveItem(item))
-            Debug.LogError("[InventoryCanvasUI] Use tea succeeded but RemoveItem failed!");
+        // slot index を使って正確なスロットを消費（同名複数 Tea 対応）
+        if (!playerInventory.RemoveOneAt(_selectedSlotIndex))
+            Debug.LogError("[InventoryCanvasUI] Use tea succeeded but RemoveOneAt(" + _selectedSlotIndex + ") failed!");
 
         ClearSelection();
         if (detailPanel) detailPanel.Hide();

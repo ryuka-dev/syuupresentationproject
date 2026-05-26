@@ -188,6 +188,33 @@ public class PlayerInventory : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// 指定 slot index の物品を 1 個消費する。
+    /// Count > 1 なら count を 1 減らす。Count == 1 なら slot を null にする。
+    /// index 越界または空 slot の場合は false を返す。
+    /// </summary>
+    public bool RemoveOneAt(int index)
+    {
+        if (index < 0 || index >= _items.Count)
+        {
+            Debug.LogWarning($"[PlayerInventory] RemoveOneAt: index {index} out of range.");
+            return false;
+        }
+        var stack = _items[index];
+        if (stack == null)
+        {
+            Debug.LogWarning($"[PlayerInventory] RemoveOneAt: slot {index} is empty.");
+            return false;
+        }
+        if (stack.Count > 1)
+            stack.RemoveCount(1);
+        else
+            _items[index] = null;
+        Debug.Log($"[PlayerInventory] RemoveOneAt: slot {index} removed one {stack.ItemName}");
+        OnInventoryChanged?.Invoke();
+        return true;
+    }
+
     // ─── Swap / Move ─────────────────────────────────────────────
 
     /// <summary>
