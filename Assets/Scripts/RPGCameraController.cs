@@ -1,14 +1,14 @@
 using UnityEngine;
-using System.Collections.Generic;
-using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
 /// <summary>
 /// 传统 RPG 摄像机
-///   左键拖拽 → 摄像机绕玩家自由旋转，角色方向不变
-///   右键拖拽 → 摄像机旋转的同时，角色 Y 轴与摄像机 Yaw 保持同步
-///   滚轮     → 推拉距离
+///   左键ドラッグ → 镜頭回転（ワールド起点の場合のみ）
+///   右键ドラッグ → 镜頭回転（ワールド起点の場合のみ）
+///   滚轮         → 推拉距离
 ///   拖拽时隐藏鼠标，松开后恢复显示。
+///
+/// 入力帰属の判定は MouseInputGate に委譲する。
 /// </summary>
 public class RPGCameraController : MonoBehaviour
 {
@@ -30,14 +30,16 @@ public class RPGCameraController : MonoBehaviour
     [Header("平滑")]
     public float followSmooth = 10f;
 
+    [Header("Input")]
+    [SerializeField] private MouseInputGate mouseInputGate;
+
     private float _yaw;
     private float _pitch = 30f;
 
-    // Cursor 管理
-    private bool _isCameraDragging    = false;
-    private bool    _rightDragAllowed          = false;
-    private Vector2 _rightDragStartMousePosition  = Vector2.zero;
-    private static readonly List<RaycastResult> _uiRaycastResults = new List<RaycastResult>();
+    // ドラッグ開始時のマウス座標（カーソル復元用）
+    private Vector2 _dragStartMousePos;
+    // 前フレームに AnyWorldMouseHeld だったか（On→Off 検出用）
+    private bool    _wasDragging;
 
     void Start()
     {
@@ -45,65 +47,63 @@ public class RPGCameraController : MonoBehaviour
         _yaw   = angles.y;
         _pitch = angles.x > 180f ? angles.x - 360f : angles.x;
         _pitch = Mathf.Clamp(_pitch, minPitch, maxPitch);
-
-        // 初期状態でカーソルを表示
         SetCursorVisible(true);
+
+        if (mouseInputGate == null)
+            mouseInputGate = FindFirstObjectByType<MouseInputGate>();
+        if (mouseInputGate == null)
+            Debug.LogWarning("[RPGCameraController] MouseInputGate not found. Camera drag will be disabled.");
     }
 
-void LateUpdate()
+    void LateUpdate()
     {
         if (target == null) return;
 
         var mouse = Mouse.current;
         if (mouse == null) return;
 
-        // 右键ドラッグ：UI 上では相机を動かさない
-        bool rmbPressed  = mouse.rightButton.wasPressedThisFrame;
-        bool rmbHeld     = mouse.rightButton.isPressed;
-        bool rmbReleased = mouse.rightButton.wasReleasedThisFrame;
+        // MouseInputGate が見つからない場合は安全に何もしない
+        bool anyWorldHeld = mouseInputGate != null && mouseInputGate.AnyWorldMouseHeld;
+        bool leftWorld    = mouseInputGate != null && mouseInputGate.LeftWorldHeld;
+        bool rightWorld   = mouseInputGate != null && mouseInputGate.RightWorldHeld;
 
-        if (rmbPressed)
+        // ─── ドラッグ開始：ワールド起点でいずれかのボタンが押された瞬間 ─
+        bool dragStartThisFrame = mouseInputGate != null &&
+            (mouseInputGate.LeftWorldPressedThisFrame || mouseInputGate.RightWorldPressedThisFrame)
+            && !_wasDragging;
+
+        if (dragStartThisFrame)
         {
-            // 按下时用 RaycastAll 判断是否在 UI 上
-            _rightDragAllowed = !IsPointerOverUI();
-            if (_rightDragAllowed)
-            {
-                _isCameraDragging              = true;
-                _rightDragStartMousePosition   = mouse.position.ReadValue(); // 起点を記録
-                Cursor.visible                 = false;
-                Cursor.lockState               = CursorLockMode.Locked;     // 物理位置を固定
-            }
+            _dragStartMousePos = mouse.position.ReadValue();
+            Cursor.visible     = false;
+            Cursor.lockState   = CursorLockMode.Locked;
         }
 
-        if (rmbReleased)
-        {
-            bool wasAllowed   = _rightDragAllowed;
-            _rightDragAllowed = false;
-            _isCameraDragging = false;
-            if (wasAllowed)
-            {
-                Cursor.lockState = CursorLockMode.None;
-                // 起点位置に戻す
-                mouse.WarpCursorPosition(_rightDragStartMousePosition);
-                Cursor.visible   = true;
-            }
-        }
-
-        if (rmbHeld && _rightDragAllowed)
+        // ─── ドラッグ中：左または右のワールドボタンが押されていれば回転 ──
+        if (anyWorldHeld)
         {
             Vector2 delta = mouse.delta.ReadValue();
             _yaw   += delta.x * rotationSpeed * Time.deltaTime;
             _pitch -= delta.y * rotationSpeed * Time.deltaTime;
             _pitch  = Mathf.Clamp(_pitch, minPitch, maxPitch);
-            // Player 朝向は PlayerController が移动方向に合わせて制御する
         }
 
-        // 滚轮缩放
+        // ─── ドラッグ終了：前フレームは押されていたが今フレームは離れた ──
+        if (_wasDragging && !anyWorldHeld)
+        {
+            Cursor.lockState = CursorLockMode.None;
+            mouse.WarpCursorPosition(_dragStartMousePos);
+            Cursor.visible   = true;
+        }
+
+        _wasDragging = anyWorldHeld;
+
+        // ─── スクロール拡縮 ───────────────────────────────────────
         float scroll = mouse.scroll.ReadValue().y;
         if (Mathf.Abs(scroll) > 0.01f)
             distance = Mathf.Clamp(distance - scroll * zoomSpeed * 0.01f, minDistance, maxDistance);
 
-        // 计算并平滑更新摄像机位置
+        // ─── カメラ位置更新 ───────────────────────────────────────
         Quaternion rotation = Quaternion.Euler(_pitch, _yaw, 0f);
         Vector3    lookAt   = target.position + targetOffset;
         Vector3    desired  = lookAt - rotation * Vector3.forward * distance;
@@ -114,31 +114,16 @@ void LateUpdate()
 
     void OnDisable()
     {
-        // 無効化時（プレイヤー死亡など）に必ずカーソルを復元する
-        _rightDragAllowed = false;
-        _isCameraDragging = false;
-        Cursor.lockState  = CursorLockMode.None;
-        Cursor.visible    = true;
-    }
-
-    private bool IsPointerOverUI()
-    {
-        if (EventSystem.current == null || Mouse.current == null) return false;
-        var eventData = new PointerEventData(EventSystem.current)
-        {
-            position = Mouse.current.position.ReadValue()
-        };
-        _uiRaycastResults.Clear();
-        EventSystem.current.RaycastAll(eventData, _uiRaycastResults);
-        return _uiRaycastResults.Count > 0;
+        _wasDragging     = false;
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible   = true;
     }
 
     void OnDestroy()
     {
-        _rightDragAllowed = false;
-        _isCameraDragging = false;
-        Cursor.lockState  = CursorLockMode.None;
-        Cursor.visible    = true;
+        _wasDragging     = false;
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible   = true;
     }
 
     private void SetCursorVisible(bool visible)

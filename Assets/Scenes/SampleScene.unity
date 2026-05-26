@@ -1411,6 +1411,7 @@ MonoBehaviour:
   minPitch: 10
   maxPitch: 75
   followSmooth: 10
+  mouseInputGate: {fileID: 919417079}
 --- !u!4 &331741802 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5824913119551717642, guid: 35e318cbf76204446ae5bbd2efb2236a, type: 3}
@@ -5891,6 +5892,7 @@ MonoBehaviour:
   fallGravityStartVelocity: 2.8
   rotationSpeed: 12
   cameraTransform: {fileID: 330585546}
+  mouseInputGate: {fileID: 919417079}
 --- !u!114 &919417046
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5951,6 +5953,7 @@ MonoBehaviour:
   allowTabTargeting: 1
   tabTargetMaxDistance: 30
   tabTargetViewportPadding: {x: 0, y: 0}
+  mouseInputGate: {fileID: 919417079}
 --- !u!114 &919417054
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6178,6 +6181,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6e49b9eb06b991e46b71e873dcd29a39, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerTeaBuffController
+--- !u!114 &919417079
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 919417038}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0b1b90f1dffaf684bb47eb75cc6e4f50, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::MouseInputGate
 --- !u!1 &971681417
 GameObject:
   m_ObjectHideFlags: 0
@@ -11002,6 +11017,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
       insertIndex: -1
       addedObject: {fileID: 919417077}
+    - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 919417079}
   m_SourcePrefab: {fileID: 100100000, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
 --- !u!1 &2022700332
 GameObject:

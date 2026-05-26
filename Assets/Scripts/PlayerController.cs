@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(Rigidbody))]
@@ -24,25 +24,19 @@ public class PlayerController : MonoBehaviour
     [Header("旋转")]
     [SerializeField] private float rotationSpeed = 12f;
 
-
     [Header("摄像机参考")]
     public Transform cameraTransform;
+
+    [Header("Input")]
+    [SerializeField] private MouseInputGate mouseInputGate;
 
     private Rigidbody rb;
     private Animator  anim;
     private bool      isGrounded;
 
     // ─── ジャンプ状態管理 ──────────────────────────────────────
-    /// <summary>
-    /// IsJumping を 1 フレームだけ true にして次フレームでクリアするフラグ。
-    /// Any State → Jump のトランジションが空中で再起動するのを防ぐ。
-    /// </summary>
     private bool _clearIsJumpingNextFrame = false;
-    /// <summary>
-    /// 一度の離地中に跣躍を消費済みかどうか。著地確定後にリセット。
-    /// </summary>
     private bool _jumpConsumed = false;
-    /// <summary>增分着地確認用：連続 N フレーム grounded で初めて着地確定。</summary>
     private int  _groundedFrameCount    = 0;
     private const int GroundedFrameThreshold = 2;
 
@@ -55,11 +49,17 @@ public class PlayerController : MonoBehaviour
         if (anim != null) anim.applyRootMotion = false;
         if (cameraTransform == null && Camera.main != null)
             cameraTransform = Camera.main.transform;
+
+        if (mouseInputGate == null)
+            mouseInputGate = GetComponentInChildren<MouseInputGate>()
+                          ?? FindFirstObjectByType<MouseInputGate>();
+        if (mouseInputGate == null)
+            Debug.LogWarning("[PlayerController] MouseInputGate not found. Dual-button forward will be disabled.");
     }
 
-void Update()
+    void Update()
     {
-        // ─── 着地検出（ちらつき防止のため N フレーム連続で確定） ──────────────
+        // ─── 着地検出 ──────────────────────────────────────────
         bool rawGrounded = Physics.Raycast(
             transform.position + Vector3.up * 0.2f,
             Vector3.down, 0.35f,
@@ -75,27 +75,22 @@ void Update()
         var keyboard = Keyboard.current;
         if (keyboard == null) return;
 
-        // ─── IsJumping の 1 フレーム限定クリア ─────────────────────────
-        // 起蹜フレームの次のフレームで IsJumping を false に戻す。
-        // これにより Any State → Jump のトランジションが空中で再起動するループを防ぐ。
         if (_clearIsJumpingNextFrame)
         {
             if (anim != null) anim.SetBool("IsJumping", false);
             _clearIsJumpingNextFrame = false;
         }
 
-        // ─── 着地確定時：ジャンプ状態リセット ───────────────────────────
         if (isGrounded)
         {
             _jumpConsumed = false;
             if (anim != null) anim.SetBool("IsJumping", false);
         }
 
-        // ─── ジャンプ入力：wasPressedThisFrame かつ着地確定かつ未消費の場合のみ ───
         if (keyboard.spaceKey.wasPressedThisFrame && isGrounded && !_jumpConsumed)
         {
             _jumpConsumed            = true;
-            _clearIsJumpingNextFrame = true;  // 次フレームで IsJumping をクリア
+            _clearIsJumpingNextFrame = true;
             rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0f, rb.linearVelocity.z);
             rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
             if (anim != null) anim.SetBool("IsJumping", true);
@@ -103,12 +98,12 @@ void Update()
 
         if (anim != null)
         {
-            anim.SetBool ("IsGrounded",       isGrounded);
-            anim.SetFloat("VerticalVelocity",  rb.linearVelocity.y);
+            anim.SetBool ("IsGrounded",      isGrounded);
+            anim.SetFloat("VerticalVelocity", rb.linearVelocity.y);
         }
     }
 
-void FixedUpdate()
+    void FixedUpdate()
     {
         var keyboard = Keyboard.current;
         if (keyboard == null) return;
@@ -120,9 +115,19 @@ void FixedUpdate()
         if (keyboard.wKey.isPressed) v += 1f;
 
         // LMB + RMB = move toward camera forward (MMO dual-button forward)
-        var mouse = Mouse.current;
-        if (mouse != null && mouse.leftButton.isPressed && mouse.rightButton.isPressed)
-            v = Mathf.Max(v, 1f);
+        // 両方ともワールド起点で押されている場合のみ前進。UI 起点は無視。
+        if (mouseInputGate != null)
+        {
+            if (mouseInputGate.BothWorldButtonsHeld)
+                v = Mathf.Max(v, 1f);
+        }
+        else
+        {
+            // fallback: MouseInputGate がない場合は旧ロジック（UI 区別なし）
+            var mouse = Mouse.current;
+            if (mouse != null && mouse.leftButton.isPressed && mouse.rightButton.isPressed)
+                v = Mathf.Max(v, 1f);
+        }
 
         bool  hasMoveInput = (h != 0f || v != 0f);
         bool  isSprinting  = hasMoveInput && keyboard.leftShiftKey.isPressed;
@@ -147,8 +152,6 @@ void FixedUpdate()
         }
 
         rb.linearVelocity = new Vector3(dir.x * currentSpeed, rb.linearVelocity.y, dir.z * currentSpeed);
-
-        // 水平速度設定後に追加重力を適用（Y 軸のみ変更）
         ApplyJumpGravityTuning();
 
         if (dir.sqrMagnitude > 0.001f)
@@ -166,17 +169,11 @@ void FixedUpdate()
         }
     }
 
-/// <summary>
-    /// 空中に居る間、下落と上昇に別々の追加重力を適用する。
-    /// FixedUpdate の最後に呼び出すこと。
-    /// 水平方向の速度は変更しない。
-    /// </summary>
-private void ApplyJumpGravityTuning()
+    private void ApplyJumpGravityTuning()
     {
         if (isGrounded) return;
 
         Vector3 vel      = rb.linearVelocity;
-        // fallGravityStartVelocity 以下なら下落重力、それ以上なら上昇重力を適用。
         float multiplier = vel.y <= fallGravityStartVelocity
             ? fallGravityMultiplier
             : riseGravityMultiplier;
@@ -187,5 +184,4 @@ private void ApplyJumpGravityTuning()
         vel.y = Mathf.Max(vel.y, -maxFallSpeed);
         rb.linearVelocity = vel;
     }
-
 }
