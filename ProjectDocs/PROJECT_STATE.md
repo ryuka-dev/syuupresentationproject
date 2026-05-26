@@ -1,6 +1,6 @@
 ﻿# PROJECT_STATE
 
-最后更新：2026-05-25
+最后更新：2026-05-26
 
 ---
 
@@ -25,7 +25,7 @@
 - **主要渲染管线**：URP 17.4.0
 - **主要包**：New Input System 1.19.0 / AI Navigation 2.0.12 / Unity MCP (GitHub)
 - **当前主场景**：`Assets/Scenes/SampleScene.unity`
-- **当前开发阶段**：早期原型 — 野外战斗 / 刷怪 / 掉落 / 背包 / 装备数值 / 玩家技能系统 / Hikari 光负荷与 Tier 1 数值基准闭环验证
+- **当前开发阶段**：早期原型 — 野外战斗 / 刷怪 / 掉落 / 背包 / 装备数值 / 玩家技能系统 / Hikari 光负荷 / 茶道具 / 金币钱包 / 茶商店 UI 原型与 Tier 1 数值基准闭环验证
 - **项目类型**：3D RPG 动作游戏原型（单人 Tank 保护型）
 
 ### 核心玩法一句话
@@ -37,7 +37,7 @@
 ## 3. 当前可用核心闭环
 
 ```text
-玩家移动
+玩家移动 / 自动前进（R）/ 鼠标左右键场景输入
 → Tab / 鼠标左键选中目标（头顶倒三角指示器）
 → 1 键 Basic Attack（3m 单体）/ 4 键 Area Attack（5m AOE）
 → 2 键 Iron Bulwark / 3 键 Stone Guard（减伤技能）
@@ -48,10 +48,12 @@
 → Hikari 根据玩家 HP 自动 Light Mend / Emergency Prayer 治疗
 → Hikari 光负荷管理（稳定导光 / 光溢出 / 导光封锁 / 导光恢复）
 → 溢光反震（光溢出区间触发 Guard Resonance 时对攻击者反伤 30）
-→ 敌人死亡 → 掉落 ItemDrop → 按 E 拾取
-→ PlayerInventory 加入背包
+→ 敌人死亡 → 掉落 ItemDrop / GoldPickup → 按 E 拾取
+→ PlayerInventory 加入背包；PlayerWallet 增加 Gold
 → B 打开正式 InventoryCanvas 格子背包 / EquipmentWindow
-→ Hover 物品显示 ItemDetailWindow Tooltip；右键菜单执行 Equip / Unequip
+→ Hover 物品显示 ItemDetailWindow Tooltip；右键菜单执行 Equip / Unequip / Use Tea
+→ 使用 Tea 道具触发 PlayerTeaBuffController，影响 ItemData 掉率 / Material 额外掉落
+→ TeaShopCanvas 茶商店 UI 原型可展示分类 / 商品 / 详情 / 购买 / 试饮 / 赠送（当前 T 打开未正常工作）
 → PlayerCombatStats 汇总攻击力与最大生命值
 → HealthComponent 自动应用新上限
 → 刷怪点延迟刷新（EnemySpawnPoint / EnemySpawnArea）
@@ -64,14 +66,17 @@
 
 ### Player / Camera / Movement
 - WASD FF14 Legacy-like 相机基准移动，Shift 支持八方向跑步
-- 右键旋转相机，左键 + 右键双键前进
-- 鼠标位于 UI 上时，右键不会触发相机旋转（`EventSystem.RaycastAll` 检测）
+- `MouseInputGate` 统一判断鼠标按下瞬间属于 UI 还是场景；UI 起始鼠标输入不触发移动 / 相机 / 目标选择
+- 左键或右键在场景中按住均可拖动视角；场景左键 + 右键双键前进
+- R 键自动前进 v1：右键转向，左键自由视角，左键松开后相机 yaw 回正；WASD 任意方向输入或重新形成的场景双键会打断自动前进
+- 持续按住 W/A/S/D 或鼠标双键时按 R，可由自动前进接管当前输入，直到方向输入 / 双键松开后恢复打断规则
 - 移动时 Player 朝实际方向转身，无输入不被相机强制转身
 - 跳跃动画循环修复，落地后可直接进入 RunForward / Sprint
 - `RPGCameraController` 只控制相机，不直接旋转 Player
 
 ### Targeting
 - 鼠标左键 Raycast 选目标，Tab 从屏幕左到右循环选敌
+- 鼠标左键选目标只响应 `MouseInputGate.LeftWorldPressedThisFrame`，点击 UI 不会选中背后敌人
 - `TargetSelectionIndicator` 在目标头顶显示倒三角，已修正频闪
 
 ### Player Skill System (v0.2)
@@ -103,17 +108,25 @@
 - `PlayerStatusEffectController` 修正玩家减伤 / 攻击输出 / 治疗接收倍率
 
 ### Item / Drop / Inventory / Equipment
-- `ItemData` ScriptableObject：Material / Equipment，含 attackPowerBonus / maxHealthBonus / Icon
-- `PlayerInventory`：Equipment 独立 stack，Material 合并 stack，并通过 OnInventoryChanged 驱动正式 UI 刷新
+- `ItemData` ScriptableObject：Material / Equipment / Tea，含 attackPowerBonus / maxHealthBonus / Icon；Tea 可引用 `TeaBuffData`
+- `PlayerInventory`：Equipment 独立 stack，Material / Tea 等非 Equipment 合并 stack，并通过 OnInventoryChanged 驱动正式 UI 刷新
 - `PlayerEquipment`：Core / Armor / Accessory 三槽（主角武器固定不入装备系统）
-- `EnemyDropper`：多条目概率掉落 + Terrain 贴地 Raycast 生成
+- `EnemyDropper`：多条目概率 ItemData 掉落 + Terrain 贴地 Raycast 生成；另支持独立 Gold Drop 配置生成 `GoldPickup`
+- `PlayerWallet` 管理 Gold；金币不是 `ItemData`，不进入背包，不受茶 Buff 影响
+
+### Tea / Economy / Shop
+- 茶道具系统 v1 已可用：`TeaBuffData` + `PlayerTeaBuffController`，背包右键 Use 茶后应用当前茶 Buff，已有茶状态会被新茶覆盖
+- 当前 Tea Buff：非 100% ItemData 掉落概率倍率、Material 成功掉落后概率额外 +1；已实测通过
+- 金币钱包与金币掉落 v1 已可用：`GoldPickup` 按 E 拾取后增加 `PlayerWallet.Gold`；`SkeletonEnemy_Variant` 已配置金币掉落并实测通过
+- `TeaShopCanvas` 正式茶商店 UI v1 已创建：分类 / 商品格 / 分页 / 详情 / 购买数量 / 购买 / 试饮 / 赠送 / 金币显示；暂未接 NPC
+- `TeaShopCanvas` 当前 Play Mode 按 T 未打开，需优先检查是否仍使用旧 Input / KeyCode 或 Canvas active 状态
 
 ### Formal Inventory / Equipment UI (v1)
 - `InventoryCanvas` 已作为正式 Canvas UI 接入，挂在 `UI` 根对象下；B 打开/关闭，Esc 关闭
 - `InventoryWindow` 使用程序生成的 RPG 格子背包，`visibleSlotCount` 可在 Inspector 配置（当前用于 48 格测试）
 - `EquipmentWindow` 显示 Core / Armor / Accessory 三槽装备栏，与背包格子共用图标 / Tooltip 交互风格
 - `ItemDetailWindow` 是纯 Hover Tooltip：不挡鼠标 Raycast，自动高度，按目标左右侧定位并 Clamp 到屏幕内
-- `InventoryContextMenu` 是右键操作菜单：背包 Equipment 可 Equip，已装备槽可 Unequip；执行菜单项、点击外部、拖动窗口或关闭背包时隐藏
+- `InventoryContextMenu` 是右键操作菜单：背包 Equipment 可 Equip，背包 Tea 可 Use，已装备槽可 Unequip；执行菜单项、点击外部、拖动窗口或关闭背包时隐藏
 - `InventoryCanvas` 的 Canvas sortingOrder = 1000，用于压住 SkillCanvas / LevelUI；内部窗口置顶用 SetAsLastSibling
 
 ### Damage Number / UI Feedback
@@ -126,6 +139,7 @@
 - 左侧：骷髅召唤 / 玩家操作 / 敌人调试 / 装备操作 / 战斗属性
 - 右侧：背包 Debug 窗口
 - 独立：装备状态窗口 / Hikari Debug 窗口（动态高度）
+- 左侧 Debug 已显示当前 Tea Buff 状态与 Wallet Gold
 
 ### Respawn / SavePoint
 - `PlayerRespawnPointTracker`：记录最近复活点
@@ -144,8 +158,9 @@
 | 脚本 | 职责简述 |
 |---|---|
 | `PlayerController` | 玩家输入移动、朝向、动画参数 |
-| `RPGCameraController` | 相机跟随与右键旋转，不旋转 Player；UI 上右键不触发相机 |
-| `PlayerTargeting` | 鼠标左键 / Tab 目标选择，提供 CurrentTarget |
+| `MouseInputGate` | 统一记录鼠标左/右键按下瞬间属于 UI 还是场景，供移动、相机与目标选择共用 |
+| `RPGCameraController` | 相机跟随、左键/右键场景拖动、自动前进自由视角回正，不旋转 Player |
+| `PlayerTargeting` | 鼠标左键 / Tab 目标选择，提供 CurrentTarget；UI 起始左键不选中场景目标 |
 | `PlayerSkillManager` | 统一技能输入、RuntimeState、分发到执行器 |
 | `PlayerBasicAttackController` | Slot1/4 执行与共享基础攻击冷却 |
 | `PlayerGuardCounterController` | Slot5 Radiant Riposte 执行与 10 秒窗口管理 |
@@ -156,10 +171,16 @@
 | `InventoryCanvasUI` | 正式背包 / 装备 UI 总控，负责格子刷新、Tooltip、右键菜单与 Equip/Unequip 调用 |
 | `InventoryGridSlotUI` / `EquipmentSlotUI` | 背包格子与装备槽显示、Hover、右键事件 |
 | `ItemDetailPanelUI` / `InventoryContextMenuUI` | 物品 Tooltip 与右键操作菜单 |
+| `TeaShopCanvasUI` | 正式茶商店 UI 总控：分类、分页、详情、购买、试饮、赠送、金币显示 |
+| `GoldPickup` | 金币地面拾取物，按 E 加入 PlayerWallet |
+| `PlayerWallet` | Gold 钱包，提供 AddGold / CanSpendGold / TrySpendGold |
+| `PlayerTeaBuffController` | 当前茶 Buff、剩余时间与掉落修正查询 |
+| `TeaBuffData` | 茶 Buff 静态数据（效果类型、数值、持续时间） |
 | `DraggableUIWindow` / `UIWindowBringToFront` | 背包窗口拖动与窗口置顶 |
 | `HikariSupportController` | 自动治疗、光负荷、Guard Resonance、溢光反震 |
 | `EnemyAI` | FSM + NavMeshAgent + 仇恨系统 |
 | `EnemySkillController` | 敌人技能配置与执行（CastAttack / AoE） |
+| `EnemyDropper` | ItemData 概率掉落与 GoldPickup 独立金币掉落 |
 | `EnemySpawnPoint` | 单怪刷新点 |
 | `EnemySpawnArea` | 区域多怪加权随机刷新 |
 | `HealthComponent` | 通用血量，触发 OnDamaged / OnHealed 事件 |
@@ -171,6 +192,10 @@
 
 ## 6. 当前已知问题 / 未确认事项
 
+- `TeaShopCanvas` 已创建但 Play Mode 按 T 未打开；原因未确认，优先检查临时 T 入口是否使用旧 `Input.GetKeyDown(KeyCode.T)`，以及 `TeaShopCanvas` / `RootPanel` active 状态。
+- `TeaShopCanvas` 购买 / 试饮 / 赠送逻辑尚未完成 Play Mode 实测；当前未接 NPC，T 键只是临时测试入口。
+- `TeaShopCanvas` 试饮 / 赠送冷却和 affinity 为运行时状态，未存档。
+- `PlayerWallet` / `PlayerInventory` / Tea Buff / TeaShop 商品与冷却均未持久化。
 - 死亡复活正式 UI 尚未制作。
 - 正式背包 / 装备 UI v1 已可用，但库存 / 装备不持久化，尚未实现 `ItemDatabase` / SaveData / Load。
 - 背包 / 装备仍以 `ItemData` 表示，不支持 `ItemInstance` / 随机词条 / 格子位置保存 / 物品拖拽换格。
@@ -194,8 +219,8 @@
 
 ## 7. 推荐下一步
 
-1. **最推荐：Inventory Save/Load v1**：建立 `ItemDatabase(itemId → ItemData)`，保存 `InventorySaveData` 与 `EquipmentSaveData` 到 JSON，并在启动时还原背包 / 装备。
-2. **背包交互扩展**：在当前格子 UI 上加入物品拖拽换格 / 排序 / 丢弃或使用 Consumable（先设计格子位置保存）。
-3. **正式 Hikari UI**：制作第一版正式 Hikari 光负荷 UI（Canvas + TMP），替换 OnGUI Debug 窗口。
-4. **最小打断技能 v0.1**：Boss 读条时玩家可调用 `EnemySkillController.InterruptCurrentCast()`，扩展第三种战斗判断维度。
-5. **整理 EnemyAI / NavMesh**：实测 Wander / Chase / ReturnToSpawn 稳定性，整理 NavMeshSurface LayerMask，考虑独立保存 NavMeshData。
+1. **最推荐：修复 TeaShopCanvas 临时 T 键打开入口**：确认 `TeaShopCanvasUI` 是否仍使用旧 `Input.GetKeyDown(KeyCode.T)`，改为 New Input System `Keyboard.current.tKey.wasPressedThisFrame`，并检查 `TeaShopCanvas` active / `RootPanel` 初始隐藏状态。
+2. **TeaShop UI Play Mode 验收**：测试分类 / 分页 / 商品详情 / 购买扣金币入背包 / 试饮直接应用茶 Buff / 赠送扣金币与冷却。
+3. **茶商 NPC 接入 v1**：移除或保留为开发专用的 T 键入口，由场景中的茶商交互打开 `TeaShopCanvas`。
+4. **Inventory / Wallet / Tea Save/Load v1**：建立 `ItemDatabase(itemId → ItemData)`，保存背包 / 装备 / Gold / 当前 Tea Buff（如需要）。
+5. **正式 Hikari UI**：制作第一版正式 Hikari 光负荷 UI（Canvas + TMP），替换 OnGUI Debug 窗口。
