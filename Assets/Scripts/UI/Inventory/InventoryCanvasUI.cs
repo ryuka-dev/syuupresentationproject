@@ -95,6 +95,7 @@ public class InventoryCanvasUI : MonoBehaviour
         // InventoryCanvas を最前面へ：sortingOrder で確実に上書き + sibling order
         if (_canvas != null) _canvas.sortingOrder = 1000;
         transform.SetAsLastSibling();
+        _suppressNextRightClickMenu = false;   // 残留 suppress flag をリセット
         ClearSelection();
         // UI 格子数をデータ層に同期（SerializeField 差異・容量不一致を防ぐ）
         playerInventory?.EnsureSlotCapacity(visibleSlotCount);
@@ -664,10 +665,13 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
         // ── 抓取状態のキャンセル検出 ─────────────────────────────────
         if (_pendingMoveSourceIndex >= 0)
         {
-            // 右键：任意位置で取消、メニューを抑制
+            // 右键：任意位置で取消
             if (mouse.rightButton.wasPressedThisFrame)
             {
-                _suppressNextRightClickMenu = true;
+                // OnItemSlotRightClicked は非空スロット上でのみ発火する。
+                // そのときだけ suppress が必要（空格や無効エリアでは残留しない）
+                var slotUnder = GetPointerInventoryGridSlot();
+                _suppressNextRightClickMenu = slotUnder != null && !slotUnder.IsEmpty;
                 ClearMoveState();
                 ClearSelection();
                 return;
@@ -695,13 +699,10 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
     }
     // ── Raycast Helper ───────────────────────────────────────────────
 
-    /// <summary>
-    /// 現在のマウス位置が InventoryGridSlotUI を持つ UI オブジェクト上かを返す。
-    /// EventSystem.RaycastAll を使用し _raycastResults を再利用。
-    /// </summary>
-    private bool IsPointerOverInventoryGridSlot()
+    /// <summary>現在のマウス位置にある InventoryGridSlotUI を返す（なければ null）。</summary>
+    private InventoryGridSlotUI GetPointerInventoryGridSlot()
     {
-        if (EventSystem.current == null || Mouse.current == null) return false;
+        if (EventSystem.current == null || Mouse.current == null) return null;
         var pointerData = new PointerEventData(EventSystem.current)
         {
             position = Mouse.current.position.ReadValue()
@@ -709,9 +710,14 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
         _raycastResults.Clear();
         EventSystem.current.RaycastAll(pointerData, _raycastResults);
         foreach (var result in _raycastResults)
-            if (result.gameObject != null &&
-                result.gameObject.GetComponentInParent<InventoryGridSlotUI>() != null)
-                return true;
-        return false;
+        {
+            if (result.gameObject == null) continue;
+            var slot = result.gameObject.GetComponentInParent<InventoryGridSlotUI>();
+            if (slot != null) return slot;
+        }
+        return null;
     }
+
+    /// <summary>現在のマウス位置が InventoryGridSlotUI 上かを返す。</summary>
+    private bool IsPointerOverInventoryGridSlot() => GetPointerInventoryGridSlot() != null;
 }
