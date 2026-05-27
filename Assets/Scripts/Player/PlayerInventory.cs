@@ -101,6 +101,14 @@ public class PlayerInventory : MonoBehaviour
         return index >= 0 && index < _items.Count && _items[index] != null;
     }
 
+    /// <summary>null スロットが 1 つ以上あれば true（Equipment 追加可否の判定用）。</summary>
+    public bool HasEmptySlot()
+    {
+        foreach (var stack in _items)
+            if (stack == null) return true;
+        return false;
+    }
+
     // ─── Add ──────────────────────────────────────────────────────
 
     /// <summary>

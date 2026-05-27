@@ -395,6 +395,18 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
     }
 
     // ── Right-Click Handlers ────────────────────────────────────────
+    /// <summary>
+    /// 右クリックで選択した slot が現在も有効（同じ ItemStack が存在）かどうかを確認する。
+    /// 固定 slot 背包では ItemStack 参照の同一性で判断できる。
+    /// </summary>
+    private bool IsSelectedSlotStillValid()
+    {
+        if (_selectedSlotIndex < 0 || playerInventory == null) return false;
+        var current = playerInventory.GetStackAt(_selectedSlotIndex);
+        if (current == null || _selectedStack == null) return false;
+        return current == _selectedStack;   // 参照同一性で確認
+    }
+
     private void OnItemSlotRightClicked(InventoryGridSlotUI slot, ItemStack stack, Vector2 screenPos)
     {
         // 移動待機中は右クリックでキャンセルのみ（メニューは開かない）
@@ -431,6 +443,14 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
     private void OnEquipButtonClicked()
     {
         if (_selectionMode != SelectionMode.InventoryItem || _selectedStack == null) return;
+        // slot が依然として有効（同一 ItemStack）かを確認してから操作
+        if (!IsSelectedSlotStillValid())
+        {
+            Debug.LogWarning("[InventoryCanvasUI] Equip: selected slot is no longer valid. Aborting.");
+            contextMenu?.Hide();
+            ClearSelection();
+            return;
+        }
         var item = _selectedStack.ItemData;
         if (item == null || item.ItemType != ItemType.Equipment) return;
         if (playerInventory == null || playerEquipment == null) return;
@@ -459,6 +479,14 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
     private void OnUseButtonClicked()
     {
         if (_selectionMode != SelectionMode.InventoryItem || _selectedStack == null) return;
+        // slot が依然として有効（同一 ItemStack）かを確認してから操作
+        if (!IsSelectedSlotStillValid())
+        {
+            Debug.LogWarning("[InventoryCanvasUI] Use Tea: selected slot is no longer valid. Aborting.");
+            contextMenu?.Hide();
+            ClearSelection();
+            return;
+        }
         var item = _selectedStack.ItemData;
         if (item == null || item.ItemType != ItemType.Tea) return;
         if (playerInventory == null) return;
@@ -486,6 +514,13 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
         if (_selectionMode != SelectionMode.EquippedItem) return;
         if (playerInventory == null || playerEquipment == null) return;
 
+        // 背包に空きがない場合は卸装を禁止（装備が消えるのを防ぐ）
+        if (!playerInventory.HasEmptySlot())
+        {
+            Debug.LogWarning("[InventoryCanvasUI] 背包已满，无法卸下装备。");
+            return;
+        }
+
         ItemData unequipped = null;
         switch (_selectedSlotType)
         {
@@ -497,7 +532,17 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
         if (unequipped == null) return;
 
         if (!playerInventory.AddItem(unequipped))
-            Debug.LogWarning("[InventoryCanvasUI] AddItem failed for " + unequipped.ItemName);
+        {
+            // HasEmptySlot 後でも失敗した場合は装備栏に戻す（安全ロールバック）
+            Debug.LogWarning("[InventoryCanvasUI] AddItem failed for " + unequipped.ItemName + "。装备栏に戻します。");
+            switch (_selectedSlotType)
+            {
+                case EquipmentSlotType.Core:      playerEquipment.EquipCore(unequipped);      break;
+                case EquipmentSlotType.Armor:     playerEquipment.EquipArmor(unequipped);     break;
+                case EquipmentSlotType.Accessory: playerEquipment.EquipAccessory(unequipped); break;
+            }
+            return;
+        }
 
         ClearSelection();
         if (detailPanel) detailPanel.Hide();
