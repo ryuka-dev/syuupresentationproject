@@ -22,7 +22,7 @@ public class InventoryContextMenuUI : MonoBehaviour
     // マウスボタンが離れるまで外部クリック検出を抑制（初回右键 / 同一クリック即 Hide 防止）
     private bool          _ignoreOutsideClickUntilPointerReleased;
 
-    private const bool DebugRightClickTrace = true;
+    private const bool DebugRightClickTrace = false;
 
     // ── 状態 ────────────────────────────────────────────────────────
     public bool IsOpen => rootPanel != null && rootPanel.activeSelf;

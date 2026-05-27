@@ -22,7 +22,7 @@ public class InventoryGridSlotUI : MonoBehaviour,
     private Action<InventoryGridSlotUI, ItemStack, Vector2> _onRightClicked;
     private Action<int>        _onEmptyClicked;
 
-    private const bool DebugRightClickTrace = true;
+    private const bool DebugRightClickTrace = false;
 
     public int       SlotIndex  { get; set; }
     public bool      IsEmpty    => _stack == null;

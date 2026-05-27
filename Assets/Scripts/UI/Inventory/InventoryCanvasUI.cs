@@ -84,7 +84,7 @@ public class InventoryCanvasUI : MonoBehaviour
     private readonly System.Collections.Generic.List<RaycastResult> _raycastResults =
         new System.Collections.Generic.List<RaycastResult>();
 
-    private const bool DebugRightClickTrace = true;
+    private const bool DebugRightClickTrace = false;
 
     public bool IsOpen => _isOpen;
 
