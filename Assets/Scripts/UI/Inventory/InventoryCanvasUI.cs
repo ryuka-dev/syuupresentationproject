@@ -1,6 +1,7 @@
 
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
@@ -75,6 +76,13 @@ public class InventoryCanvasUI : MonoBehaviour
     private GameObject _dragIconRoot;
     private Image      _dragIconImage;
     private TMP_Text   _dragIconCount;
+
+    // ── Cancel Guards ────────────────────────────────────────────────
+    // 右键取消後に同フレームの OnItemSlotRightClicked でメニューが開くのを防ぐ
+    private bool _suppressNextRightClickMenu;
+    // EventSystem Raycast 結果再利用（毎フレームの new List を避ける）
+    private readonly System.Collections.Generic.List<RaycastResult> _raycastResults =
+        new System.Collections.Generic.List<RaycastResult>();
 
     public bool IsOpen => _isOpen;
 
@@ -431,6 +439,13 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
 
     private void OnItemSlotRightClicked(InventoryGridSlotUI slot, ItemStack stack, Vector2 screenPos)
     {
+        // Update() の右键取消と同フレームのメニュー開放を抑制
+        if (_suppressNextRightClickMenu)
+        {
+            _suppressNextRightClickMenu = false;
+            return;
+        }
+
         // 移動待機中は右クリックでキャンセルのみ（メニューは開かない）
         if (_pendingMoveSourceIndex >= 0)
         {
@@ -643,10 +658,32 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
 
     private void Update()
     {
-        // 抓取アイコンがアクティブなときのみマウス追従（毎フレーム入力をポーリングしない）
-        if (_dragIconRoot == null || !_dragIconRoot.activeSelf) return;
         var mouse = Mouse.current;
         if (mouse == null) return;
+
+        // ── 抓取状態のキャンセル検出 ─────────────────────────────────
+        if (_pendingMoveSourceIndex >= 0)
+        {
+            // 右键：任意位置で取消、メニューを抑制
+            if (mouse.rightButton.wasPressedThisFrame)
+            {
+                _suppressNextRightClickMenu = true;
+                ClearMoveState();
+                ClearSelection();
+                return;
+            }
+
+            // 左键：背包格子以外の位置をクリックした場合に取消
+            if (mouse.leftButton.wasPressedThisFrame && !IsPointerOverInventoryGridSlot())
+            {
+                ClearMoveState();
+                ClearSelection();
+                return;
+            }
+        }
+
+        // ── ドラッグ icon マウス追従 ──────────────────────────────────
+        if (_dragIconRoot == null || !_dragIconRoot.activeSelf) return;
         var canvasRT = transform as RectTransform;
         if (canvasRT == null) return;
         Vector2 localPoint;
@@ -655,5 +692,26 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
         {
             ((RectTransform)_dragIconRoot.transform).anchoredPosition = localPoint;
         }
+    }
+    // ── Raycast Helper ───────────────────────────────────────────────
+
+    /// <summary>
+    /// 現在のマウス位置が InventoryGridSlotUI を持つ UI オブジェクト上かを返す。
+    /// EventSystem.RaycastAll を使用し _raycastResults を再利用。
+    /// </summary>
+    private bool IsPointerOverInventoryGridSlot()
+    {
+        if (EventSystem.current == null || Mouse.current == null) return false;
+        var pointerData = new PointerEventData(EventSystem.current)
+        {
+            position = Mouse.current.position.ReadValue()
+        };
+        _raycastResults.Clear();
+        EventSystem.current.RaycastAll(pointerData, _raycastResults);
+        foreach (var result in _raycastResults)
+            if (result.gameObject != null &&
+                result.gameObject.GetComponentInParent<InventoryGridSlotUI>() != null)
+                return true;
+        return false;
     }
 }
