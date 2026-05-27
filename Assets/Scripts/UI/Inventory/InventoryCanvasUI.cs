@@ -1,6 +1,8 @@
 
 using TMPro;
 using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.UI;
 
 /// <summary>
 /// 格子式背包 UI のメインコントローラ。30 格固定グリッド。
@@ -69,6 +71,11 @@ public class InventoryCanvasUI : MonoBehaviour
     private InventoryGridSlotUI _pendingMoveSourceSlot;
     private int                 _pendingMoveSourceIndex = -1;
 
+    // ── Drag Visual ──────────────────────────────────────────────────
+    private GameObject _dragIconRoot;
+    private Image      _dragIconImage;
+    private TMP_Text   _dragIconCount;
+
     public bool IsOpen => _isOpen;
 
     // ── Open / Close ────────────────────────────────────────────────
@@ -110,6 +117,7 @@ public class InventoryCanvasUI : MonoBehaviour
         if (playerTeaBuffController == null) playerTeaBuffController = FindFirstObjectByType<PlayerTeaBuffController>();
         if (rootPanel) rootPanel.SetActive(false);
         InitializeGrid();
+        CreateDragIcon();
     }
 
     private void Start()       { SubscribeEvents(); }
@@ -170,6 +178,18 @@ private void RefreshInventory()
             else
                 _gridSlots[i].SetEmpty(OnEmptySlotClicked);
         }
+
+        // pending move source が刷新後に無効になった場合はキャンセル
+        if (_pendingMoveSourceIndex >= 0 && playerInventory != null)
+        {
+            var stackAtSource = playerInventory.GetStackAt(_pendingMoveSourceIndex);
+            if (stackAtSource == null || stackAtSource != _selectedStack)
+            {
+                Debug.Log("[InventoryCanvasUI] Drag source slot changed after refresh; cancelling pending move.");
+                ClearMoveState();
+                ClearSelection();
+            }
+        }
     }
 
     private void RefreshEquipment()
@@ -195,6 +215,7 @@ private void RefreshInventory()
     {
         if (_pendingMoveSourceSlot != null) { _pendingMoveSourceSlot.SetSelected(false); _pendingMoveSourceSlot = null; }
         _pendingMoveSourceIndex = -1;
+        HideDragIcon();
     }
 
     private InventoryGridSlotUI FindGridSlotByStack(ItemStack stack)
@@ -279,6 +300,7 @@ private void RefreshInventory()
         _selectionMode    = SelectionMode.InventoryItem;
         _selectedStack    = stack;
         _selectedSlotType = EquipmentSlotType.None;
+        ShowDragIcon(stack);   // 常驻抓取視覚表現
     }
 
     // ── Empty Slot Click ─────────────────────────────────────────────
@@ -546,5 +568,92 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
 
         ClearSelection();
         if (detailPanel) detailPanel.Hide();
+    }
+    // ── Drag Visual ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// ドラッグアイコンを runtime で生成する（Prefab / Scene 変更なし）。
+    /// Image / TMP_Text は raycastTarget = false、CanvasGroup は blocksRaycasts = false
+    /// に設定し、背包格子の UI 入力を妨げない。
+    /// </summary>
+    private void CreateDragIcon()
+    {
+        var canvasRT = transform as RectTransform;
+        if (canvasRT == null) return;
+
+        _dragIconRoot = new GameObject("DraggedItemIcon");
+        _dragIconRoot.transform.SetParent(transform, false);
+
+        var rt       = _dragIconRoot.AddComponent<RectTransform>();
+        rt.sizeDelta = new Vector2(56f, 56f);
+        rt.pivot     = new Vector2(0.5f, 0.5f);
+        rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+
+        // Raycast ブロックを無効化（背包格子への入力を妨げない）
+        var cg              = _dragIconRoot.AddComponent<CanvasGroup>();
+        cg.blocksRaycasts  = false;
+        cg.interactable    = false;
+
+        // アイテムアイコン
+        var iconGO      = new GameObject("Icon");
+        iconGO.transform.SetParent(_dragIconRoot.transform, false);
+        _dragIconImage                  = iconGO.AddComponent<Image>();
+        _dragIconImage.raycastTarget    = false;
+        var iconRT                      = iconGO.GetComponent<RectTransform>();
+        iconRT.anchorMin                = Vector2.zero;
+        iconRT.anchorMax                = Vector2.one;
+        iconRT.sizeDelta                = Vector2.zero;
+        iconRT.anchoredPosition         = Vector2.zero;
+
+        // 個数テキスト（右下）
+        var countGO     = new GameObject("Count");
+        countGO.transform.SetParent(_dragIconRoot.transform, false);
+        var tmp                         = countGO.AddComponent<TextMeshProUGUI>();
+        _dragIconCount                  = tmp;
+        tmp.raycastTarget               = false;
+        tmp.fontSize                    = 14f;
+        tmp.fontStyle                   = FontStyles.Bold;
+        tmp.alignment                   = TextAlignmentOptions.BottomRight;
+        tmp.color                       = Color.white;
+        var countRT                     = countGO.GetComponent<RectTransform>();
+        countRT.anchorMin               = Vector2.zero;
+        countRT.anchorMax               = Vector2.one;
+        countRT.sizeDelta               = Vector2.zero;
+        countRT.anchoredPosition        = Vector2.zero;
+
+        _dragIconRoot.SetActive(false);
+    }
+
+    private void ShowDragIcon(ItemStack stack)
+    {
+        if (_dragIconRoot == null || stack?.ItemData == null) return;
+        _dragIconImage.sprite  = stack.ItemData.Icon;
+        _dragIconImage.enabled = stack.ItemData.Icon != null;
+        bool showCount = stack.Count > 1;
+        _dragIconCount.gameObject.SetActive(showCount);
+        if (showCount) _dragIconCount.text = stack.Count.ToString();
+        _dragIconRoot.SetActive(true);
+        _dragIconRoot.transform.SetAsLastSibling();
+    }
+
+    private void HideDragIcon()
+    {
+        if (_dragIconRoot != null) _dragIconRoot.SetActive(false);
+    }
+
+    private void Update()
+    {
+        // 抓取アイコンがアクティブなときのみマウス追従（毎フレーム入力をポーリングしない）
+        if (_dragIconRoot == null || !_dragIconRoot.activeSelf) return;
+        var mouse = Mouse.current;
+        if (mouse == null) return;
+        var canvasRT = transform as RectTransform;
+        if (canvasRT == null) return;
+        Vector2 localPoint;
+        if (RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            canvasRT, mouse.position.ReadValue(), null, out localPoint))
+        {
+            ((RectTransform)_dragIconRoot.transform).anchoredPosition = localPoint;
+        }
     }
 }
