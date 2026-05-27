@@ -22,6 +22,8 @@ public class InventoryGridSlotUI : MonoBehaviour,
     private Action<InventoryGridSlotUI, ItemStack, Vector2> _onRightClicked;
     private Action<int>        _onEmptyClicked;
 
+    private const bool DebugRightClickTrace = true;
+
     public int       SlotIndex  { get; set; }
     public bool      IsEmpty    => _stack == null;
     public ItemStack BoundStack => _stack;
@@ -103,12 +105,27 @@ public class InventoryGridSlotUI : MonoBehaviour,
     // 右键は OnPointerDown で処理（初回クリック信頼性のため）
     public void OnPointerDown(PointerEventData eventData)
     {
-        if (eventData.button == PointerEventData.InputButton.Right && !IsEmpty)
-            _onRightClicked?.Invoke(this, _stack, eventData.position);
+        if (eventData.button == PointerEventData.InputButton.Right)
+        {
+            if (DebugRightClickTrace)
+                Debug.Log("[InventoryRightClickTrace] GridSlot.OnPointerDown Right" +
+                    " slotIndex=" + SlotIndex +
+                    " isEmpty=" + IsEmpty +
+                    " hasStack=" + (_stack != null) +
+                    " stackName=" + (_stack?.ItemName ?? "null") +
+                    " hasCallback=" + (_onRightClicked != null) +
+                    " pos=" + eventData.position);
+            if (!IsEmpty)
+                _onRightClicked?.Invoke(this, _stack, eventData.position);
+        }
     }
 
     // 左键は Button.onClick で処理。OnPointerClick では右键を重複させない。
-    public void OnPointerClick(PointerEventData eventData) { }
+    public void OnPointerClick(PointerEventData eventData)
+    {
+        if (DebugRightClickTrace && eventData.button == PointerEventData.InputButton.Right)
+            Debug.Log("[InventoryRightClickTrace] GridSlot.OnPointerClick Right slotIndex=" + SlotIndex + " (right handled by OnPointerDown, NOT here)");
+    }
 
     private void OnButtonClicked() { _onClicked?.Invoke(_stack); }
 }

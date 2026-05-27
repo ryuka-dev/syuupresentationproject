@@ -84,6 +84,8 @@ public class InventoryCanvasUI : MonoBehaviour
     private readonly System.Collections.Generic.List<RaycastResult> _raycastResults =
         new System.Collections.Generic.List<RaycastResult>();
 
+    private const bool DebugRightClickTrace = true;
+
     public bool IsOpen => _isOpen;
 
     // ── Open / Close ────────────────────────────────────────────────
@@ -440,9 +442,20 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
 
     private void OnItemSlotRightClicked(InventoryGridSlotUI slot, ItemStack stack, Vector2 screenPos)
     {
+        if (DebugRightClickTrace)
+            Debug.Log("[InventoryRightClickTrace] Canvas.OnItemSlotRightClicked enter" +
+                " slotIndex=" + (slot?.SlotIndex.ToString() ?? "null") +
+                " isEmpty=" + (slot?.IsEmpty.ToString() ?? "null") +
+                " hasStack=" + (stack != null) +
+                " stackName=" + (stack?.ItemName ?? "null") +
+                " pending=" + _pendingMoveSourceIndex +
+                " suppress=" + _suppressNextRightClickMenu +
+                " contextMenuNull=" + (contextMenu == null));
+
         // Update() の右键取消と同フレームのメニュー開放を抑制
         if (_suppressNextRightClickMenu)
         {
+            if (DebugRightClickTrace) Debug.Log("[InventoryRightClickTrace] Canvas.OnItemSlotRightClicked suppressed");
             _suppressNextRightClickMenu = false;
             return;
         }
@@ -450,6 +463,7 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
         // 移動待機中は右クリックでキャンセルのみ（メニューは開かない）
         if (_pendingMoveSourceIndex >= 0)
         {
+            if (DebugRightClickTrace) Debug.Log("[InventoryRightClickTrace] Canvas.OnItemSlotRightClicked cancel pending move");
             ClearMoveState();
             ClearSelection();
             return;
@@ -461,6 +475,10 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
         _selectedSlotType  = EquipmentSlotType.None;
         _selectionMode     = SelectionMode.InventoryItem;
         var rootRT = rootPanel?.GetComponent<RectTransform>();
+
+        if (DebugRightClickTrace)
+            Debug.Log("[InventoryRightClickTrace] Canvas.OnItemSlotRightClicked call contextMenu.Show" +
+                " stackName=" + stack.ItemName + " slotIndex=" + slot.SlotIndex);
 
         // Tea 物品：Use ボタンを表示
         System.Action onUse = stack.ItemData.ItemType == ItemType.Tea ? (System.Action)OnUseButtonClicked : null;
