@@ -92,6 +92,11 @@ public class InventoryCanvasUI : MonoBehaviour
     private bool                _isTemporaryDragging;
     private bool                _suppressNextLeftClick;
 
+    // ── 丢弃確認窗口 ─────────────────────────────────────────────────
+    private GameObject      _discardConfirmRoot;
+    private TextMeshProUGUI _discardConfirmText;
+    private bool            _isDiscardConfirmOpen;
+
     // ── Const ────────────────────────────────────────────────────────
     private const bool DebugRightClickTrace = false;
 
@@ -124,6 +129,7 @@ public class InventoryCanvasUI : MonoBehaviour
         if (!_isOpen) return;
         _isOpen = false;
         ClearSelection();   // _selectionLocked = false もここで行われる
+        CloseDiscardConfirm();
         contextMenu?.Hide();
         if (rootPanel) rootPanel.SetActive(false);
         if (detailPanel) detailPanel.Hide();
@@ -142,6 +148,7 @@ public class InventoryCanvasUI : MonoBehaviour
         if (rootPanel) rootPanel.SetActive(false);
         InitializeGrid();
         CreateDragIcon();
+        CreateDiscardConfirmPanel();
     }
 
     private void Start()       { SubscribeEvents(); }
@@ -305,6 +312,7 @@ private void RefreshInventory()
     // ── Click Handlers ──────────────────────────────────────────────
     private void OnItemSlotClicked(ItemStack stack)
     {
+        if (_isDiscardConfirmOpen) return;   // 丢弃確認窗口が開いている間は無視
         // 長押し長取後の Button.onClick 重複発火を抑制
         if (_suppressNextLeftClick)
         {
@@ -367,6 +375,7 @@ private void RefreshInventory()
     // ── Left Press / Release (長押し臨時抓取) ────────────────────────
     private void OnItemSlotLeftPressed(InventoryGridSlotUI slot, ItemStack stack, Vector2 screenPos)
     {
+        if (_isDiscardConfirmOpen) return;   // 丢弃確認窗口が開いている間は無視
         // 常駐抓取中は新たに長押し追跡を開始しない
         if (_pendingMoveSourceIndex >= 0) return;
 
@@ -419,6 +428,7 @@ private void RefreshInventory()
     // ── Empty Slot Click ─────────────────────────────────────────────
     private void OnEmptySlotClicked(int slotIndex)
     {
+        if (_isDiscardConfirmOpen) return;
         if (_pendingMoveSourceIndex < 0) return;   // 移動元がなければ何もしない
         if (playerInventory == null) return;
 
@@ -544,6 +554,7 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
 
     private void OnItemSlotRightClicked(InventoryGridSlotUI slot, ItemStack stack, Vector2 screenPos)
     {
+        if (_isDiscardConfirmOpen) return;   // 丢弃確認窗口が開いている間は無視
         if (DebugRightClickTrace)
             Debug.Log("[InventoryRightClickTrace] Canvas.OnItemSlotRightClicked enter" +
                 " slotIndex=" + (slot?.SlotIndex.ToString() ?? "null") +
@@ -779,6 +790,7 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
 
     private void Update()
     {
+        if (_isDiscardConfirmOpen) return;   // 丢弃確認窗口が開いている間は入力を無視
         var mouse = Mouse.current;
         if (mouse == null) return;
 
@@ -797,11 +809,13 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
                 return;
             }
 
-            // 左键：背包格子以外の位置をクリックした場合に取消
+            // 左键：背包格子以外をクリック
             if (mouse.leftButton.wasPressedThisFrame && !IsPointerOverInventoryGridSlot())
             {
-                ClearMoveState();
-                ClearSelection();
+                if (IsPointerOutsideInventoryUI())
+                    OpenDiscardConfirm();    // 背包 UI 外 → 丢弃確認
+                else
+                { ClearMoveState(); ClearSelection(); }  // 背包 UI 内非格子 → 取消
                 return;
             }
         }
@@ -858,4 +872,143 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
 
     /// <summary>現在のマウス位置が InventoryGridSlotUI 上かを返す。</summary>
     private bool IsPointerOverInventoryGridSlot() => GetPointerInventoryGridSlot() != null;
+    // ── 丢弃確認窗口 ─────────────────────────────────────────────────
+
+    private void CreateDiscardConfirmPanel()
+    {
+        // 全画面オーバーレイ（クリックを背包に通さない）
+        _discardConfirmRoot = new GameObject("DiscardConfirmPanel");
+        _discardConfirmRoot.transform.SetParent(transform, false);
+
+        var overlayRT = _discardConfirmRoot.AddComponent<RectTransform>();
+        overlayRT.anchorMin = Vector2.zero;
+        overlayRT.anchorMax = Vector2.one;
+        overlayRT.sizeDelta = Vector2.zero;
+        overlayRT.anchoredPosition = Vector2.zero;
+        var overlayImg = _discardConfirmRoot.AddComponent<Image>();
+        overlayImg.color = new Color(0f, 0f, 0f, 0.6f);
+        overlayImg.raycastTarget = true;
+
+        // ダイアログボックス
+        var dialog   = new GameObject("Dialog");
+        dialog.transform.SetParent(_discardConfirmRoot.transform, false);
+        var dialogRT = dialog.AddComponent<RectTransform>();
+        dialogRT.sizeDelta        = new Vector2(320f, 160f);
+        dialogRT.anchorMin        = new Vector2(0.5f, 0.5f);
+        dialogRT.anchorMax        = new Vector2(0.5f, 0.5f);
+        dialogRT.anchoredPosition = Vector2.zero;
+        var dialogImg = dialog.AddComponent<Image>();
+        dialogImg.color = new Color(0.18f, 0.18f, 0.18f, 1f);
+
+        // 確認テキスト
+        var textGO = new GameObject("Text");
+        textGO.transform.SetParent(dialog.transform, false);
+        _discardConfirmText = textGO.AddComponent<TextMeshProUGUI>();
+        _discardConfirmText.text          = "是否丢弃？";
+        _discardConfirmText.fontSize      = 18f;
+        _discardConfirmText.alignment     = TextAlignmentOptions.Center;
+        _discardConfirmText.color         = Color.white;
+        _discardConfirmText.raycastTarget = false;
+        var textRT = textGO.GetComponent<RectTransform>();
+        textRT.anchorMin        = new Vector2(0f, 0.5f);
+        textRT.anchorMax        = new Vector2(1f, 1f);
+        textRT.sizeDelta        = new Vector2(-20f, 0f);
+        textRT.anchoredPosition = Vector2.zero;
+
+        // ボタン
+        CreateConfirmDialogButton(dialog.transform, "ConfirmBtn", "丢弃",
+            new Color(0.65f, 0.15f, 0.15f, 1f), new Vector2(-80f, -55f), OnDiscardConfirmed);
+        CreateConfirmDialogButton(dialog.transform, "CancelBtn",  "取消",
+            new Color(0.3f,  0.3f,  0.3f,  1f), new Vector2( 80f, -55f), OnDiscardCancelled);
+
+        _discardConfirmRoot.SetActive(false);
+    }
+
+    private void CreateConfirmDialogButton(Transform parent, string name, string label,
+        Color bgColor, Vector2 anchoredPos, System.Action onClick)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        var rt = go.AddComponent<RectTransform>();
+        rt.sizeDelta        = new Vector2(120f, 36f);
+        rt.anchorMin        = new Vector2(0.5f, 0f);
+        rt.anchorMax        = new Vector2(0.5f, 0f);
+        rt.pivot            = new Vector2(0.5f, 0f);
+        rt.anchoredPosition = anchoredPos;
+        var img = go.AddComponent<Image>();
+        img.color = bgColor;
+        var btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+        btn.onClick.AddListener(() => onClick());
+        var labelGO = new GameObject("Label");
+        labelGO.transform.SetParent(go.transform, false);
+        var tmp = labelGO.AddComponent<TextMeshProUGUI>();
+        tmp.text          = label;
+        tmp.fontSize      = 16f;
+        tmp.alignment     = TextAlignmentOptions.Center;
+        tmp.color         = Color.white;
+        tmp.raycastTarget = false;
+        var labelRT = labelGO.GetComponent<RectTransform>();
+        labelRT.anchorMin        = Vector2.zero;
+        labelRT.anchorMax        = Vector2.one;
+        labelRT.sizeDelta        = Vector2.zero;
+        labelRT.anchoredPosition = Vector2.zero;
+    }
+
+    private void OpenDiscardConfirm()
+    {
+        if (_discardConfirmRoot == null || _pendingMoveSourceIndex < 0) return;
+        if (_discardConfirmText != null)
+            _discardConfirmText.text = "是否丢弃 " + (_selectedStack?.ItemName ?? "物品") + "？";
+        _discardConfirmRoot.SetActive(true);
+        _discardConfirmRoot.transform.SetAsLastSibling();
+        _isDiscardConfirmOpen = true;
+    }
+
+    private void CloseDiscardConfirm()
+    {
+        if (_discardConfirmRoot != null) _discardConfirmRoot.SetActive(false);
+        _isDiscardConfirmOpen = false;
+    }
+
+    private void OnDiscardConfirmed()
+    {
+        if (playerInventory != null && _pendingMoveSourceIndex >= 0)
+            playerInventory.RemoveStackAt(_pendingMoveSourceIndex);
+        CloseDiscardConfirm();
+        ClearMoveState();
+        ClearSelection();
+    }
+
+    private void OnDiscardCancelled()
+    {
+        CloseDiscardConfirm();
+        ClearMoveState();
+        ClearSelection();
+    }
+
+    // ── 位置判定 ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 現在のマウス位置が InventoryCanvasUI の transform 配下の UI に当たっていないか。
+    /// true = 背包 UI 外（または UI なし） → 丢弃確認対象
+    /// false = 背包 UI 内 → 取消のみ
+    /// </summary>
+    private bool IsPointerOutsideInventoryUI()
+    {
+        if (EventSystem.current == null || Mouse.current == null) return false;
+        var pointerData = new PointerEventData(EventSystem.current)
+        {
+            position = Mouse.current.position.ReadValue()
+        };
+        _raycastResults.Clear();
+        EventSystem.current.RaycastAll(pointerData, _raycastResults);
+        if (_raycastResults.Count == 0) return true;   // UI なし → 外部
+        foreach (var result in _raycastResults)
+        {
+            if (result.gameObject == null) continue;
+            if (result.gameObject.transform.IsChildOf(transform)) return false; // 背包 UI 内
+        }
+        return true;   // 別の UI → 外部扱い
+    }
 }

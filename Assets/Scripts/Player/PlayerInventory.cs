@@ -223,6 +223,28 @@ public class PlayerInventory : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// 指定 slot index のスタック全体を削除する（丢弃確認後に使用）。
+    /// Count に関わらず slot を null にする。圧縮しない。
+    /// </summary>
+    public bool RemoveStackAt(int index)
+    {
+        if (index < 0 || index >= _items.Count)
+        {
+            Debug.LogWarning($"[PlayerInventory] RemoveStackAt: index {index} out of range.");
+            return false;
+        }
+        if (_items[index] == null)
+        {
+            Debug.LogWarning($"[PlayerInventory] RemoveStackAt: slot {index} is already empty.");
+            return false;
+        }
+        Debug.Log($"[PlayerInventory] RemoveStackAt: removed {_items[index].ItemName} x{_items[index].Count} from slot {index}");
+        _items[index] = null;
+        OnInventoryChanged?.Invoke();
+        return true;
+    }
+
     // ─── Swap / Move ─────────────────────────────────────────────
 
     /// <summary>
