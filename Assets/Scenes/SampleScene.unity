@@ -7200,6 +7200,7 @@ MonoBehaviour:
   inventoryWindowRect: {fileID: 574526497}
   equipmentWindowRect: {fileID: 1911561844}
   detailWindowRect: {fileID: 1128885990}
+  dragHoldThreshold: 0.1
   detailWindowGap: 12
   detailScreenPadding: 8
 --- !u!114 &572963372

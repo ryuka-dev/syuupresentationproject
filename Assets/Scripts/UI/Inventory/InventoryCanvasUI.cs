@@ -46,6 +46,9 @@ public class InventoryCanvasUI : MonoBehaviour
     [SerializeField] private RectTransform equipmentWindowRect;
     [SerializeField] private RectTransform detailWindowRect;
 
+    [Header("Drag Settings")]
+    [SerializeField] private float dragHoldThreshold  = 0.15f;
+
     [Header("Tooltip Settings")]
     [SerializeField] private float detailWindowGap    = 12f;
     [SerializeField] private float detailScreenPadding = 8f;
@@ -80,11 +83,21 @@ public class InventoryCanvasUI : MonoBehaviour
     // ── Cancel Guards ────────────────────────────────────────────────
     // 右键取消後に同フレームの OnItemSlotRightClicked でメニューが開くのを防ぐ
     private bool _suppressNextRightClickMenu;
+
+    // ── 長押し臨時抓取 ───────────────────────────────────────────────
+    private InventoryGridSlotUI _pressSourceSlot;
+    private int                 _pressSourceIndex = -1;
+    private ItemStack           _pressSourceStack;
+    private float               _pressStartTime   = -1f;
+    private bool                _isTemporaryDragging;
+    private bool                _suppressNextLeftClick;
+
+    // ── Const ────────────────────────────────────────────────────────
+    private const bool DebugRightClickTrace = false;
+
     // EventSystem Raycast 結果再利用（毎フレームの new List を避ける）
     private readonly System.Collections.Generic.List<RaycastResult> _raycastResults =
         new System.Collections.Generic.List<RaycastResult>();
-
-    private const bool DebugRightClickTrace = false;
 
     public bool IsOpen => _isOpen;
 
@@ -185,7 +198,8 @@ private void RefreshInventory()
             _gridSlots[i].SlotIndex = i;
             var stack = (items != null && i < items.Count) ? items[i] : null;
             if (stack != null)
-                _gridSlots[i].SetItem(stack, OnItemSlotClicked, OnItemSlotHoverEnter, OnItemSlotHoverExit, OnItemSlotRightClicked);
+                _gridSlots[i].SetItem(stack, OnItemSlotClicked, OnItemSlotHoverEnter, OnItemSlotHoverExit, OnItemSlotRightClicked,
+                    OnItemSlotLeftPressed, OnItemSlotLeftReleased);
             else
                 _gridSlots[i].SetEmpty(OnEmptySlotClicked);
         }
@@ -222,6 +236,34 @@ private void RefreshInventory()
     }
 
     // ── Selection ───────────────────────────────────────────────────
+    // ── 長押し Press State ────────────────────────────────────────
+    private void ClearPressState()
+    {
+        _pressSourceSlot  = null;
+        _pressSourceIndex = -1;
+        _pressSourceStack = null;
+        _pressStartTime   = -1f;
+        _isTemporaryDragging = false;
+        // _suppressNextLeftClick は OnItemSlotLeftPressed / OnItemSlotClicked で個別管理
+    }
+
+    /// <summary>臨時抓取 → 常駐抓取へ変換する（長押し後に格子外で離した場合）。</summary>
+    private void ConvertToPermanentGrab()
+    {
+        _pendingMoveSourceSlot  = _pressSourceSlot;
+        _pendingMoveSourceIndex = _pressSourceIndex;
+        _currentSelectedSlot    = _pressSourceSlot;
+        if (_pressSourceSlot != null) _pressSourceSlot.SetSelected(true);
+        _selectionMode    = SelectionMode.InventoryItem;
+        _selectedStack    = _pressSourceStack;
+        _selectedSlotType = EquipmentSlotType.None;
+        // icon は既に ShowDragIcon で表示済み
+        _isTemporaryDragging = false;
+        _pressSourceSlot  = null;
+        _pressSourceIndex = -1;
+        _pressSourceStack = null;
+    }
+
     private void ClearMoveState()
     {
         if (_pendingMoveSourceSlot != null) { _pendingMoveSourceSlot.SetSelected(false); _pendingMoveSourceSlot = null; }
@@ -248,6 +290,8 @@ private void RefreshInventory()
 
     private void ClearSelection()
     {
+        ClearPressState();
+        _suppressNextLeftClick = false;
         ClearMoveState();
         if (_currentSelectedSlot != null) { _currentSelectedSlot.SetSelected(false); _currentSelectedSlot = null; }
         if (_currentSelectedEquipSlot != null) { _currentSelectedEquipSlot.SetSelected(false); _currentSelectedEquipSlot = null; }
@@ -261,6 +305,12 @@ private void RefreshInventory()
     // ── Click Handlers ──────────────────────────────────────────────
     private void OnItemSlotClicked(ItemStack stack)
     {
+        // 長押し長取後の Button.onClick 重複発火を抑制
+        if (_suppressNextLeftClick)
+        {
+            _suppressNextLeftClick = false;
+            return;
+        }
         if (inventoryWindowRect != null) inventoryWindowRect.SetAsLastSibling();
         contextMenu?.Hide();
 
@@ -312,6 +362,58 @@ private void RefreshInventory()
         _selectedStack    = stack;
         _selectedSlotType = EquipmentSlotType.None;
         ShowDragIcon(stack);   // 常驻抓取視覚表現
+    }
+
+    // ── Left Press / Release (長押し臨時抓取) ────────────────────────
+    private void OnItemSlotLeftPressed(InventoryGridSlotUI slot, ItemStack stack, Vector2 screenPos)
+    {
+        // 常駐抓取中は新たに長押し追跡を開始しない
+        if (_pendingMoveSourceIndex >= 0) return;
+
+        _suppressNextLeftClick = false;   // 過去の stale suppress をリセット
+        _pressSourceSlot  = slot;
+        _pressSourceIndex = slot.SlotIndex;
+        _pressSourceStack = stack;
+        _pressStartTime   = Time.unscaledTime;
+        _isTemporaryDragging = false;
+    }
+
+    private void OnItemSlotLeftReleased(InventoryGridSlotUI slot, Vector2 screenPos)
+    {
+        if (!_isTemporaryDragging)
+        {
+            // 短押し：Button.onClick に任せる。press 状態のみクリア
+            ClearPressState();
+            return;
+        }
+
+        // 長押し離し：Button.onClick を抑制し自前で処理
+        _suppressNextLeftClick = true;
+
+        InventoryGridSlotUI targetSlot = GetPointerInventoryGridSlot();
+
+        if (targetSlot == null)
+        {
+            // 格子外で離した → 常駐抓取に変換
+            ConvertToPermanentGrab();
+            ClearPressState();
+            return;
+        }
+
+        if (targetSlot.SlotIndex == _pressSourceIndex)
+        {
+            // 同格子で離した → キャンセル
+            ClearPressState();
+            HideDragIcon();
+            return;
+        }
+
+        // 別格子で離した → 移動 / 交換
+        if (playerInventory != null)
+            playerInventory.SwapStacks(_pressSourceIndex, targetSlot.SlotIndex);
+        ClearPressState();
+        HideDragIcon();
+        ClearSelection();
     }
 
     // ── Empty Slot Click ─────────────────────────────────────────────
@@ -701,6 +803,24 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
                 ClearMoveState();
                 ClearSelection();
                 return;
+            }
+        }
+
+        // ── 長押し臨時抓取 検出 ──────────────────────────────────────
+        if (_pressSourceIndex >= 0 && !_isTemporaryDragging)
+        {
+            if (mouse.leftButton.isPressed)
+            {
+                if (Time.unscaledTime - _pressStartTime >= dragHoldThreshold)
+                {
+                    _isTemporaryDragging = true;
+                    ShowDragIcon(_pressSourceStack);
+                }
+            }
+            else
+            {
+                // 閾値前に離した（短押し）→ press 状態クリア、Button.onClick に任せる
+                ClearPressState();
             }
         }
 

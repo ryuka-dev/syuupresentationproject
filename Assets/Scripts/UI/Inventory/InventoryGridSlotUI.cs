@@ -8,7 +8,8 @@ using UnityEngine.UI;
 /// 格子式背包スロット。アイコン + 数量のみ表示。Hover で詳情 Tooltip を通知。
 /// </summary>
 public class InventoryGridSlotUI : MonoBehaviour,
-    IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler, IPointerDownHandler
+    IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler,
+    IPointerDownHandler, IPointerUpHandler
 {
     [SerializeField] private Image      iconImage;
     [SerializeField] private TMP_Text   countText;
@@ -21,6 +22,8 @@ public class InventoryGridSlotUI : MonoBehaviour,
     private Action<InventoryGridSlotUI>            _onHoverExit;
     private Action<InventoryGridSlotUI, ItemStack, Vector2> _onRightClicked;
     private Action<int>        _onEmptyClicked;
+    private Action<InventoryGridSlotUI, ItemStack, Vector2> _onLeftPressed;
+    private Action<InventoryGridSlotUI, Vector2>            _onLeftReleased;
 
     private const bool DebugRightClickTrace = false;
 
@@ -37,6 +40,8 @@ public class InventoryGridSlotUI : MonoBehaviour,
         _onHoverEnter   = null;
         _onHoverExit    = null;
         _onRightClicked = null;
+        _onLeftPressed  = null;
+        _onLeftReleased = null;
         _onEmptyClicked = onEmptyClicked;
         if (iconImage)  { iconImage.sprite = null; iconImage.enabled = false; }
         if (countText)    countText.gameObject.SetActive(false);
@@ -53,7 +58,9 @@ public class InventoryGridSlotUI : MonoBehaviour,
     public void SetItem(ItemStack stack, Action<ItemStack> onClicked,
                         Action<InventoryGridSlotUI, ItemStack> onHoverEnter = null,
                         Action<InventoryGridSlotUI>            onHoverExit  = null,
-                        Action<InventoryGridSlotUI, ItemStack, Vector2> onRightClicked = null)
+                        Action<InventoryGridSlotUI, ItemStack, Vector2> onRightClicked = null,
+                        Action<InventoryGridSlotUI, ItemStack, Vector2> onLeftPressed  = null,
+                        Action<InventoryGridSlotUI, Vector2>            onLeftReleased = null)
     {
         if (stack == null || stack.ItemData == null) { SetEmpty(); return; }
 
@@ -62,6 +69,8 @@ public class InventoryGridSlotUI : MonoBehaviour,
         _onHoverEnter   = onHoverEnter;
         _onHoverExit    = onHoverExit;
         _onRightClicked = onRightClicked;
+        _onLeftPressed  = onLeftPressed;
+        _onLeftReleased = onLeftReleased;
 
         if (iconImage)
         {
@@ -103,6 +112,7 @@ public class InventoryGridSlotUI : MonoBehaviour,
     }
 
     // 右键は OnPointerDown で処理（初回クリック信頼性のため）
+    // 左键 PointerDown は長押し検出に使用
     public void OnPointerDown(PointerEventData eventData)
     {
         if (eventData.button == PointerEventData.InputButton.Right)
@@ -118,6 +128,15 @@ public class InventoryGridSlotUI : MonoBehaviour,
             if (!IsEmpty)
                 _onRightClicked?.Invoke(this, _stack, eventData.position);
         }
+        else if (eventData.button == PointerEventData.InputButton.Left && !IsEmpty)
+            _onLeftPressed?.Invoke(this, _stack, eventData.position);
+    }
+
+    // 左键解放通知（長押し → 仮抓取の解放処理に使用）
+    public void OnPointerUp(PointerEventData eventData)
+    {
+        if (eventData.button == PointerEventData.InputButton.Left)
+            _onLeftReleased?.Invoke(this, eventData.position);
     }
 
     // 左键は Button.onClick で処理。OnPointerClick では右键を重複させない。
