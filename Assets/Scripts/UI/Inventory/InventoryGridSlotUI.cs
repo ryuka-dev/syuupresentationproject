@@ -8,7 +8,7 @@ using UnityEngine.UI;
 /// 格子式背包スロット。アイコン + 数量のみ表示。Hover で詳情 Tooltip を通知。
 /// </summary>
 public class InventoryGridSlotUI : MonoBehaviour,
-    IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
+    IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler, IPointerDownHandler
 {
     [SerializeField] private Image      iconImage;
     [SerializeField] private TMP_Text   countText;
@@ -100,11 +100,15 @@ public class InventoryGridSlotUI : MonoBehaviour,
         _onHoverExit?.Invoke(this);
     }
 
-    public void OnPointerClick(PointerEventData eventData)
+    // 右键は OnPointerDown で処理（初回クリック信頼性のため）
+    public void OnPointerDown(PointerEventData eventData)
     {
         if (eventData.button == PointerEventData.InputButton.Right && !IsEmpty)
             _onRightClicked?.Invoke(this, _stack, eventData.position);
     }
+
+    // 左键は Button.onClick で処理。OnPointerClick では右键を重複させない。
+    public void OnPointerClick(PointerEventData eventData) { }
 
     private void OnButtonClicked() { _onClicked?.Invoke(_stack); }
 }

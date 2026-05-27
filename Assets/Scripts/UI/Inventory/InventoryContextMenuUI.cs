@@ -19,6 +19,8 @@ public class InventoryContextMenuUI : MonoBehaviour
 
     private RectTransform _rt;
     private bool          _justOpened;   // Show 直後フレームは外部クリック無視
+    // マウスボタンが離れるまで外部クリック検出を抑制（初回右键 / 同一クリック即 Hide 防止）
+    private bool          _ignoreOutsideClickUntilPointerReleased;
 
     // ── 状態 ────────────────────────────────────────────────────────
     public bool IsOpen => rootPanel != null && rootPanel.activeSelf;
@@ -32,9 +34,18 @@ public class InventoryContextMenuUI : MonoBehaviour
 
     private void Update()
     {
-        // Show と同フレームはスキップ
+        // Show と同フレームはスキップ（フレームカウントベースの保護）
         if (_justOpened) { _justOpened = false; return; }
         if (!IsOpen || Mouse.current == null) return;
+
+        // ボタン押下中は外部クリック検出をスキップ（開いた直後の同クリックによる即 Hide を防ぐ）
+        if (_ignoreOutsideClickUntilPointerReleased)
+        {
+            bool anyButtonHeld = Mouse.current.leftButton.isPressed
+                              || Mouse.current.rightButton.isPressed;
+            if (anyButtonHeld) return;
+            _ignoreOutsideClickUntilPointerReleased = false;
+        }
 
         bool anyClick = Mouse.current.leftButton.wasPressedThisFrame
                      || Mouse.current.rightButton.wasPressedThisFrame;
@@ -67,6 +78,7 @@ public class InventoryContextMenuUI : MonoBehaviour
     {
         if (rootPanel) rootPanel.SetActive(false);
         _justOpened = false;
+        _ignoreOutsideClickUntilPointerReleased = false;
     }
 
     // ── 内部 ────────────────────────────────────────────────────────
@@ -74,7 +86,8 @@ public class InventoryContextMenuUI : MonoBehaviour
     {
         if (rootPanel == null) return;
         rootPanel.SetActive(true);
-        _justOpened = true;   // 今フレームの外部クリック判定をスキップ
+        _justOpened = true;                              // 今フレームの外部クリック判定をスキップ
+        _ignoreOutsideClickUntilPointerReleased = true; // ボタン離れるまで外部クリック検出を抑制
 
         if (rootRT == null || _rt == null) return;
 
