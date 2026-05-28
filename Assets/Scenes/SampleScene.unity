@@ -3856,6 +3856,7 @@ MonoBehaviour:
   actionText: {fileID: 1058056237}
   castBarFill: {fileID: 2007922724}
   castValueText: {fileID: 1974675413}
+  burdenHintDuration: 3
   burdenBarFill: {fileID: 2125436443}
   burdenValueText: {fileID: 551574799}
   burdenChangeHintText: {fileID: 1291944841}
@@ -14653,7 +14654,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'State: Idle'
+  m_text: "\u72B6\u6001\uFF1A\u5F85\u673A"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 4e39c7c6d8a336144a39330a241af8aa, type: 2}
   m_sharedMaterial: {fileID: 5158636000708085158, guid: 4e39c7c6d8a336144a39330a241af8aa, type: 2}
@@ -15513,7 +15514,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'Action: --'
+  m_text: "\u52A8\u4F5C : --"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 4e39c7c6d8a336144a39330a241af8aa, type: 2}
   m_sharedMaterial: {fileID: 5158636000708085158, guid: 4e39c7c6d8a336144a39330a241af8aa, type: 2}
@@ -17746,7 +17747,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: 'Hint: --'
+  m_text: "\u53D8\u5316: --"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 4e39c7c6d8a336144a39330a241af8aa, type: 2}
   m_sharedMaterial: {fileID: 5158636000708085158, guid: 4e39c7c6d8a336144a39330a241af8aa, type: 2}
@@ -19601,7 +19602,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Cast
+  m_text: "\u8BFB\u6761"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 4e39c7c6d8a336144a39330a241af8aa, type: 2}
   m_sharedMaterial: {fileID: 5158636000708085158, guid: 4e39c7c6d8a336144a39330a241af8aa, type: 2}
@@ -20367,7 +20368,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: Burden
+  m_text: "\u5149\u8D1F\u8377"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 4e39c7c6d8a336144a39330a241af8aa, type: 2}
   m_sharedMaterial: {fileID: 5158636000708085158, guid: 4e39c7c6d8a336144a39330a241af8aa, type: 2}

@@ -27,6 +27,7 @@ public class HikariCombatStatusUI : MonoBehaviour
     [SerializeField] private TMP_Text castValueText;      // 读条 0.8 / 1.5（可为 null）
 
     [Header("光负荷")]
+    [SerializeField] private float   burdenHintDuration = 3f;   // 提示行の表示時間（秒）
     [SerializeField] private Image    burdenBarFill;      // 光负荷 fill
     [SerializeField] private TMP_Text burdenValueText;    // 35 / 100
     [SerializeField] private TMP_Text burdenChangeHintText; // 变化提示：-- 占位行
@@ -125,9 +126,22 @@ public class HikariCombatStatusUI : MonoBehaviour
             burdenValueText.text = $"{cur} / {max}";
         }
 
-        // ── 变化提示占位（不实现原因追踪）────────────────────────
-        // TODO: 后续由 OnBurdenChanged 事件驱动，显示如 "光负荷 +12：因为 Hikari 治疗了玩家"
-        // burdenChangeHintText 保持 "Hint: --"
+        // ── 光負荷変化提示行 ─────────────────────────────────
+        if (burdenChangeHintText != null)
+        {
+            float elapsed = Time.time - _hikari.LastBurdenChangeTime;
+            if (elapsed <= burdenHintDuration && !string.IsNullOrEmpty(_hikari.LastBurdenReason))
+            {
+                float delta = _hikari.LastBurdenDelta;
+                int   absInt = Mathf.RoundToInt(Mathf.Abs(delta));
+                string displayDelta = delta >= 0f ? $"+{absInt}" : $"-{absInt}";
+                burdenChangeHintText.text = $"光負荷 {displayDelta}：{_hikari.LastBurdenReason}";
+            }
+            else
+            {
+                burdenChangeHintText.text = "变化提示：--";
+            }
+        }
     }
     // ─── ASCII label helpers (CJK → ASCII for TMP LiberationSans font) ─────
     private string GetStateLabel()

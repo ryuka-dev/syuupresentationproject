@@ -164,6 +164,26 @@ public class HikariSupportController : MonoBehaviour
 public bool  IsBurdenRecoveryEnabled  => enableBurdenRecovery;
     public float BurdenRecoveryPerSecond  => burdenRecoveryPerSecond;
 
+    // ─── 光負荷変化提示（UI 表示用）────────────────
+    /// <summary>最後の光負荷変化量（正=増加、負=減少）。UI の変化提示行に使用。</summary>
+    public float  LastBurdenDelta      { get; private set; }
+    /// <summary>最後の光負荷変化の理由ラベル。</summary>
+    public string LastBurdenReason     { get; private set; } = string.Empty;
+    /// <summary>最後の光負荷変化が発生した Time.time。</summary>
+    public float  LastBurdenChangeTime { get; private set; } = float.NegativeInfinity;
+
+    /// <summary>
+    /// 光負荷変化をUI提示用に記録する。
+    /// actualDelta が 0 に近い場合は記録しない（クランプで実変化なし）。
+    /// </summary>
+    private void RegisterBurdenChange(float actualDelta, string reason)
+    {
+        if (Mathf.Approximately(actualDelta, 0f)) return;
+        LastBurdenDelta      = actualDelta;
+        LastBurdenReason     = reason ?? string.Empty;
+        LastBurdenChangeTime = Time.time;
+    }
+
     public bool  IsOverburdened             => BurdenRatio >= overburdenThreshold;
     public float OverburdenThreshold        => overburdenThreshold;
     public float OverburdenHealingMultiplier => overburdenHealingMultiplier;
@@ -330,7 +350,7 @@ private bool TryUseLightMend()
         float finalHeal = ApplyBurdenHealingModifier(lightMendHealAmount);
         playerHealth.Heal(finalHeal, transform);
         _nextLightMendTime = Time.time + lightMendCooldown;
-        AddBurden(lightMendBurdenGain, "Light Mend");
+        AddBurden(lightMendBurdenGain, "Hikari 治疗");
         if (logDebugMessages)
             Debug.Log($"[HikariSupport] 微光治愈 完了 — heal={finalHeal:F1} | Burden {currentBurden:F1}/{maxBurden:F1}");
     }
@@ -365,7 +385,7 @@ private bool TryUseEmergencyPrayer()
         float finalHeal = ApplyBurdenHealingModifier(emergencyPrayerHealAmount);
         playerHealth.Heal(finalHeal, transform);
         _nextEmergencyPrayerTime = Time.time + emergencyPrayerCooldown;
-        AddBurden(emergencyPrayerBurdenGain, "Emergency Prayer");
+        AddBurden(emergencyPrayerBurdenGain, "紧急治疗");
         if (logDebugMessages)
             Debug.Log($"[HikariSupport] 紧急祈愿 完了 — heal={finalHeal:F1} | Burden {currentBurden:F1}/{maxBurden:F1}");
     }
@@ -397,7 +417,7 @@ private bool TryUseEmergencyPrayer()
     /// <summary>
     /// 光負荷を追加する。友化平とクリップする。
     /// </summary>
-private void AddBurden(float amount, string source)
+private void AddBurden(float amount, string source, bool showHint = true)
     {
         if (amount <= 0f) return;
         float before  = currentBurden;
@@ -405,6 +425,7 @@ private void AddBurden(float amount, string source)
         if (logDebugMessages)
             Debug.Log($"[HikariSupport] Burden [{source}] {before:F1} → {currentBurden:F1} / {maxBurden:F1}");
         UpdateOverloadState();
+        if (showHint) RegisterBurdenChange(currentBurden - before, source);
     }
 
 // ─── Debug 専用 API ──────────────────────────────────────────
@@ -412,7 +433,7 @@ private void AddBurden(float amount, string source)
     /// <summary>Debug 用：光負荷を外部から追加する。治療は発動しない。</summary>
     public void DebugAddBurden(float amount)
     {
-        AddBurden(amount, "Debug");
+        AddBurden(amount, "Debug", showHint: false);
     }
 
     /// <summary>Debug 用：光負荷をゼロにリセットする。治療冷却には影響しない。</summary>
@@ -518,7 +539,7 @@ private bool TryTriggerGuardResonance(Transform attacker)
         // Light Counter 判定は Burden 減少前に行う
         bool shouldLightCounter = ShouldTriggerLightCounter();
 
-        ReduceBurden(guardResonanceBurdenReduction, "Guard Resonance");
+        ReduceBurden(guardResonanceBurdenReduction, "守护共鸣");
         _nextGuardResonanceTime = Time.time + guardResonanceCooldown;
 
         if (logDebugMessages)
@@ -589,7 +610,7 @@ private bool TryTriggerGuardResonance(Transform attacker)
     /// <summary>
     /// 光負荷を減少させて UpdateOverloadState を呼び出す。
     /// </summary>
-    private void ReduceBurden(float amount, string source)
+    private void ReduceBurden(float amount, string source, bool showHint = true)
     {
         if (amount <= 0f) return;
         float oldBurden = currentBurden;
@@ -597,6 +618,7 @@ private bool TryTriggerGuardResonance(Transform attacker)
         UpdateOverloadState();
         if (logDebugMessages)
             Debug.Log($"[HikariSupport] Burden reduced [{source}] {oldBurden:F1} → {currentBurden:F1} / {maxBurden:F1}");
+        if (showHint) RegisterBurdenChange(currentBurden - oldBurden, source);
     }
 
     /// <summary>
