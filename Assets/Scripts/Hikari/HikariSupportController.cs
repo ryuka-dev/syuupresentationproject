@@ -25,6 +25,9 @@ using UnityEngine;
 /// 治疗飘字通过 HealthComponent.OnHealed → DamageNumberSpawner 事件链处理。
 /// 本脚本内不直接操作 currentHealth。
 /// </summary>
+/// <summary>現在の読条技能タイプ。</summary>
+public enum HikariCastType { None, LightMend, EmergencyPrayer }
+
 public class HikariSupportController : MonoBehaviour
 {
     // ─── Inspector フィールド ─────────────────────────────────────
@@ -119,7 +122,16 @@ public class HikariSupportController : MonoBehaviour
 
     
 
-[Header("デバッグ")]
+
+    [Header("読条 / Heal Cast")]
+    [Tooltip("治療読条の時間（秒）。両技能に共用。")]
+    [SerializeField] private float healCastDuration = 1.5f;
+
+    // ─── 読条実行時フィールド ──────────────────────────────────────
+    private HikariCastType _castType = HikariCastType.None;
+    private float          _castStartTime;
+
+    [Header("デバッグ")]
     [SerializeField] private bool logDebugMessages = true;
 
     // ─── 実行時フィールド ─────────────────────────────────────────
@@ -155,6 +167,48 @@ public bool  IsBurdenRecoveryEnabled  => enableBurdenRecovery;
     public bool  IsOverburdened             => BurdenRatio >= overburdenThreshold;
     public float OverburdenThreshold        => overburdenThreshold;
     public float OverburdenHealingMultiplier => overburdenHealingMultiplier;
+
+    // ─── 読条公開プロパティ（UI 用）────────────────────────────────
+    /// <summary>現在 Hikari が読条中か。</summary>
+    public bool  IsCasting            => _castType != HikariCastType.None;
+    /// <summary>読条経過時間（秒）。読条中でなければ 0。</summary>
+    public float CurrentCastTime      => IsCasting ? Mathf.Min(Time.time - _castStartTime, healCastDuration) : 0f;
+    /// <summary>読条全体の時間（秒）。</summary>
+    public float CurrentCastDuration  => healCastDuration;
+    /// <summary>読条進捗比率 0~1。読条中でなければ 0。</summary>
+    public float CastRatio            => healCastDuration > 0f ? Mathf.Clamp01(CurrentCastTime / healCastDuration) : 0f;
+
+    /// <summary>
+    /// 正式 UI 用：現在の読条動作を表すラベル（UI 表示用）。
+    /// 読条なし → "--"  / LightMend → "治疗读条中"  / EmergencyPrayer → "紧急治疗读条中"
+    /// </summary>
+    public string CurrentActionLabel
+    {
+        get
+        {
+            return _castType switch
+            {
+                HikariCastType.LightMend       => "Casting Heal",
+                HikariCastType.EmergencyPrayer => "Casting Emergency",
+                _                              => "--",
+            };
+        }
+    }
+
+    /// <summary>
+    /// 正式 UI 用：現在の光負荷フェーズを表すラベル。
+    /// IsOverloaded → "导光封锁"  / IsOverburdened → "光溢出"  / それ以外 → "待机"
+    /// </summary>
+    public string CurrentStateLabel
+    {
+        get
+        {
+            if (IsOverloaded)   return "Locked";
+            if (IsOverburdened) return "Overflow";
+            return "Idle";
+        }
+    }
+
 
 
     private float _nextEmergencyPrayerTime;
@@ -228,6 +282,7 @@ private void Update()
 
         RecoverBurdenOverTime();
         UpdateOverloadState();
+        TickCast();   // 読条タイマー進行（UpdateOverloadState後、CanUseHealingチェック前）
 
         if (!CanUseHealing) return;
 
@@ -252,25 +307,32 @@ private void Update()
     /// </summary>
 private bool TryUseLightMend()
     {
-        if (!enableLightMend) return false;
-        if (_isOverloaded)
-        {
-            if (logDebugMessages) Debug.Log("[HikariSupport] 微光治愈 跳过：导光封锁中（光负荷 100%）");
-            return false;
-        }
+        if (!enableLightMend)             return false;
+        if (_isOverloaded)                return false;
+        if (IsCasting)                    return false;
         if (Time.time < _nextLightMendTime) return false;
 
-        float finalHeal = ApplyBurdenHealingModifier(lightMendHealAmount);
-
+        _castType      = HikariCastType.LightMend;
+        _castStartTime = Time.time;
         if (logDebugMessages)
-            Debug.Log($"[HikariSupport] Light Mend 発動 — HP {playerHealth.currentHealth:F1}/{playerHealth.maxHealth:F1}" +
-                      $" ({GetPlayerHpRatio() * 100f:F1}%) | base={lightMendHealAmount} final={finalHeal:F1}" +
-                      $" | Overburdened={IsOverburdened} | Burden {currentBurden:F1}/{maxBurden:F1}");
+            Debug.Log($"[HikariSupport] 微光治愈 読条開始 | Burden {currentBurden:F1}/{maxBurden:F1}");
+        return true;
+    }
 
+    /// <summary>微光治愈 読条完了時に実行する本体処理。</summary>
+    private void FinishLightMend()
+    {
+        if (_isOverloaded || playerHealth == null || playerHealth.IsDead)
+        {
+            if (logDebugMessages) Debug.Log("[HikariSupport] 微光治愈 読条完了キャンセル");
+            return;
+        }
+        float finalHeal = ApplyBurdenHealingModifier(lightMendHealAmount);
         playerHealth.Heal(finalHeal, transform);
         _nextLightMendTime = Time.time + lightMendCooldown;
         AddBurden(lightMendBurdenGain, "Light Mend");
-        return true;
+        if (logDebugMessages)
+            Debug.Log($"[HikariSupport] 微光治愈 完了 — heal={finalHeal:F1} | Burden {currentBurden:F1}/{maxBurden:F1}");
     }
 
 // ─── 紧急祈愿 / Emergency Prayer ──────────────────────────────
@@ -280,25 +342,32 @@ private bool TryUseLightMend()
     /// </summary>
 private bool TryUseEmergencyPrayer()
     {
-        if (!enableEmergencyPrayer) return false;
-        if (_isOverloaded)
-        {
-            if (logDebugMessages) Debug.Log("[HikariSupport] 紧急祈愿 跳过：导光封锁中（光负荷 100%）");
-            return false;
-        }
+        if (!enableEmergencyPrayer)              return false;
+        if (_isOverloaded)                       return false;
+        if (IsCasting)                           return false;
         if (Time.time < _nextEmergencyPrayerTime) return false;
 
-        float finalHeal = ApplyBurdenHealingModifier(emergencyPrayerHealAmount);
-
+        _castType      = HikariCastType.EmergencyPrayer;
+        _castStartTime = Time.time;
         if (logDebugMessages)
-            Debug.Log($"[HikariSupport] Emergency Prayer 発動 — HP {playerHealth.currentHealth:F1}/{playerHealth.maxHealth:F1}" +
-                      $" ({GetPlayerHpRatio() * 100f:F1}%) | base={emergencyPrayerHealAmount} final={finalHeal:F1}" +
-                      $" | Overburdened={IsOverburdened} | Burden {currentBurden:F1}/{maxBurden:F1}");
+            Debug.Log($"[HikariSupport] 紧急祈愿 読条開始 | Burden {currentBurden:F1}/{maxBurden:F1}");
+        return true;
+    }
 
+    /// <summary>紧急祈愿 読条完了時に実行する本体処理。</summary>
+    private void FinishEmergencyPrayer()
+    {
+        if (_isOverloaded || playerHealth == null || playerHealth.IsDead)
+        {
+            if (logDebugMessages) Debug.Log("[HikariSupport] 紧急祈愿 読条完了キャンセル");
+            return;
+        }
+        float finalHeal = ApplyBurdenHealingModifier(emergencyPrayerHealAmount);
         playerHealth.Heal(finalHeal, transform);
         _nextEmergencyPrayerTime = Time.time + emergencyPrayerCooldown;
         AddBurden(emergencyPrayerBurdenGain, "Emergency Prayer");
-        return true;
+        if (logDebugMessages)
+            Debug.Log($"[HikariSupport] 紧急祈愿 完了 — heal={finalHeal:F1} | Burden {currentBurden:F1}/{maxBurden:F1}");
     }
 
     // ─── ヘルパー ─────────────────────────────────────────────────
@@ -370,6 +439,35 @@ public void DebugResetBurden()
     }
 
 
+
+// ─── 読条タイク ─────────────────────────────────────────────
+
+    /// <summary>
+    /// 毎フレーム呼び出し：読条タイマーを進め、完了時に治療を実行する。
+    /// 導光封锁・目標無効・プレイヤー死亡時は読条をキャンセルする。
+    /// </summary>
+    private void TickCast()
+    {
+        if (_castType == HikariCastType.None) return;
+
+        // キャンセル条件：導光封锁 / 目標無効 / プレイヤー死亡
+        if (_isOverloaded || playerHealth == null || playerHealth.IsDead)
+        {
+            if (logDebugMessages)
+                Debug.Log($"[HikariSupport] 読条キャンセル ({_castType}) — 封锁 or 目標無効");
+            _castType = HikariCastType.None;
+            return;
+        }
+
+        // 読条完了チェック
+        if (Time.time - _castStartTime >= healCastDuration)
+        {
+            var finishedType = _castType;
+            _castType = HikariCastType.None;  // 先にクリア
+            if      (finishedType == HikariCastType.LightMend)       FinishLightMend();
+            else if (finishedType == HikariCastType.EmergencyPrayer) FinishEmergencyPrayer();
+        }
+    }
 
     /// <summary>
     /// 毎フレーム、光負荷を自然回復させる。
