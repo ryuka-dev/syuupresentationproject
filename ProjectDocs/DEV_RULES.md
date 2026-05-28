@@ -1,6 +1,6 @@
 ﻿# DEV_RULES
 
-最后更新：2026-05-26
+最后更新：2026-05-28
 
 修改任何代码前必须阅读本文件。以下规则不可违反。
 
@@ -86,6 +86,12 @@
 - `ItemDetailWindow` 是纯 Hover Tooltip：不要加回 TitleBar / DraggableUIWindow / 操作按钮；必须保持不挡鼠标 Raycast。
 - `InventoryContextMenu` 是右键操作菜单：必须接收 Raycast；菜单项执行、点击外部、拖动窗口、关闭背包时应关闭。
 - `EquipmentSlotUI` 当前不依赖 SlotLabel / EquippedItem 文本子物体；不要恢复对这些被删除对象的硬依赖。
+- `PlayerInventory` 是固定 slot 背包，`null` 表示空格；不要用 `_items.RemoveAt()` / 压缩 List。删除格子内容应设为 null，并通过 OnInventoryChanged 刷新 UI。
+- 背包 UI 的移动 / 交换 / 丢弃必须按 slotIndex 操作；不要用 itemId 删除右键点击或丢弃的物品，否则多个同名物品会误删第一个。
+- 背包抓取是 Pending Move / 表现层状态：开始抓取时不得修改 PlayerInventory；只有确认放到有效格子或确认丢弃时才改数据。取消、右键、无效区域、关闭窗口只清理状态和视觉。
+- `InventoryContextMenuUI.Awake()` 只允许做引用缓存和字段初始化；不要在 Awake 中调用 Hide() 或 SetActive(false)，否则初次 Show 会被 Awake 反向关闭。
+- `InventoryCanvasUI` 的 Discard Confirm 可绑定正式 UI，也保留 runtime fallback；按钮 OnClick 由脚本 AddListener，不要在 Inspector 重复绑定确认 / 取消事件。
+- 临时诊断日志（如 `DebugRightClickTrace` / `[InventoryRightClickTrace]`）默认应保持 false，除非正在定位具体 bug。
 - 正式发布前应通过 UNITY_EDITOR || DEVELOPMENT_BUILD 或特殊开关隐藏 Debug 菜单。
 
 ---

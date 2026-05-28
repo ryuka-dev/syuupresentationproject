@@ -1,6 +1,6 @@
 ﻿# ARCHITECTURE_REFERENCE
 
-最后更新：2026-05-26
+最后更新：2026-05-28
 
 旧 PROJECT_STATE.md 中的详细系统架构参考。当前实现状态摘要见 PROJECT_STATE.md。
 
@@ -321,10 +321,13 @@ ScriptableObject，OnValidate() 保护规则：
 - 找不到 PlayerWallet 时不销毁并输出 Warning
 
 ### PlayerInventory.cs
-- Equipment 永远新增独立 ItemStack（不合并）
-- 非 Equipment 优先合并到相同 itemId 且未满的 stack
-- OnInventoryChanged：Add / Remove 等库存变化后触发，用于正式 InventoryCanvas 刷新
-- FindFirstEquipmentBySlot(EquipmentSlotType) → 返回第一个匹配的 ItemData，不移除
+- 固定 slot 背包模型：`_items` 保持固定长度，`null` 表示空格；当前 `DefaultMinimumSlots = 54`，`Awake()` 会把旧 Inspector maxSlots=30 等值提升到最低容量
+- Equipment 永远新增独立 ItemStack（不合并）；非 Equipment 优先合并到相同 itemId 且未满的 stack，不能合并时放入第一个 null 空格
+- AddItem 失败时返回 false；`PickupItem` 必须检查返回值，失败时地上物品保留
+- OnInventoryChanged：Add / Remove / Move / Swap 等库存变化后触发，用于正式 InventoryCanvas 刷新
+- 按 slot API：GetStackAt / HasStackAt / MoveStack / SwapStacks / RemoveOneAt / RemoveStackAt；所有 slot 删除必须设为 null，不压缩 List，不使用 RemoveAt
+- 右键菜单 Equip / Use Tea 与丢弃确认必须按 slotIndex 处理，避免多个同名物品时误操作第一个 itemId 匹配项
+- FindFirstEquipmentBySlot(EquipmentSlotType) → 返回第一个匹配的 ItemData，不移除（Debug / 兼容用途）
 
 ### PlayerEquipment.cs
 装备槽：Core / Armor / Accessory（主角武器固定不入装备系统）
@@ -345,20 +348,25 @@ TestItem_GuardCore.asset  Equipment / Core / ATK+20 / MaxHP+50
 
 关键脚本：
 - `InventoryInputController.cs`：B 打开 / 关闭背包，Esc 关闭。使用 New Input System，不使用旧 `UnityEngine.Input`。
-- `InventoryCanvasUI.cs`：正式背包 UI 总控；读取 `PlayerInventory` / `PlayerEquipment` / `PlayerCombatStats`，刷新 InventoryWindow / EquipmentWindow / StatSummary，并调用 Equip / Unequip。
-- `InventoryGridSlotUI.cs`：背包格子，由 `InventoryCanvasUI` 根据 `visibleSlotCount` 程序生成；显示 Icon / Count / SelectedFrame，支持 Hover Tooltip、左键高亮、右键菜单。
+- `InventoryCanvasUI.cs`：正式背包 UI 总控；读取 `PlayerInventory` / `PlayerEquipment` / `PlayerCombatStats`，刷新 InventoryWindow / EquipmentWindow / StatSummary，处理 slot 移动 / 交换 / 丢弃确认，并调用 Equip / Unequip。
+- `InventoryGridSlotUI.cs`：背包格子，由 `InventoryCanvasUI` 根据 `visibleSlotCount` 程序生成；显示 Icon / Count / SelectedFrame，支持 Hover Tooltip、左键短按常驻抓取、左键长按临时抓取、右键菜单。
 - `EquipmentSlotUI.cs`：Core / Armor / Accessory 装备槽显示；不依赖 SlotLabel / EquippedItem 文本子物体，空槽只显示空槽背景，有装备时显示 Icon；支持 Hover Tooltip 与右键 Unequip 菜单。
 - `ItemDetailPanelUI.cs`：纯 Hover Tooltip，只显示信息；无 TitleBar、无 DraggableUIWindow、无操作按钮；高度根据内容自动调整，`CanvasGroup.blocksRaycasts=false`，不阻挡底层格子 Hover。
-- `InventoryContextMenuUI.cs`：右键操作菜单；背包 Equipment 显示 Equip，背包 Tea 显示 Use，已装备槽显示 Unequip；点击任意菜单项后关闭，点击菜单外部 / 拖动窗口 / 关闭背包时关闭。
+- `InventoryContextMenuUI.cs`：右键操作菜单；背包 Equipment 显示 Equip，背包 Tea 显示 Use，已装备槽显示 Unequip；右键打开走 PointerDown；点击任意菜单项后关闭，点击菜单外部 / 拖动窗口 / 关闭背包时关闭。该对象可能初始 inactive，`Awake()` 只做初始化，不能调用 Hide() / SetActive(false)，否则第一次 Show 会被自己关闭。
 - `DraggableUIWindow.cs`：InventoryWindow / EquipmentWindow 的窗口拖动；开始拖动时会隐藏右键菜单。
 - `UIWindowBringToFront.cs`：窗口点击置顶；InventoryCanvas 内部窗口用 `SetAsLastSibling()` 控制前后顺序。
 
 显示与交互规则：
 - `InventoryCanvas` Canvas sortingOrder = 1000，用于压住 `SkillCanvas` / `LevelUI`。
-- 背包格子总数由 `InventoryCanvasUI.visibleSlotCount` 控制；当前用于 48 格测试。列数由 `GridRoot` 的 `GridLayoutGroup.Constraint Count` 控制。
+- 背包格子总数由 `InventoryCanvasUI.visibleSlotCount` 控制；当前测试为 54 格。列数由 `GridRoot` 的 `GridLayoutGroup.Constraint Count` 控制；PlayerInventory 会在运行时保证容量不低于 UI 格子数。
+- 背包抓取是 Pending Move / 表现层状态：按下或选中来源格时 PlayerInventory 数据不变，只有点击 / 释放到有效目标格时才调用 Swap / Move。右键取消、点击无效区域、关闭背包或刷新导致 source 无效时只清状态和视觉，不改数据。
+- 左键短按进入常驻抓取，显示鼠标跟随 icon；左键长按（当前约 0.10s）进入临时抓取，释放在格子上移动 / 交换，释放在非格子区域转为常驻抓取。
+- 常驻抓取点击背包内部非格子区域取消；点击背包外 / 非 UI 区域打开丢弃二次确认。确认后按 source slot 调用 RemoveStackAt，取消则不删物品。
+- 丢弃确认窗口可通过 `InventoryCanvasUI` Inspector 字段绑定正式 UI：discardConfirmPanel / discardConfirmMessageText / discardConfirmButton / discardCancelButton；未绑定完整时使用 runtime fallback。确认窗口打开时锁定背包其他操作。
+- 右键菜单按被点击 slotIndex 执行 Equip / Use Tea；装备槽 Unequip 前必须检查背包空位，AddItem 失败时回滚，防止装备消失。
 - Tooltip 定位基于 `Root` RectTransform 坐标系：目标在屏幕左半边时显示在右侧，右半边时显示在左侧，并 Clamp 到屏幕内。
 - ItemDetailWindow 是纯信息层，不能接收 Raycast；InventoryContextMenu 是可交互菜单，必须接收 Raycast。
-- 当前没有背包保存、ItemDatabase、ItemInstance、格子位置保存或物品拖拽换格。
+- 当前没有背包保存、ItemDatabase、ItemInstance、随机词条或格子位置持久化。
 
 
 ### TeaShop UI (v1)
@@ -453,7 +461,8 @@ InventoryCanvas
    │  ├─ CoreSlot / ArmorSlot / AccessorySlot (EquipmentSlotUI)
    │  └─ StatSummary
    ├─ ItemDetailWindow (pure Tooltip, blocksRaycasts=false)
-   └─ InventoryContextMenu (right-click actions)
+   ├─ InventoryContextMenu (right-click actions)
+   └─ DiscardConfirmPanel（可选正式绑定；未绑定时运行时生成 fallback）
 ```
 
 - SkeletonSpawnerManager：F1 Debug UI 来源（SkeletonDebugUI 挂在此处）

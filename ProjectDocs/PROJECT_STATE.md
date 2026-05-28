@@ -1,6 +1,6 @@
 ﻿# PROJECT_STATE
 
-最后更新：2026-05-26
+最后更新：2026-05-28
 
 ---
 
@@ -25,7 +25,7 @@
 - **主要渲染管线**：URP 17.4.0
 - **主要包**：New Input System 1.19.0 / AI Navigation 2.0.12 / Unity MCP (GitHub)
 - **当前主场景**：`Assets/Scenes/SampleScene.unity`
-- **当前开发阶段**：早期原型 — 野外战斗 / 刷怪 / 掉落 / 背包 / 装备数值 / 玩家技能系统 / Hikari 光负荷 / 茶道具 / 金币钱包 / 茶商店 UI 原型与 Tier 1 数值基准闭环验证
+- **当前开发阶段**：早期原型 — 野外战斗 / 刷怪 / 掉落 / 固定格子背包与装备交互 / 玩家技能系统 / Hikari 光负荷 / 茶道具 / 金币钱包 / 茶商店 UI 原型与 Tier 1 数值基准闭环验证
 - **项目类型**：3D RPG 动作游戏原型（单人 Tank 保护型）
 
 ### 核心玩法一句话
@@ -50,8 +50,9 @@
 → 溢光反震（光溢出区间触发 Guard Resonance 时对攻击者反伤 30）
 → 敌人死亡 → 掉落 ItemDrop / GoldPickup → 按 E 拾取
 → PlayerInventory 加入背包；PlayerWallet 增加 Gold
-→ B 打开正式 InventoryCanvas 格子背包 / EquipmentWindow
-→ Hover 物品显示 ItemDetailWindow Tooltip；右键菜单执行 Equip / Unequip / Use Tea
+→ B 打开正式 InventoryCanvas 固定 54 格背包 / EquipmentWindow
+→ 背包物品支持左键短按常驻抓取、长按临时抓取、移动到空格 / 交换、右键取消、背包外丢弃二次确认
+→ Hover 物品显示 ItemDetailWindow Tooltip；右键菜单按 slot 执行 Equip / Unequip / Use Tea
 → 使用 Tea 道具触发 PlayerTeaBuffController，影响 ItemData 掉率 / Material 额外掉落
 → TeaShopCanvas 茶商店 UI 原型可展示分类 / 商品 / 详情 / 购买 / 试饮 / 赠送；临时 T 键入口已改为 New Input System，可用于打开 / 关闭茶商店。
 → PlayerCombatStats 汇总攻击力与最大生命值
@@ -109,9 +110,11 @@
 
 ### Item / Drop / Inventory / Equipment
 - `ItemData` ScriptableObject：Material / Equipment / Tea，含 attackPowerBonus / maxHealthBonus / Icon；Tea 可引用 `TeaBuffData`
-- `PlayerInventory`：Equipment 独立 stack，Material / Tea 等非 Equipment 合并 stack，并通过 OnInventoryChanged 驱动正式 UI 刷新
-- `PlayerEquipment`：Core / Armor / Accessory 三槽（主角武器固定不入装备系统）
+- `PlayerInventory`：固定 slot 背包（当前运行时最低 54 格，`null` 表示空格）；Equipment 独立 stack，Material / Tea 等非 Equipment 优先合并，并通过 OnInventoryChanged 驱动正式 UI 刷新
+- `PlayerInventory` 支持按 slot 的 Move / Swap / RemoveOneAt / RemoveStackAt；右键 Equip / Use Tea 与丢弃确认必须作用于被点击的 slot，不按 itemId 删除第一个同名物品
+- `PlayerEquipment`：Core / Armor / Accessory 三槽（主角武器固定不入装备系统）；背包满时卸装会失败并保留装备，不允许装备消失
 - `EnemyDropper`：多条目概率 ItemData 掉落 + Terrain 贴地 Raycast 生成；另支持独立 Gold Drop 配置生成 `GoldPickup`
+- `PickupItem`：按 E 拾取 ItemData；AddItem 失败（背包满且无法堆叠）时地上物品保留，不销毁
 - `PlayerWallet` 管理 Gold；金币不是 `ItemData`，不进入背包，不受茶 Buff 影响
 
 ### Tea / Economy / Shop
@@ -119,14 +122,15 @@
 - 当前 Tea Buff：非 100% ItemData 掉落概率倍率、Material 成功掉落后概率额外 +1；已实测通过
 - 金币钱包与金币掉落 v1 已可用：`GoldPickup` 按 E 拾取后增加 `PlayerWallet.Gold`；`SkeletonEnemy_Variant` 已配置金币掉落并实测通过
 - `TeaShopCanvas` 正式茶商店 UI v1 已创建：分类 / 商品格 / 分页 / 详情 / 购买数量 / 购买 / 试饮 / 赠送 / 金币显示；暂未接 NPC
-- `TeaShopCanvas` 当前 Play Mode 按 T 未打开，需优先检查是否仍使用旧 Input / KeyCode 或 Canvas active 状态
 
 ### Formal Inventory / Equipment UI (v1)
 - `InventoryCanvas` 已作为正式 Canvas UI 接入，挂在 `UI` 根对象下；B 打开/关闭，Esc 关闭
-- `InventoryWindow` 使用程序生成的 RPG 格子背包，`visibleSlotCount` 可在 Inspector 配置（当前用于 48 格测试）
-- `EquipmentWindow` 显示 Core / Armor / Accessory 三槽装备栏，与背包格子共用图标 / Tooltip 交互风格
+- `InventoryWindow` 使用程序生成的 RPG 格子背包，`visibleSlotCount` 可在 Inspector 配置（当前测试为 54 格）；PlayerInventory 会在运行时保证容量不低于 UI 格子数
+- 背包格子支持左键短按常驻抓取、左键长按临时抓取（当前阈值约 0.10s）、鼠标跟随图标、放到空格 / 与物品交换、右键任意位置取消、无效区域取消
+- 常驻抓取时点击背包外 / 非 UI 区域会打开丢弃二次确认；确认后按 source slot 删除，取消则物品留在原 slot；确认窗口可通过 Inspector 绑定正式 UI，未绑定时使用 runtime fallback
+- `EquipmentWindow` 显示 Core / Armor / Accessory 三槽装备栏，与背包格子共用图标 / Tooltip 交互风格；背包满时卸装被阻止并保留装备
 - `ItemDetailWindow` 是纯 Hover Tooltip：不挡鼠标 Raycast，自动高度，按目标左右侧定位并 Clamp 到屏幕内
-- `InventoryContextMenu` 是右键操作菜单：背包 Equipment 可 Equip，背包 Tea 可 Use，已装备槽可 Unequip；执行菜单项、点击外部、拖动窗口或关闭背包时隐藏
+- `InventoryContextMenu` 是右键操作菜单：背包 Equipment 可 Equip，背包 Tea 可 Use，已装备槽可 Unequip；按 slot 操作，执行菜单项、点击外部、拖动窗口或关闭背包时隐藏；右键菜单第一次打开被吞的问题已修复
 - `InventoryCanvas` 的 Canvas sortingOrder = 1000，用于压住 SkillCanvas / LevelUI；内部窗口置顶用 SetAsLastSibling
 
 ### Damage Number / UI Feedback
@@ -165,12 +169,12 @@
 | `PlayerBasicAttackController` | Slot1/4 执行与共享基础攻击冷却 |
 | `PlayerGuardCounterController` | Slot5 Radiant Riposte 执行与 10 秒窗口管理 |
 | `PlayerStatusEffectController` | 减伤 / 攻击倍率 / 治疗倍率统一修正 |
-| `PlayerInventory` | 运行时库存，stack 规则与 OnInventoryChanged 事件 |
+| `PlayerInventory` | 固定 slot 运行时库存（当前最低 54 格，null=空格），stack 规则、slot Move/Swap/Remove 与 OnInventoryChanged 事件 |
 | `PlayerEquipment` | Core / Armor / Accessory 三槽装备容器 |
 | `PlayerCombatStats` | 三槽属性汇总，装备变化自动应用最大生命值 |
-| `InventoryCanvasUI` | 正式背包 / 装备 UI 总控，负责格子刷新、Tooltip、右键菜单与 Equip/Unequip 调用 |
-| `InventoryGridSlotUI` / `EquipmentSlotUI` | 背包格子与装备槽显示、Hover、右键事件 |
-| `ItemDetailPanelUI` / `InventoryContextMenuUI` | 物品 Tooltip 与右键操作菜单 |
+| `InventoryCanvasUI` | 正式背包 / 装备 UI 总控，负责格子刷新、Tooltip、右键菜单、slot 移动 / 丢弃确认与 Equip/Unequip 调用 |
+| `InventoryGridSlotUI` / `EquipmentSlotUI` | 背包格子与装备槽显示、Hover、左键抓取、右键事件 |
+| `ItemDetailPanelUI` / `InventoryContextMenuUI` | 物品 Tooltip 与右键操作菜单（菜单显示 / 隐藏不应依赖 Awake 调用 Hide） |
 | `TeaShopCanvasUI` | 正式茶商店 UI 总控：分类、分页、详情、购买、试饮、赠送、金币显示 |
 | `GoldPickup` | 金币地面拾取物，按 E 加入 PlayerWallet |
 | `PlayerWallet` | Gold 钱包，提供 AddGold / CanSpendGold / TrySpendGold |
@@ -192,13 +196,13 @@
 
 ## 6. 当前已知问题 / 未确认事项
 
-- `TeaShopCanvas` 已创建但 Play Mode 按 T 未打开；原因未确认，优先检查临时 T 入口是否使用旧 `Input.GetKeyDown(KeyCode.T)`，以及 `TeaShopCanvas` / `RootPanel` active 状态。
 - `TeaShopCanvas` 购买 / 试饮 / 赠送逻辑尚未完成 Play Mode 实测；当前未接 NPC，T 键只是临时测试入口。
 - `TeaShopCanvas` 试饮 / 赠送冷却和 affinity 为运行时状态，未存档。
 - `PlayerWallet` / `PlayerInventory` / Tea Buff / TeaShop 商品与冷却均未持久化。
 - 死亡复活正式 UI 尚未制作。
-- 正式背包 / 装备 UI v1 已可用，但库存 / 装备不持久化，尚未实现 `ItemDatabase` / SaveData / Load。
-- 背包 / 装备仍以 `ItemData` 表示，不支持 `ItemInstance` / 随机词条 / 格子位置保存 / 物品拖拽换格。
+- 正式背包 / 装备 UI v1 已可用，但库存 / 装备 / 背包格子位置不持久化，尚未实现 `ItemDatabase` / SaveData / Load。
+- 背包 / 装备仍以 `ItemData` 表示，不支持 `ItemInstance` / 随机词条。
+- 丢弃确认窗口代码已支持 Inspector 绑定正式 UI；当前场景是否已创建并绑定正式 `DiscardConfirmPanel` 未确认，未绑定时使用 runtime fallback。
 - 掉落系统仍使用 Prefab 上的简单 `EnemyDropper.drops`，尚未实现正式 DropTable ScriptableObject。
 - Hikari 正式模型 / Prefab / Animator / 跟随 AI 尚未制作。
 - 正式 Hikari UI 未制作；当前 Hikari Debug 只是 OnGUI 窗口。
@@ -219,8 +223,8 @@
 
 ## 7. 推荐下一步
 
-1. **最推荐：修复 TeaShopCanvas 临时 T 键打开入口**：确认 `TeaShopCanvasUI` 是否仍使用旧 `Input.GetKeyDown(KeyCode.T)`，改为 New Input System `Keyboard.current.tKey.wasPressedThisFrame`，并检查 `TeaShopCanvas` active / `RootPanel` 初始隐藏状态。
-2. **TeaShop UI Play Mode 验收**：测试分类 / 分页 / 商品详情 / 购买扣金币入背包 / 试饮直接应用茶 Buff / 赠送扣金币与冷却。
-3. **茶商 NPC 接入 v1**：移除或保留为开发专用的 T 键入口，由场景中的茶商交互打开 `TeaShopCanvas`。
-4. **Inventory / Wallet / Tea Save/Load v1**：建立 `ItemDatabase(itemId → ItemData)`，保存背包 / 装备 / Gold / 当前 Tea Buff（如需要）。
-5. **正式 Hikari UI**：制作第一版正式 Hikari 光负荷 UI（Canvas + TMP），替换 OnGUI Debug 窗口。
+1. **最推荐：创建并绑定正式 DiscardConfirmPanel UI**：在 `InventoryCanvas` 下创建可编辑的丢弃二次确认窗口，并绑定 `InventoryCanvasUI` 的 discardConfirmPanel / MessageText / ConfirmButton / CancelButton 字段，替代 runtime fallback 的临时样式。
+2. **背包交互回归测试**：重点测试短按 / 长按抓取、移动到空格、交换、右键取消、右键菜单 Equip / Use Tea、背包满时拾取失败与卸装失败保护、丢弃确认只删除 source slot。
+3. **TeaShop UI Play Mode 验收**：测试分类 / 分页 / 商品详情 / 购买扣金币入背包 / 试饮直接应用茶 Buff / 赠送扣金币与冷却。
+4. **茶商 NPC 接入 v1**：移除或保留为开发专用的 T 键入口，由场景中的茶商交互打开 `TeaShopCanvas`。
+5. **Inventory / Wallet / Tea Save/Load v1**：建立 `ItemDatabase(itemId → ItemData)`，保存背包 slot / 装备 / Gold / 当前 Tea Buff（如需要）。
