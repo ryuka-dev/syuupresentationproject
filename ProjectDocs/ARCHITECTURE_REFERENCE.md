@@ -13,6 +13,7 @@
 
 - FF14 Legacy-like 相机基准移动：WASD 以 cameraTransform.forward / right（去掉 y 轴）为基准
 - 有移动输入时 Player 朝实际移动方向平滑转身；无输入时不被相机旋转强制转身
+- 若 `PlayerCombatFacingController.IsFacingLocked` 为 true，则 FixedUpdate 强制保持 `LockedFacingRotation`，避免攻击瞬间面向目标后被移动朝向覆盖
 - Shift + 任意移动输入 = Sprint，八方向可跑
 - 场景左键 + 右键 = 等价前进输入；UI 起始鼠标输入不参与双键前进
 - R 键自动前进 v1：等效持续 W；右键调整前进方向；左键进入自由视角并锁定进入时前进方向；左键松开后相机 yaw 回正
@@ -40,9 +41,12 @@
 - JumpDown / FallingLoop → Sprint：IsGrounded == true && Speed > 0.1 && IsSprinting == true
 - Base Layer 的 Death 状态无出口过渡，不可添加
 - UpperBody Layer 的 Any State → UpperBodyIdle（IsDead 条件）不可删除
+- UpperBody Layer 当前包含 `Action_RadiantRiposte` 状态，由 `RadiantRiposte` Trigger 进入，Motion 使用 `HumanM@AttackShield01`
+- Radiant Riposte 动作目前不使用 Root Motion，也不使用 Animation Event；伤害仍在技能逻辑中即时结算
 
 ### RPGCameraController.cs
 - 只负责相机跟随、yaw / pitch、Cursor 显示隐藏；不直接修改 Player rotation
+- `shakeOffset` 是战斗反馈用相机偏移，由 `SimpleScreenFeedback` 写入，LateUpdate 最终位置计算时叠加并自然衰减
 - 场景起始左键或右键按住时均可旋转相机；鼠标拖拽开始时隐藏 Cursor，松开时显示
 - 鼠标输入归属统一通过 MouseInputGate 判断；UI 起始鼠标输入不进入相机拖拽
 - 自动前进 + 左键自由视角松开后，HandleCameraReturn() 只慢速回正 yaw，不强制回正 pitch
@@ -84,11 +88,13 @@
 ### 职责分层
 
 ```
-PlayerSkillData              → 技能静态数据（按键槽、类型、距离、倍率、冷却等）
-PlayerSkillManager           → 读取 skills、生成 RuntimeStates、分发输入到执行器
-PlayerBasicAttackController  → 执行 Slot1 BasicMeleeAttack / Slot4 BasicAreaAttack，管理共享冷却
-PlayerGuardCounterController → 执行 Slot5 Radiant Riposte，管理 10 秒反击窗口
-PlayerStatusEffectController → 统一修正减伤 / 攻击倍率 / 治疗倍率
+PlayerSkillData                → 技能静态数据（按键槽、类型、距离、倍率、冷却等）
+PlayerSkillManager             → 读取 skills、生成 RuntimeStates、分发输入到执行器
+PlayerCombatFacingController   → 技能执行时统一面向目标，并提供短暂朝向锁定
+PlayerCombatAnimationController→ 玩家战斗动作播放入口
+PlayerBasicAttackController    → 执行 Slot1 BasicMeleeAttack / Slot4 BasicAreaAttack，管理共享冷却
+PlayerGuardCounterController   → 执行 Slot5 Radiant Riposte，管理 10 秒反击窗口
+PlayerStatusEffectController   → 统一修正减伤 / 攻击倍率 / 治疗倍率
 ```
 
 ### PlayerSkillData.cs
@@ -118,9 +124,24 @@ Skill_RadiantRiposte.asset   Slot5  GuardCounter      Ranged 20m
 - 玩家死亡时不处理输入
 - OnSkillActivated 事件供未来执行器订阅
 
+### PlayerCombatFacingController.cs
+路径：Assets/Scripts/Player/Combat/PlayerCombatFacingController.cs
+- 技能执行瞬间自动面向目标的统一入口，不负责选目标、伤害或技能条件
+- `FaceTarget(Transform target)` 只计算水平面 yaw，并设置 `LockedFacingRotation`
+- 成功面向后进入短暂 `faceLockDuration`（当前 0.30s），供 `PlayerController.FixedUpdate()` 保持 combat facing，避免移动朝向下一帧覆盖
+- Slot1 BasicMeleeAttack 与 Slot5 Radiant Riposte 已接入；Slot4 BasicAreaAttack / AreaDamage 因无特定目标暂未接入
+
+### PlayerCombatAnimationController.cs
+路径：Assets/Scripts/Player/Animation/PlayerCombatAnimationController.cs
+- 玩家战斗动作播放入口；技能脚本不直接硬写 Animator 细节
+- 当前公开 `PlayRadiantRiposte()`，内部触发 Animator Trigger `RadiantRiposte`
+- Animator 缺失时只 warning，不应阻断伤害、音效、光效、震动或 Hikari 逻辑
+- 未来新增战斗动作应优先扩展此控制器或其后续数据化入口，而不是在各技能脚本散写 Animator Trigger
+
 ### PlayerBasicAttackController.cs
 路径：Assets/Scripts/Player/PlayerBasicAttackController.cs
 - 执行 Slot1（BasicMeleeAttack，目标距离 3m）与 Slot4（BasicAreaAttack，OverlapSphere 5m）
+- Slot1 实际入口为 `TryExecuteBasicMeleeAttack()`；攻击结算前调用 `PlayerCombatFacingController.FaceTarget(CurrentTarget)`
 - 管理共享基础攻击冷却 basicAttackRecast = 1.0f
 - AOE 伤害 = 普通攻击最终伤害 × areaBasicAttackDamageMultiplier（0.4）
 - AOE 使用 HashSet 避免多 Collider 重复命中
@@ -132,7 +153,8 @@ Skill_RadiantRiposte.asset   Slot5  GuardCounter      Ranged 20m
 - 只有 grantsGuardCounter == true 时进入 Radiant Riposte Ready（10 秒）
 - 保存 attacker；再次收到授权的 Guard Resonance 时刷新目标与时间
 - TryUseCounter(skillData)：attacker 死亡 / 距离 > 20m 时不消耗 Ready
-- 命中造成 3 PDU（Tier 1 = 60 damage）
+- 成功释放时先面向 attacker，再通过 `PlayerCombatAnimationController.PlayRadiantRiposte()` 播放盾击动作
+- 命中造成 3 PDU（Tier 1 = 60 damage），随后触发 `SimpleScreenFeedback` 左手弱光效 / 轻微屏幕震动
 - 玩家死亡时清除 Ready
 
 ### PlayerStatusEffectController.cs
@@ -237,6 +259,14 @@ ReturnToSpawn → NavMeshAgent 优先回家；到达后回满血，进入 Idle
 - healingPopupPrefab 为空时 fallback 到 popupPrefab
 - 当前直接 Instantiate / Destroy，未实现对象池
 
+
+### SimpleScreenFeedback.cs
+路径：Assets/Scripts/Effects/SimpleScreenFeedback.cs
+- 当前用于 Radiant Riposte 命中反馈
+- 通过 `RPGCameraController.shakeOffset` 添加短暂轻微相机震动，不直接改相机最终位置
+- 在 `leftHandVfxAnchor`（当前自动找到 `Wrist_L`）附近生成短暂弱 Point Light；不再使用强全屏闪光
+- 只做表现反馈，不改变伤害或技能逻辑
+
 ---
 
 ## 5. Hikari Support 系统
@@ -246,9 +276,11 @@ ReturnToSpawn → NavMeshAgent 优先回家；到达后回满血，进入 Idle
 
 治疗行为：
 ```
-Light Mend（微光治愈）：    HP < 80% → 治疗 15 / 冷却 5s / Burden +5
-Emergency Prayer（紧急祈愿）：HP < 35% 优先 → 治疗 45 / 冷却 25s / Burden +25
+Light Mend（微光治愈）：    HP < 80% → 读条后治疗 15 / 冷却 5s / Burden +5
+Emergency Prayer（紧急祈愿）：HP < 35% 优先 → 读条后治疗 45 / 冷却 25s / Burden +25
 ```
+- 两个治疗共用 `healCastDuration`（当前 1.5s）；读条中通过 `CurrentActionLabel` 暴露给正式 UI
+- 读条完成后才结算治疗、光负荷与冷却；导光封锁、玩家死亡或目标无效时取消读条，不结算治疗
 
 光负荷规则（以 GLOSSARY.md 术语为准）：
 ```
@@ -267,7 +299,7 @@ Guard Resonance（守护共鸣）触发条件：
 4. 玩家至少有一个 DamageReduction 技能处于 Active
 5. 本次伤害来自 EnemySkillType.CastAttack（通过 EnemySkillController.LastDamageSkillData 判断，窗口 0.25s）
 
-Guard Resonance 效果：Burden -10，不治疗，不生成飘字，触发 OnGuardResonanceTriggered(attacker, grantsGuardCounter)
+Guard Resonance 效果：Burden -10，不治疗，不生成飘字，记录最近一次光负荷变化原因，播放临时防御成功 / 守护共鸣 SFX，触发 OnGuardResonanceTriggered(attacker, grantsGuardCounter)
 
 溢光反震（Overflow Counter）触发条件：
 1. Guard Resonance 成功触发
@@ -276,8 +308,18 @@ Guard Resonance 效果：Burden -10，不治疗，不生成飘字，触发 OnGua
 
 效果：对 attacker 造成 30 伤害，不影响光负荷
 
+`LastBurdenDelta` / `LastBurdenReason` / `LastBurdenChangeTime` 记录最近一次明确事件变化，供 `HikariCombatStatusUI` 显示；自然恢复不写入提示，避免刷屏。
+
 代码层保留旧变量名（暂不重命名，避免 Inspector 序列化丢失）：
 currentBurden / maxBurden / isOverloaded / overburdenHealingMultiplier / lightCounterEnabled / lightCounterDamage
+
+### HikariCombatStatusUI.cs
+路径：Assets/Scripts/UI/HikariCombatStatusUI.cs
+- 正式 Canvas UI v0.1，不是 F1 Debug UI
+- 当前场景对象：`UI/HikariHUDCanvas/HikariPanel`
+- 使用 SerializedField 绑定 TMP_Text / Image；不要恢复旧的全代码 Runtime 自动生成 UI
+- 显示 Hikari 标题、当前状态、当前动作、治疗读条、光负荷条、光负荷数值、变化提示
+- 变化提示读取 `HikariSupportController.LastBurden*`，显示约 3 秒后回到「变化提示：--」
 
 ---
 
@@ -526,6 +568,7 @@ DonutAoE   → 月环提示（DonutAoETelegraphController 程序化 Mesh）；in
 - skills == null / Count == 0 不报错，继续普通攻击
 - skillType == None 不执行
 - CastAttack range 只用于读条开始；读条中不因距离取消
+- `CastAttackRoutine()` 使用 try/finally 确保 `StartCooldown()` / `CleanupCast()` 执行；伤害、SFX 或 Guard Resonance 结算异常不应导致读条永久卡在 100%
 
 ### EnemyCastBarUI.cs
 - OnGUI + Camera.WorldToScreenPoint 绘制

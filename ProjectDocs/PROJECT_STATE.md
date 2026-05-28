@@ -45,9 +45,11 @@
 → 敌人 Boss 释放读条重击 / CircleAoE / DonutAoE
 → 玩家使用减伤技能承受 CastAttack → 触发 Guard Resonance → 降低 Hikari 光负荷
 → Iron Bulwark 授权后 10 秒内按 5 键 Radiant Riposte 反击 attacker
-→ Hikari 根据玩家 HP 自动 Light Mend / Emergency Prayer 治疗
+→ Radiant Riposte 自动面向 attacker，播放盾击动画，并触发左手弱光效 / 轻微屏幕震动
+→ Hikari 根据玩家 HP 读条 Light Mend / Emergency Prayer 后治疗
+→ HikariCombatStatusUI 显示当前状态 / 当前动作 / 治疗读条 / 光负荷 / 最近一次光负荷变化原因
 → Hikari 光负荷管理（稳定导光 / 光溢出 / 导光封锁 / 导光恢复）
-→ 溢光反震（光溢出区间触发 Guard Resonance 时对攻击者反伤 30）
+→ 溢光反震（光溢出区间触发 Guard Resonance 时对 attacker 造成 30 伤害）
 → 敌人死亡 → 掉落 ItemDrop / GoldPickup → 按 E 拾取
 → PlayerInventory 加入背包；PlayerWallet 增加 Gold
 → B 打开正式 InventoryCanvas 固定 54 格背包 / EquipmentWindow
@@ -72,8 +74,9 @@
 - R 键自动前进 v1：右键转向，左键自由视角，左键松开后相机 yaw 回正；WASD 任意方向输入或重新形成的场景双键会打断自动前进
 - 持续按住 W/A/S/D 或鼠标双键时按 R，可由自动前进接管当前输入，直到方向输入 / 双键松开后恢复打断规则
 - 移动时 Player 朝实际方向转身，无输入不被相机强制转身
+- `PlayerCombatFacingController` 支持攻击瞬间自动面向目标；`PlayerController` 在短暂 combat facing lock 期间不覆盖朝向
 - 跳跃动画循环修复，落地后可直接进入 RunForward / Sprint
-- `RPGCameraController` 只控制相机，不直接旋转 Player
+- `RPGCameraController` 只控制相机，不直接旋转 Player；`shakeOffset` 仅供战斗反馈叠加轻微震动
 
 ### Targeting
 - 鼠标左键 Raycast 选目标，Tab 从屏幕左到右循环选敌
@@ -82,17 +85,19 @@
 
 ### Player Skill System (v0.2)
 - `PlayerSkillManager` 统一输入、RuntimeState、技能栏顺序
-- Slot1/4 由 `PlayerBasicAttackController` 执行并共享基础攻击冷却（默认 1.0s）
-- Slot5 Radiant Riposte 由 `PlayerGuardCounterController` 执行
+- Slot1/4 由 `PlayerBasicAttackController` 执行并共享基础攻击冷却（默认 1.0s）；Slot1 Basic Attack 已接入攻击瞬间自动面向当前目标
+- Slot5 Radiant Riposte 由 `PlayerGuardCounterController` 执行，已接入自动面向 attacker、盾击动画、左手弱光效与轻微屏幕震动
 - `PlayerStatusEffectController` 统一处理减伤 / 攻击倍率 / 治疗倍率
+- `PlayerCombatAnimationController` 是玩家战斗动作播放入口，目前用于 Radiant Riposte 触发 `PlayerAnimator.controller` 的 `RadiantRiposte`
 - `SkillCanvas` Canvas 技能栏第一版，动态生成技能格，锚定右下
 
 当前注册技能（1~5）：Basic Attack / Iron Bulwark / Stone Guard / Area Attack / Radiant Riposte
 
 ### Hikari Support
-- `HikariSupportController`（临时 Cube 测试对象）自动 Light Mend / Emergency Prayer
+- `HikariSupportController`（临时 Cube 测试对象）自动 Light Mend / Emergency Prayer；两者已改为读条完成后结算治疗与光负荷
 - 光负荷（Burden）规则：稳定导光 / 光溢出（80%）/ 导光封锁（100%）/ 导光恢复（60%）
-- Guard Resonance 降低光负荷（只识别 CastAttack，不识别普通攻击）
+- Guard Resonance 降低光负荷（只识别 CastAttack，不识别普通攻击），成功时播放防御成功 / 守护共鸣临时 SFX，并可授权 Radiant Riposte
+- `HikariCombatStatusUI` 已作为正式 Canvas UI v0.1 接入，显示 Hikari 当前状态、当前动作、治疗读条、光负荷条与最近一次光负荷变化提示
 - 溢光反震（光溢出区间 + Guard Resonance 成功 → 对 attacker 造成 30 伤害）
 - 正式 Hikari 模型 / Prefab / Animator / 跟随 AI 未制作
 
@@ -101,7 +106,7 @@
 - NavMeshAgent 主导移动，Rigidbody 保留碰撞 / fallback
 - EnemySpawnPoint（单怪点）/ EnemySpawnArea（区域多怪加权随机）
 - 敌人技能：CastAttack 读条重击 / CircleAoE / DonutAoE（月环）
-- CastAttack 读条开始后不被玩家拉开距离取消
+- CastAttack 读条开始后不被玩家拉开距离取消；`EnemySkillController.CastAttackRoutine()` 使用 try/finally 清理读条状态，避免结算异常导致读条卡在 100%
 
 ### Health / Combat Stats
 - `HealthComponent` 含 TakeDamage / Heal / SetMaxHealth / OnDamaged / OnHealed
@@ -136,6 +141,7 @@
 ### Damage Number / UI Feedback
 - `DamageNumberSpawner` / `DamageNumberPopup`：伤害与治疗飘字
 - `CombatTextSourceLabel`：伤害可携带来源名（用于 Radiant Riposte 飘字副文本）
+- `SimpleScreenFeedback` 当前用于 Radiant Riposte 命中反馈：通过 `RPGCameraController.shakeOffset` 产生轻微震动，并在 `Wrist_L` 附近生成短暂弱 Point Light
 - Stone Guard `healingReceivedMultiplier = 1.5`，治疗飘字下显示 `GUARD HEAL`
 
 ### Debug UI
@@ -161,13 +167,15 @@
 
 | 脚本 | 职责简述 |
 |---|---|
-| `PlayerController` | 玩家输入移动、朝向、动画参数 |
+| `PlayerController` | 玩家输入移动、朝向、动画参数；combat facing lock 期间保持技能朝向 |
 | `MouseInputGate` | 统一记录鼠标左/右键按下瞬间属于 UI 还是场景，供移动、相机与目标选择共用 |
-| `RPGCameraController` | 相机跟随、左键/右键场景拖动、自动前进自由视角回正，不旋转 Player |
+| `RPGCameraController` | 相机跟随、左键/右键场景拖动、自动前进自由视角回正，不旋转 Player；提供 shakeOffset 给战斗反馈 |
 | `PlayerTargeting` | 鼠标左键 / Tab 目标选择，提供 CurrentTarget；UI 起始左键不选中场景目标 |
 | `PlayerSkillManager` | 统一技能输入、RuntimeState、分发到执行器 |
-| `PlayerBasicAttackController` | Slot1/4 执行与共享基础攻击冷却 |
-| `PlayerGuardCounterController` | Slot5 Radiant Riposte 执行与 10 秒窗口管理 |
+| `PlayerCombatFacingController` | 技能执行时统一面向目标，并向 PlayerController 提供短暂朝向锁定 |
+| `PlayerCombatAnimationController` | 玩家战斗动作播放入口，目前播放 Radiant Riposte 动作 |
+| `PlayerBasicAttackController` | Slot1/4 执行与共享基础攻击冷却；Slot1 已接入自动面向目标 |
+| `PlayerGuardCounterController` | Slot5 Radiant Riposte 执行与 10 秒窗口管理，接入自动朝向、动作、反馈 |
 | `PlayerStatusEffectController` | 减伤 / 攻击倍率 / 治疗倍率统一修正 |
 | `PlayerInventory` | 固定 slot 运行时库存（当前最低 54 格，null=空格），stack 规则、slot Move/Swap/Remove 与 OnInventoryChanged 事件 |
 | `PlayerEquipment` | Core / Armor / Accessory 三槽装备容器 |
@@ -181,7 +189,9 @@
 | `PlayerTeaBuffController` | 当前茶 Buff、剩余时间与掉落修正查询 |
 | `TeaBuffData` | 茶 Buff 静态数据（效果类型、数值、持续时间） |
 | `DraggableUIWindow` / `UIWindowBringToFront` | 背包窗口拖动与窗口置顶 |
-| `HikariSupportController` | 自动治疗、光负荷、Guard Resonance、溢光反震 |
+| `HikariSupportController` | 自动治疗读条、光负荷、Guard Resonance、溢光反震、最近一次光负荷变化记录 |
+| `HikariCombatStatusUI` | 正式 Hikari 战斗 UI：状态、动作、治疗读条、光负荷、变化提示 |
+| `SimpleScreenFeedback` | Radiant Riposte 的轻微屏幕震动与左手局部弱光效 |
 | `EnemyAI` | FSM + NavMeshAgent + 仇恨系统 |
 | `EnemySkillController` | 敌人技能配置与执行（CastAttack / AoE） |
 | `EnemyDropper` | ItemData 概率掉落与 GoldPickup 独立金币掉落 |
@@ -205,12 +215,14 @@
 - 丢弃确认窗口代码已支持 Inspector 绑定正式 UI；当前场景是否已创建并绑定正式 `DiscardConfirmPanel` 未确认，未绑定时使用 runtime fallback。
 - 掉落系统仍使用 Prefab 上的简单 `EnemyDropper.drops`，尚未实现正式 DropTable ScriptableObject。
 - Hikari 正式模型 / Prefab / Animator / 跟随 AI 尚未制作。
-- 正式 Hikari UI 未制作；当前 Hikari Debug 只是 OnGUI 窗口。
+- HikariCombatStatusUI 已可用但仍是程序员 UI v0.1；样式、字体、RectTransform、最终美术与正式 Hikari 头像尚未整理。
 - `GUARD HEAL` 仍是硬编码文本，未迁移到 `CombatTextSourceLabel` / 本地化 key。
 - Debug UI（F1）仍是 OnGUI，正式发布前应隐藏。
 - 伤害飘字使用 Instantiate / Destroy，未实现对象池。
 - `SkeletonDebugUI` 职责较多，可后续拆分为独立 Panel。
 - 玩家技能系统 v0.2 仍是原型，无正式 Buff 优先级 / 覆盖规则 / 状态列表。
+- Radiant Riposte 当前动画开始时立即结算伤害，尚未使用 Animation Event 对齐命中帧；短距离前压 / 敌人受击反馈尚未实现。
+- Slot1 Basic Attack 已接入自动面向目标；Slot4 BasicAreaAttack / AreaDamage 因无特定目标暂未接入自动面向。
 - `PlayerTargeting` Tab 候选收集使用 `FindObjectsByType<HealthComponent>`，敌人数量多时有性能隐患。
 - Ground / Ground (1) 系列旧地块：已确认删除。
 - 敌人 ↔ 玩家碰撞已通过 `EnemyPlayerCollisionIgnore` 处理，敌人间碰撞推动尚未整理。
@@ -223,8 +235,8 @@
 
 ## 7. 推荐下一步
 
-1. **最推荐：创建并绑定正式 DiscardConfirmPanel UI**：在 `InventoryCanvas` 下创建可编辑的丢弃二次确认窗口，并绑定 `InventoryCanvasUI` 的 discardConfirmPanel / MessageText / ConfirmButton / CancelButton 字段，替代 runtime fallback 的临时样式。
-2. **背包交互回归测试**：重点测试短按 / 长按抓取、移动到空格、交换、右键取消、右键菜单 Equip / Use Tea、背包满时拾取失败与卸装失败保护、丢弃确认只删除 source slot。
-3. **TeaShop UI Play Mode 验收**：测试分类 / 分页 / 商品详情 / 购买扣金币入背包 / 试饮直接应用茶 Buff / 赠送扣金币与冷却。
-4. **茶商 NPC 接入 v1**：移除或保留为开发专用的 T 键入口，由场景中的茶商交互打开 `TeaShopCanvas`。
-5. **Inventory / Wallet / Tea Save/Load v1**：建立 `ItemDatabase(itemId → ItemData)`，保存背包 slot / 装备 / Gold / 当前 Tea Buff（如需要）。
+1. **最推荐：Radiant Riposte Short Lunge v0.1**：在已完成自动朝向、盾击动画、左手弱光与轻微震动的基础上，让守护反击向 attacker 短距离前压，降低站桩感。
+2. **Radiant Riposte 命中反馈 v0.2**：评估是否加入轻微 hit stop、敌人受击硬直 / 受击闪光，并决定是否用 Animation Event 对齐伤害 / 反馈时机。
+3. **Area Attack 自动朝向策略**：为 Slot4 BasicAreaAttack / 后续 AreaDamage 确定无锁定目标时面向 CurrentTarget、最近敌人或输入方向的规则。
+4. **HikariCombatStatusUI 样式整理**：在不改逻辑的前提下整理 TMP 字体、Overflow、RectTransform、面板尺寸、头像 / 图标与最终视觉层级。
+5. **TeaShop UI Play Mode 验收**：测试分类 / 分页 / 商品详情 / 购买扣金币入背包 / 试饮直接应用茶 Buff / 赠送扣金币与冷却。

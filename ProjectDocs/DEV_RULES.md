@@ -27,6 +27,8 @@
 - 自动前进（R）由 PlayerController 管理：W/A/S/D 任意方向输入和重新形成的场景双键会打断；持续方向输入或双键状态下按 R 时，应由自动前进接管当前输入直到该输入松开。
 - 鼠标位于 UI 上时，右键不应触发相机旋转；当前使用 EventSystem RaycastAll 做 UI 命中检测，不要改回单纯 `IsPointerOverGameObject()` 或旧 Input。
 - 玩家朝向由 PlayerController 在有移动输入时负责；无输入时 Player 不因相机旋转转身。
+- 技能执行瞬间面向目标必须走 `PlayerCombatFacingController`；不要在技能脚本中散写 `transform.LookAt()` / `transform.rotation`。
+- `PlayerController` 必须尊重 `PlayerCombatFacingController.IsFacingLocked` 与 `LockedFacingRotation`；不要新增绕过该锁定的 Player rotation 覆盖。
 - 鼠标视角旋转使用 Mouse.delta * rotationSpeed，不要再乘 Time.deltaTime。
 - Tab 目标选择属于 PlayerTargeting；不要另建第二套目标系统与 CurrentTarget 抢控制权。
 - 玩家死亡时需要清空目标（PlayerTargeting.ClearTarget()）并禁用相关控制组件。
@@ -39,6 +41,8 @@
 - PlayerSkillManager.skills 的 Inspector 顺序决定 Canvas 技能栏显示顺序。
 - Slot1 Basic Attack 与 Slot4 Area Attack 由 PlayerBasicAttackController 执行，共享基础攻击冷却。
 - Slot5 Radiant Riposte 由 PlayerGuardCounterController 执行。
+- 玩家战斗动画统一经 `PlayerCombatAnimationController` 请求；不要在技能脚本里直接硬编码 Animator Trigger / State。
+- 当前 Radiant Riposte 动画只做表现，不使用 Root Motion / Animation Event，不要把伤害结算移入动画事件，除非任务明确要求。
 - 不要把攻击伤害、AOE 搜索、反击执行逻辑塞回 PlayerSkillManager。
 - 不要恢复已删除的 PlayerMitigationController。
 - DamageReduction / AttackPowerMultiplier / HealingReceivedMultiplier 由 PlayerStatusEffectController 统一处理。
@@ -57,6 +61,7 @@
 - EnemySkillController.skills 为空 → 无技能 → 不影响普通攻击，必须保持该行为。
 - EnemyCastBarUI GUIStyle 必须在 OnGUI() 内懒初始化，不要在 Awake() / Start() 中访问 GUI.skin。
 - CastAttack 的 range 只用于开始读条；读条中玩家拉开距离不取消，完成时不因距离失败。
+- `EnemySkillController.CastAttackRoutine()` 必须在异常时也清理读条状态；不要移除其 try/finally，避免 Boss 读条卡在 100%。
 - CircleAoE / DonutAoE 不写入 LastDamageSkillData，不触发 Guard Resonance / Radiant Riposte。
 - 创建新敌人：使用 EnemyBase.prefab Prefab Variant，在 VisualRoot 下放模型，不要直接复制 SkeletonEnemy.prefab。
 
@@ -70,6 +75,8 @@
 - Overflow Counter 是光溢出区间的危险收益，不是普通反伤。
 - Guard Resonance 只识别 EnemySkillType.CastAttack；普通攻击、CircleAoE、DonutAoE 不触发。
 - Guard Resonance 依赖 PlayerSkillManager.RuntimeStates 与 PlayerSkillEffectType.DamageReduction；不要通过 skillId 硬判断 Iron Bulwark / Stone Guard。
+- Guard Resonance / 防御成功 SFX 失败不得中断战斗结算；音效播放必须保持 try/catch 或等价安全保护。
+- HikariSupportController 的 `LastBurdenDelta` / `LastBurdenReason` / `LastBurdenChangeTime` 只记录明确事件变化；自然恢复不要刷 UI 提示。
 - HikariSupportController 代码层旧变量名（currentBurden 等）暂不重命名，避免 Inspector 序列化丢失。
 
 ---
@@ -78,6 +85,7 @@
 
 - OnGUI 只作为 Debug / Developer Menu（F1 Debug UI）。
 - 正式 UI 使用 Canvas + TMP + Button 或 UI Toolkit。
+- `HikariCombatStatusUI` 是正式 Hikari 战斗 UI，不是 Debug UI；不要恢复旧的 runtime 全代码生成 UI，也不要把它放进 F1 OnGUI。
 - 正式背包 UI 位于 `UI/InventoryCanvas`，不要把 F1 Debug 背包当正式 UI 修改。
 - `TeaShopCanvas` 是正式茶商店 UI，不能用 F1 Debug 或 OnGUI 实现；当前 T 键仅为临时测试入口，必须使用 New Input System，NPC 接入后再移除或隐藏。
 - 茶道具属于 ItemData.Tea，可进入 PlayerInventory；金币属于 PlayerWallet，不是 ItemData，不进入背包。
@@ -119,6 +127,7 @@
 - Attack Trigger 只应由当前实际攻击执行路径触发；Slot1 / Slot4 当前由 `PlayerBasicAttackController` 触发。不要把 1 / 4 输入或攻击动画逻辑塞回 `PlayerSkillController`。
 - 非锁定 Legacy-like 移动下，移动动画参数保持 Horizontal = 0，通过 Speed = 0/0.5/1.0 表示 Idle/Walk/Run。
 - UpperBody Layer 的 Any State → UpperBodyIdle（IsDead 条件）不可删除。
+- UpperBody Layer 的 `RadiantRiposte` Trigger / `Action_RadiantRiposte` 状态用于守护反击动作；不要误删或改成 Root Motion / Animation Event 驱动。
 - UpperBodyIdle.anim 不可删除。
 - JumpDown / FallingLoop 到 RunForward / Sprint 的直接 Transition 不可删除。
 - IsJumping 是起跳帧信号，不是整个空中状态；不要让它在空中持续 true。
@@ -130,10 +139,10 @@
 以下脚本改动风险高，修改前请先确认架构关系（见 ARCHITECTURE_REFERENCE.md）：
 
 Enemy：EnemyAI / EnemyWorldManager / EnemySpawnPoint / EnemySpawnArea / EnemyDeathHandler / EnemyPlayerCollisionIgnore / EnemySkillData / EnemySkillController / EnemyCastBarUI / DonutAoETelegraphController
-Player：PlayerController / MouseInputGate / RPGCameraController / PlayerTargeting / TargetSelectionIndicator / PlayerSkillController / PlayerBasicAttackController / PlayerGuardCounterController / PlayerDeathHandler / PlayerRespawnPointTracker / PlayerInventory / PlayerEquipment / PlayerCombatStats / PlayerWallet / PlayerTeaBuffController / PlayerSkillManager / PlayerStatusEffectController / PlayerSkillCanvasUI / PlayerSkillBarCanvasUI / PlayerMitigationVisualFeedback
+Player：PlayerController / MouseInputGate / RPGCameraController / PlayerTargeting / TargetSelectionIndicator / PlayerSkillController / PlayerBasicAttackController / PlayerGuardCounterController / PlayerCombatFacingController / PlayerCombatAnimationController / PlayerDeathHandler / PlayerRespawnPointTracker / PlayerInventory / PlayerEquipment / PlayerCombatStats / PlayerWallet / PlayerTeaBuffController / PlayerSkillManager / PlayerStatusEffectController / PlayerSkillCanvasUI / PlayerSkillBarCanvasUI / PlayerMitigationVisualFeedback
 Inventory UI：InventoryInputController / InventoryCanvasUI / InventoryGridSlotUI / EquipmentSlotUI / ItemDetailPanelUI / InventoryContextMenuUI / DraggableUIWindow / UIWindowBringToFront / TeaShopCanvasUI / TeaShopItemSlotUI
-Hikari：HikariSupportController
-Combat：HealthComponent / DamageNumberPopup / DamageNumberSpawner / CombatTextSourceLabel
+Hikari：HikariSupportController / HikariCombatStatusUI
+Combat：HealthComponent / DamageNumberPopup / DamageNumberSpawner / CombatTextSourceLabel / SimpleScreenFeedback
 Items：ItemData / ItemStack / PickupItem / GoldPickup / TeaBuffData / TeaShopItemData / TeaShopCatalogData / EnemyDropper
 Level：SavePoint
 Debug：SkeletonDebugUI / SkeletonSpawner
