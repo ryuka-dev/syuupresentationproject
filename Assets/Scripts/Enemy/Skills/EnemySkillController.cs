@@ -428,6 +428,8 @@ private IEnumerator CastAttackRoutine(EnemySkillData skill, Transform target)
         }
         _currentCastElapsed = _currentCastDuration; // 丸め誤差修正
 
+        try
+        {
         // 読条完了 — 距離チェックなし。target の生死と caster の生死のみ確認。
         bool hit = false;
         if (skill != null && target != null)
@@ -455,8 +457,12 @@ private IEnumerator CastAttackRoutine(EnemySkillData skill, Transform target)
         if (!hit)
             Debug.Log($"[EnemySkillController] {gameObject.name}: [{skill?.DisplayName}] 不命中（target 死亡 / caster 死亡 / target null）");
 
-        StartCooldown(skill);
-        CleanupCast();
+        }  // end try
+        finally
+        {
+            StartCooldown(skill);
+            CleanupCast();
+        }
     }
 
     // ─── キャンセル ─────────────────────────────────────────

@@ -90,6 +90,11 @@ public class HikariSupportController : MonoBehaviour
     [Tooltip("光溢出状态下，可控治疗效率下降倍率。默认 0.5 = 可控治疗效率降至 50%。")]
     [SerializeField, Range(0f, 1f)] private float overburdenHealingMultiplier = 0.5f;
 
+    [Header("守护共鸣 SFX")]
+    [Tooltip("守护共鸣成功时播放的音效。")]
+    [SerializeField] private UnityEngine.AudioClip guardianResonanceSfx;
+    private UnityEngine.AudioSource _sfxSource;
+
     [Header("Guard Resonance / 守护共鸣")]
     [Tooltip("玩家在 DamageReduction 技能 Active 期间受伤时，降低 Hikari 光负荷。")]
     [SerializeField] private bool  guardResonanceEnabled        = true;
@@ -176,6 +181,25 @@ public bool  IsBurdenRecoveryEnabled  => enableBurdenRecovery;
     /// 光負荷変化をUI提示用に記録する。
     /// actualDelta が 0 に近い場合は記録しない（クランプで実変化なし）。
     /// </summary>
+    /// <summary>守护共鸣 SFX を安全に再生する。例外が発生しても戦闘結算を中断しない。</summary>
+    private void PlayGuardianResonanceSfx()
+    {
+        if (guardianResonanceSfx == null) return;
+        try
+        {
+            if (_sfxSource == null)
+                _sfxSource = GetComponent<UnityEngine.AudioSource>();
+            if (_sfxSource == null)
+                _sfxSource = gameObject.AddComponent<UnityEngine.AudioSource>();
+            if (_sfxSource != null)
+                _sfxSource.PlayOneShot(guardianResonanceSfx);
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning($"[HikariSupport] 守护共鸣 SFX 再生失败（戦闘結算に影響なし）: {ex.Message}");
+        }
+    }
+
     private void RegisterBurdenChange(float actualDelta, string reason)
     {
         if (Mathf.Approximately(actualDelta, 0f)) return;
@@ -244,6 +268,7 @@ public bool  IsBurdenRecoveryEnabled  => enableBurdenRecovery;
 
 private void Start()
     {
+        if (_sfxSource == null) _sfxSource = GetComponent<UnityEngine.AudioSource>() ?? gameObject.AddComponent<UnityEngine.AudioSource>();
         if (playerHealth == null)
         {
             var playerGO = GameObject.FindGameObjectWithTag(playerTag);
@@ -540,6 +565,7 @@ private bool TryTriggerGuardResonance(Transform attacker)
         bool shouldLightCounter = ShouldTriggerLightCounter();
 
         ReduceBurden(guardResonanceBurdenReduction, "守护共鸣");
+        PlayGuardianResonanceSfx(); // 安全な SFX ヘルパー経由
         _nextGuardResonanceTime = Time.time + guardResonanceCooldown;
 
         if (logDebugMessages)
