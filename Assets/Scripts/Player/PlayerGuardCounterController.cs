@@ -28,6 +28,9 @@ public class PlayerGuardCounterController : MonoBehaviour
     [Header("守護反击 VFX アンカー（左手骨骼 Transform を設定。空の場合は自動探索。）")]
     [SerializeField] private Transform leftHandVfxAnchor;
 
+    [Header("戦闘アニメーション（空の場合 Awake で自動解決）")]
+    [SerializeField] private PlayerCombatAnimationController combatAnimation;
+
     [Header("反撃パラメータ")]
     [Tooltip("反撃機会の有効時間（秒）。")]
     [SerializeField] private float counterWindowSeconds = 10f;
@@ -46,6 +49,8 @@ public class PlayerGuardCounterController : MonoBehaviour
 
     private void Awake()
     {
+        if (combatAnimation == null)
+            combatAnimation = GetComponent<PlayerCombatAnimationController>() ?? GetComponentInChildren<PlayerCombatAnimationController>();
         if (combatStats == null)
             combatStats = GetComponent<PlayerCombatStats>();
         if (combatStats == null)
@@ -215,6 +220,8 @@ public class PlayerGuardCounterController : MonoBehaviour
             localizationKey = skillData != null ? skillData.LocalizationKey : "skill.player.radiant_riposte.name",
             fallbackText    = skillData != null ? skillData.SkillName        : "Radiant Riposte"
         };
+
+        combatAnimation?.PlayRadiantRiposte(); // 守護反击動作（失败しても伤害結算に影響なし）
 
         targetHealth.TakeDamage(damage, transform, sourceLabel);
         Debug.Log($"[RadiantRiposte] 守護反击命中！ 目标: {targetHealth.name} | 伤害: {damage} ({counterDamagePdu} PDU) | 来源: {sourceLabel.GetDisplayText()}");
