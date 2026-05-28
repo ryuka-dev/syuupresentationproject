@@ -19,19 +19,12 @@ public class PlayerStatusEffectController : MonoBehaviour
     [Header("调试")]
     [SerializeField] private bool logDamageModification = true;
 
-    [Header("防御成功 SFX")]
-    [Tooltip("防御减伤成功时播放的音效（每次防御成功触发一次）。")]
-    [SerializeField] private UnityEngine.AudioClip guardSuccessSfx;
-    private UnityEngine.AudioSource _audioSource;
 
     // ─── Unity 生命周期 ───────────────────────────────────────────
 
     private void Awake()
     {
         ResolveSkillManager();
-        _audioSource = GetComponent<UnityEngine.AudioSource>();
-        if (_audioSource == null)
-            _audioSource = gameObject.AddComponent<UnityEngine.AudioSource>();
     }
 
     // ─── 公开方法 ─────────────────────────────────────────────────
@@ -62,10 +55,6 @@ public class PlayerStatusEffectController : MonoBehaviour
 
         if (logDamageModification && !Mathf.Approximately(finalDamage, damage))
             Debug.Log($"[PlayerStatusEffectController] Damage modified: original={damage:F1}, final={finalDamage:F1}");
-
-        // 防御減衰が発生した（＝防御成功）場合に SFX 再生（戦闘結算に影響しない安全な try/catch）
-        if (!Mathf.Approximately(finalDamage, damage))
-            PlayGuardSuccessSfx();
 
         return finalDamage;
     }
@@ -147,25 +136,6 @@ public class PlayerStatusEffectController : MonoBehaviour
         return result;
     }
 
-
-    /// <summary>防御成功 SFX を安全に再生する。例外が発生しても戦闘結算を中断しない。</summary>
-    private void PlayGuardSuccessSfx()
-    {
-        if (guardSuccessSfx == null) return;
-        try
-        {
-            if (_audioSource == null)
-                _audioSource = GetComponent<UnityEngine.AudioSource>();
-            if (_audioSource == null)
-                _audioSource = gameObject.AddComponent<UnityEngine.AudioSource>();
-            if (_audioSource != null)
-                _audioSource.PlayOneShot(guardSuccessSfx);
-        }
-        catch (System.Exception ex)
-        {
-            Debug.LogWarning($"[PlayerStatusEffectController] 防御成功 SFX 再生失敗（戦闘結算に影響なし）: {ex.Message}");
-        }
-    }
 
     private void ResolveSkillManager()
     {

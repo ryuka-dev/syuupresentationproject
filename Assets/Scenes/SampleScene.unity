@@ -13813,7 +13813,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerStatusEffectController
   skillManager: {fileID: 919417069}
   logDamageModification: 1
-  guardSuccessSfx: {fileID: 8300000, guid: c2da5324bba4e494ab0f529810226ae1, type: 3}
 --- !u!114 &919417071
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -13878,6 +13877,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerGuardCounterController
   hikariSupport: {fileID: 1046374386}
   combatStats: {fileID: 919417063}
+  leftHandVfxAnchor: {fileID: 0}
   counterWindowSeconds: 10
   counterDamagePdu: 3
 --- !u!114 &919417077
@@ -15297,6 +15297,7 @@ MonoBehaviour:
   overburdenThreshold: 0.8
   overburdenHealingMultiplier: 0.5
   guardianResonanceSfx: {fileID: 8300000, guid: 1f0f2ba053cd3a843b37af032f1e96c3, type: 3}
+  guardSuccessSfx: {fileID: 8300000, guid: c2da5324bba4e494ab0f529810226ae1, type: 3}
   guardResonanceEnabled: 1
   guardResonanceBurdenReduction: 10
   guardResonanceCooldown: 3

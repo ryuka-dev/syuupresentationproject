@@ -12,6 +12,9 @@ public class RPGCameraController : MonoBehaviour
     [Header("目标")]
     public Transform target;
     public Vector3   targetOffset = new Vector3(0f, 1.0f, 0f);
+    /// <summary>シェイクなど外部からの加算オフセット。毎フレーム残存値をゼロに近づける。</summary>
+    [System.NonSerialized] public Vector3 shakeOffset = Vector3.zero;
+
 
     [Header("距离")]
     public float distance    = 6f;
@@ -114,7 +117,8 @@ public class RPGCameraController : MonoBehaviour
         Vector3    lookAt   = target.position + targetOffset;
         Vector3    desired  = lookAt - rotation * Vector3.forward * distance;
 
-        transform.position = Vector3.Lerp(transform.position, desired, followSmooth * Time.deltaTime);
+        transform.position = Vector3.Lerp(transform.position, desired, followSmooth * Time.deltaTime) + shakeOffset;
+        shakeOffset = Vector3.Lerp(shakeOffset, Vector3.zero, 20f * Time.deltaTime); // 自然減衰
         transform.LookAt(lookAt);
     }
 

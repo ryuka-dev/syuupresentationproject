@@ -25,6 +25,9 @@ public class PlayerGuardCounterController : MonoBehaviour
     [Header("玩家戦闘ステータス参照（空の場合 GetComponent で自動解決）")]
     [SerializeField] private PlayerCombatStats combatStats;
 
+    [Header("守護反击 VFX アンカー（左手骨骼 Transform を設定。空の場合は自動探索。）")]
+    [SerializeField] private Transform leftHandVfxAnchor;
+
     [Header("反撃パラメータ")]
     [Tooltip("反撃機会の有効時間（秒）。")]
     [SerializeField] private float counterWindowSeconds = 10f;
@@ -53,6 +56,14 @@ public class PlayerGuardCounterController : MonoBehaviour
 
     private void Start()
     {
+        // 左手ボーン自動探索（leftHandVfxAnchor が未設定の場合）
+        if (leftHandVfxAnchor == null)
+        {
+            var wristL = transform.Find("Wrist_L");
+            if (wristL == null) wristL = FindDeepChild(transform, "Wrist_L");
+            if (wristL != null) { leftHandVfxAnchor = wristL; Debug.Log("[RadiantRiposte] leftHandVfxAnchor auto-resolved: " + wristL.name); }
+            else Debug.Log("[RadiantRiposte] leftHandVfxAnchor not found, using player transform fallback.");
+        }
         ResolveHikariSupport();
         SubscribeToPlayerDeath();
     }
@@ -207,6 +218,7 @@ public class PlayerGuardCounterController : MonoBehaviour
 
         targetHealth.TakeDamage(damage, transform, sourceLabel);
         Debug.Log($"[RadiantRiposte] 守護反击命中！ 目标: {targetHealth.name} | 伤害: {damage} ({counterDamagePdu} PDU) | 来源: {sourceLabel.GetDisplayText()}");
+        SimpleScreenFeedback.TriggerCounterFeedback(transform, leftHandVfxAnchor); // 守護反击命中フィードバック
 
         ClearCounter();
         return true;
@@ -252,5 +264,17 @@ public class PlayerGuardCounterController : MonoBehaviour
     {
         if (_playerHealth != null)
             _playerHealth.OnDied -= HandlePlayerDied;
+    }
+
+    /// <summary>Transform ツリーを再帰的に探索する最小ヘルパー。</summary>
+    private static Transform FindDeepChild(Transform parent, string name)
+    {
+        foreach (Transform child in parent)
+        {
+            if (child.name == name) return child;
+            var result = FindDeepChild(child, name);
+            if (result != null) return result;
+        }
+        return null;
     }
 }

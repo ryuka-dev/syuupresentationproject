@@ -93,6 +93,8 @@ public class HikariSupportController : MonoBehaviour
     [Header("守护共鸣 SFX")]
     [Tooltip("守护共鸣成功时播放的音效。")]
     [SerializeField] private UnityEngine.AudioClip guardianResonanceSfx;
+    [Tooltip("CastAttack を防御成功（守护共鸣成功時）に再生する音効。")]
+    [SerializeField] private UnityEngine.AudioClip guardSuccessSfx;
     private UnityEngine.AudioSource _sfxSource;
 
     [Header("Guard Resonance / 守护共鸣")]
@@ -182,8 +184,24 @@ public bool  IsBurdenRecoveryEnabled  => enableBurdenRecovery;
     /// actualDelta が 0 に近い場合は記録しない（クランプで実変化なし）。
     /// </summary>
     /// <summary>守护共鸣 SFX を安全に再生する。例外が発生しても戦闘結算を中断しない。</summary>
+    /// <summary>防御成功 SFX（CastAttack 防御成功時）を安全に再生する。</summary>
+    private void PlayGuardSuccessSfx()
+    {
+        if (guardSuccessSfx == null) return;
+        try
+        {
+            if (_sfxSource == null) _sfxSource = GetComponent<UnityEngine.AudioSource>() ?? gameObject.AddComponent<UnityEngine.AudioSource>();
+            if (_sfxSource != null) _sfxSource.PlayOneShot(guardSuccessSfx);
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning($"[HikariSupport] 防御成功 SFX 再生失敗（戦闘結算に影響なし）: {ex.Message}");
+        }
+    }
+
     private void PlayGuardianResonanceSfx()
     {
+        PlayGuardSuccessSfx(); // CastAttack防御成功音效（戰闘結算に影響なし）
         if (guardianResonanceSfx == null) return;
         try
         {
