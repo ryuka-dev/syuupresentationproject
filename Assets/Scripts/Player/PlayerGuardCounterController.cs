@@ -30,6 +30,7 @@ public class PlayerGuardCounterController : MonoBehaviour
 
     [Header("戦闘アニメーション（空の場合 Awake で自動解決）")]
     [SerializeField] private PlayerCombatAnimationController combatAnimation;
+    [SerializeField] private PlayerCombatFacingController combatFacing;
 
     [Header("反撃パラメータ")]
     [Tooltip("反撃機会の有効時間（秒）。")]
@@ -51,6 +52,7 @@ public class PlayerGuardCounterController : MonoBehaviour
     {
         if (combatAnimation == null)
             combatAnimation = GetComponent<PlayerCombatAnimationController>() ?? GetComponentInChildren<PlayerCombatAnimationController>();
+        if (combatFacing == null) combatFacing = GetComponent<PlayerCombatFacingController>();
         if (combatStats == null)
             combatStats = GetComponent<PlayerCombatStats>();
         if (combatStats == null)
@@ -220,6 +222,8 @@ public class PlayerGuardCounterController : MonoBehaviour
             localizationKey = skillData != null ? skillData.LocalizationKey : "skill.player.radiant_riposte.name",
             fallbackText    = skillData != null ? skillData.SkillName        : "Radiant Riposte"
         };
+
+        combatFacing?.FaceTarget(_counterTarget); // 守護反撃前に汫標方向に転向
 
         combatAnimation?.PlayRadiantRiposte(); // 守護反击動作（失败しても伤害結算に影響なし）
 

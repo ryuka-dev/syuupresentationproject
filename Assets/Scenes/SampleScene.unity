@@ -13879,6 +13879,7 @@ MonoBehaviour:
   combatStats: {fileID: 919417063}
   leftHandVfxAnchor: {fileID: 0}
   combatAnimation: {fileID: 919417083}
+  combatFacing: {fileID: 919417084}
   counterWindowSeconds: 10
   counterDamagePdu: 3
 --- !u!114 &919417077
@@ -13937,6 +13938,19 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerCombatAnimationController
   animator: {fileID: 919417082}
   radiantRiposteTrigger: RadiantRiposte
+--- !u!114 &919417084
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 919417038}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 284a9924481b54648a1ac52e0866846c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerCombatFacingController
+  faceLockDuration: 0.18
 --- !u!1 &940023243
 GameObject:
   m_ObjectHideFlags: 0
@@ -27177,6 +27191,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
       insertIndex: -1
       addedObject: {fileID: 919417083}
+    - targetCorrespondingSourceObject: {fileID: 1782702501690864755, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 919417084}
   m_SourcePrefab: {fileID: 100100000, guid: 60770bdb4dc667c45bea53db0339dc05, type: 3}
 --- !u!1 &2018956400
 GameObject:

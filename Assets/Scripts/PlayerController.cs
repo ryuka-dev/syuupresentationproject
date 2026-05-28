@@ -19,6 +19,7 @@ public class PlayerController : MonoBehaviour
 
     [Header("旋转")]
     [SerializeField] private float rotationSpeed = 12f;
+    private PlayerCombatFacingController _facingCtrl; // 技能朝向ロック用
 
     [Header("摄像机参考")]
     public Transform cameraTransform;
@@ -61,6 +62,7 @@ public class PlayerController : MonoBehaviour
     // ─────────────────────────────────────────────────────────────
     void Awake()
     {
+        _facingCtrl = GetComponent<PlayerCombatFacingController>();
         rb   = GetComponent<Rigidbody>();
         anim = GetComponent<Animator>();
         rb.freezeRotation = true;
@@ -290,6 +292,13 @@ public class PlayerController : MonoBehaviour
         rb.linearVelocity = new Vector3(dir.x * currentSpeed, rb.linearVelocity.y, dir.z * currentSpeed);
         ApplyJumpGravityTuning();
 
+        // ── 技能朝向ロック中はロック朝向を強制保持（移動入力による覆盖を防ぐ）────────
+        if (_facingCtrl != null && _facingCtrl.IsFacingLocked)
+        {
+            transform.rotation = _facingCtrl.LockedFacingRotation;
+            // 速度は維持（移動速度はロックしない）
+        }
+        else
         if (dir.sqrMagnitude > 0.001f)
         {
             Quaternion targetRot = Quaternion.LookRotation(dir, Vector3.up);

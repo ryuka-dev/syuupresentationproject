@@ -39,6 +39,7 @@ public class PlayerBasicAttackController : MonoBehaviour
 
     // ─── 内部引用 ─────────────────────────────────────────────────
     private PlayerTargeting              _targeting;
+    private PlayerCombatFacingController _facingCtrl;
     private PlayerCombatStats            _combatStats;
     private PlayerStatusEffectController _statusEffectController;
     private FactionComponent             _selfFaction;
@@ -53,6 +54,7 @@ public class PlayerBasicAttackController : MonoBehaviour
     private void Awake()
     {
         _targeting              = GetComponent<PlayerTargeting>();
+        _facingCtrl = GetComponent<PlayerCombatFacingController>();
         _combatStats            = GetComponent<PlayerCombatStats>();
         _statusEffectController = GetComponent<PlayerStatusEffectController>();
         _selfFaction            = GetComponent<FactionComponent>();
@@ -143,6 +145,8 @@ public class PlayerBasicAttackController : MonoBehaviour
         // 伤害结算
         float finalDamage = CalculateNormalAttackDamage();
         StartBasicAttackRecast();
+        _facingCtrl?.FaceTarget(target); // 攻撃前に目標方向に瞬間転向
+
         health.TakeDamage(finalDamage, transform);
         Debug.Log($"[PlayerBasicAttackController] Normal attack hit: {target.name}, damage={finalDamage:F1}");
 
@@ -184,6 +188,8 @@ public class PlayerBasicAttackController : MonoBehaviour
         }
         float finalDamage = CalculateNormalAttackDamage();
         StartBasicAttackRecast();
+        _facingCtrl?.FaceTarget(target); // 攻撃前に目標方向に瞬間転向＋朝向ロック
+
         health.TakeDamage(finalDamage, transform);
         Debug.Log($"[PlayerBasicAttackController] Melee hit: {target.name}, damage={finalDamage:F1}");
         TriggerAttackAnimation();
