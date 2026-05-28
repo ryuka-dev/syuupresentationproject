@@ -81,11 +81,11 @@ public class HikariCombatStatusUI : MonoBehaviour
     {
         // ── Hikari 状态（光负荷阶段）──────────────────────────────
         if (stateText != null)
-            stateText.text = "State: " + GetStateLabel();
+            stateText.text = "当前状态: " + GetStateLabel();
 
         // ── Hikari 当前动作（读条类型）────────────────────────────
         if (actionText != null)
-            actionText.text = "Action: " + GetActionLabel();
+            actionText.text = "当前动作: " + GetActionLabel();
 
         // ── 读条条 ────────────────────────────────────────────────
         float castRatio = _hikari.CastRatio;
@@ -133,9 +133,9 @@ public class HikariCombatStatusUI : MonoBehaviour
     private string GetStateLabel()
     {
         if (_hikari == null) return "--";
-        if (_hikari.IsOverloaded)   return "Locked";
-        if (_hikari.IsOverburdened) return "Overflow";
-        return "Idle";
+        if (_hikari.IsOverloaded)   return "导光封锁";
+        if (_hikari.IsOverburdened) return "光溢出";
+        return "待机";
     }
 
     private string GetActionLabel()
@@ -143,8 +143,8 @@ public class HikariCombatStatusUI : MonoBehaviour
         if (_hikari == null) return "--";
         return _hikari.CurrentActionLabel switch
         {
-            "\u6cbb\u7597\u8aad\u6761\u4e2d" => "Casting Heal",
-            "\u7d27\u6025\u6cbb\u7597\u8aad\u6761\u4e2d" => "Casting Emergency",
+            "\u6cbb\u7597\u8aad\u6761\u4e2d" => "施法中: 治疗",
+            "\u7d27\u6025\u6cbb\u7597\u8aad\u6761\u4e2d" => "施法中: 紧急治疗",
             _ => _hikari.CurrentActionLabel == "--" ? "--" : _hikari.CurrentActionLabel,
         };
     }

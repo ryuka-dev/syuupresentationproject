@@ -188,8 +188,8 @@ public bool  IsBurdenRecoveryEnabled  => enableBurdenRecovery;
         {
             return _castType switch
             {
-                HikariCastType.LightMend       => "Casting Heal",
-                HikariCastType.EmergencyPrayer => "Casting Emergency",
+                HikariCastType.LightMend       => "治疗读条中",
+                HikariCastType.EmergencyPrayer => "紧急治疗读条中",
                 _                              => "--",
             };
         }
@@ -203,9 +203,9 @@ public bool  IsBurdenRecoveryEnabled  => enableBurdenRecovery;
     {
         get
         {
-            if (IsOverloaded)   return "Locked";
-            if (IsOverburdened) return "Overflow";
-            return "Idle";
+            if (IsOverloaded)   return "导光封锁";
+            if (IsOverburdened) return "光溢出";
+            return "待机";
         }
     }
 
