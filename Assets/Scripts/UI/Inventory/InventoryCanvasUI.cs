@@ -93,6 +93,14 @@ public class InventoryCanvasUI : MonoBehaviour
     private bool                _suppressNextLeftClick;
 
     // ── 丢弃確認窗口 ─────────────────────────────────────────────────
+    // Inspector に正式 UI を割り当てた場合はそれを使う。未割り当ての場合は runtime 生成で fallback。
+    [Header("Discard Confirm (optional — leave empty to use runtime fallback)")]
+    [SerializeField] private GameObject      discardConfirmPanel;
+    [SerializeField] private TextMeshProUGUI discardConfirmMessageText;
+    [SerializeField] private Button          discardConfirmButton;
+    [SerializeField] private Button          discardCancelButton;
+
+    // runtime 生成時に使う内部参照（Inspector 未バインド時のみ使用）
     private GameObject      _discardConfirmRoot;
     private TextMeshProUGUI _discardConfirmText;
     private bool            _isDiscardConfirmOpen;
@@ -148,7 +156,7 @@ public class InventoryCanvasUI : MonoBehaviour
         if (rootPanel) rootPanel.SetActive(false);
         InitializeGrid();
         CreateDragIcon();
-        CreateDiscardConfirmPanel();
+        InitDiscardConfirmPanel();
     }
 
     private void Start()       { SubscribeEvents(); }
@@ -873,6 +881,34 @@ private void PositionDetailWindowNearSlot(RectTransform slotRT)
     /// <summary>現在のマウス位置が InventoryGridSlotUI 上かを返す。</summary>
     private bool IsPointerOverInventoryGridSlot() => GetPointerInventoryGridSlot() != null;
     // ── 丢弃確認窗口 ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Inspector バインド済みならそれを使い、未バインドなら runtime 生成へ fallback。
+    /// </summary>
+    private void InitDiscardConfirmPanel()
+    {
+        bool inspectorBound = discardConfirmPanel != null
+                           && discardConfirmMessageText != null
+                           && discardConfirmButton != null
+                           && discardCancelButton  != null;
+
+        if (inspectorBound)
+        {
+            // 正式 UI を使う
+            _discardConfirmRoot = discardConfirmPanel;
+            _discardConfirmText = discardConfirmMessageText;
+            discardConfirmButton.onClick.RemoveAllListeners();
+            discardConfirmButton.onClick.AddListener(OnDiscardConfirmed);
+            discardCancelButton.onClick.RemoveAllListeners();
+            discardCancelButton.onClick.AddListener(OnDiscardCancelled);
+            _discardConfirmRoot.SetActive(false);
+        }
+        else
+        {
+            // Inspector 未バインド → runtime 生成で fallback
+            CreateDiscardConfirmPanel();
+        }
+    }
 
     private void CreateDiscardConfirmPanel()
     {
