@@ -39,12 +39,22 @@ public class PlayerGuardCounterController : MonoBehaviour
     [Tooltip("反撃伤害の PDU 倍率。1PDU = 20 enemy damage（BALANCE_BASELINE.md Tier 1）。")]
     [SerializeField] private float counterDamagePdu = 3f;
 
+    [Header("Short Lunge パラメータ")]
+    [Tooltip("反撃時の前方短距離前压量（メートル）。デフォルト 0.75f。")]
+    [SerializeField] private float lungeDistance = 0.75f;
+    [Tooltip("前压の所要時間（秒）。デフォルト 0.10f。")]
+    [SerializeField] private float lungeDuration = 0.10f;
+    [Tooltip("前压後の攻击者との最小距離（メートル）。これより近づかない。デフォルト 1.2f。")]
+    [SerializeField] private float minDistanceToTargetAfterLunge = 1.2f;
+
     // ─── 運行時状態 ──────────────────────────────────────────────
 
     private bool             _isReady;
     private float            _remainingWindow;
     private Transform        _counterTarget;
     private HealthComponent  _playerHealth;   // 自身 HealthComponent（死亡チェック用）
+    private Rigidbody        _rb;
+    private Coroutine        _lungeCoroutine;
 
     // ─── Unity ライフサイクル ──────────────────────────────────────
 
@@ -59,6 +69,7 @@ public class PlayerGuardCounterController : MonoBehaviour
             Debug.LogWarning("[RadiantRiposte] PlayerCombatStats not found.");
 
         _playerHealth = GetComponent<HealthComponent>();
+        _rb = GetComponent<Rigidbody>();
     }
 
     private void Start()
@@ -230,6 +241,7 @@ public class PlayerGuardCounterController : MonoBehaviour
         targetHealth.TakeDamage(damage, transform, sourceLabel);
         Debug.Log($"[RadiantRiposte] 守護反击命中！ 目标: {targetHealth.name} | 伤害: {damage} ({counterDamagePdu} PDU) | 来源: {sourceLabel.GetDisplayText()}");
         SimpleScreenFeedback.TriggerCounterFeedback(transform, leftHandVfxAnchor); // 守護反击命中フィードバック
+        TryStartLunge(_counterTarget);
 
         ClearCounter();
         return true;
@@ -243,6 +255,52 @@ public class PlayerGuardCounterController : MonoBehaviour
         _counterTarget   = null;
         _remainingWindow = 0f;
     }
+    /// <summary>
+    /// Radiant Riposte 成功時に短距離前压 Coroutine を開始する。
+    /// _rb が null の場合や target が null の場合は前压せず、ダメージ/アニメ/VFX には影響しない。
+    /// </summary>
+    private void TryStartLunge(Transform target)
+    {
+        if (_rb == null || target == null) return;
+        if (_lungeCoroutine != null) StopCoroutine(_lungeCoroutine);
+        _lungeCoroutine = StartCoroutine(LungeCoroutine(target));
+    }
+
+    /// <summary>
+    /// 攻击者方向（XZ 水平面）に短距離前压する Coroutine。
+    /// MovePosition で移動するため PlayerController の linearVelocity と干渉しない。
+    /// 前压後 PlayerController の移動は通常通り再開される。
+    /// </summary>
+    private System.Collections.IEnumerator LungeCoroutine(Transform target)
+    {
+        Vector3 startPos = transform.position;
+        Vector3 toTarget = (target != null ? target.position : startPos + transform.forward) - startPos;
+        toTarget.y = 0f;
+        float dist = toTarget.magnitude;
+        if (dist < 0.01f) { _lungeCoroutine = null; yield break; }
+        Vector3 dir = toTarget / dist;
+
+        float actualLunge = lungeDistance;
+        float remainAfterLunge = dist - actualLunge;
+        if (remainAfterLunge < minDistanceToTargetAfterLunge)
+            actualLunge = dist - minDistanceToTargetAfterLunge;
+        if (actualLunge <= 0f) { _lungeCoroutine = null; yield break; }
+
+        Vector3 endPos = startPos + dir * actualLunge;
+
+        float elapsed = 0f;
+        while (elapsed < lungeDuration)
+        {
+            yield return new WaitForFixedUpdate();
+            elapsed += Time.fixedDeltaTime;
+            float t = Mathf.Clamp01(elapsed / lungeDuration);
+            Vector3 next = Vector3.Lerp(startPos, endPos, t);
+            next.y = transform.position.y;
+            _rb.MovePosition(next);
+        }
+        _lungeCoroutine = null;
+    }
+
 
     private void ResolveHikariSupport()
     {
