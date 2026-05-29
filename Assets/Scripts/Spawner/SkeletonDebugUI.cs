@@ -12,6 +12,9 @@ public class SkeletonDebugUI : MonoBehaviour
     [SerializeField] private ItemData testCoreItem;
 
     private bool    showUI                 = false;
+    public static bool IsDebugUIOpen      { get; private set; }
+    public static bool IsMouseOverDebugUI { get; private set; }
+
     private Vector2 scrollPosition;
     private Vector2 inventoryScrollPosition;
 
@@ -20,7 +23,50 @@ public class SkeletonDebugUI : MonoBehaviour
         var kb = Keyboard.current;
         if (kb != null && kb.f1Key.wasPressedThisFrame)
             showUI = !showUI;
+
+        IsDebugUIOpen      = showUI;
+        IsMouseOverDebugUI = showUI && IsMouseOverAnyDebugRect();
+
+        // Debug UI 開表且鼠标在调试区域内时，强制显示 Cursor
+        if (IsMouseOverDebugUI)
+            Cursor.visible = true;
     }
+
+    /// <summary>
+    /// 当前鼠标位置是否在任一调试窗口区域内。
+    /// 坐标系使用 GUI 坐标（y=0 在屏幕上步）。
+    /// </summary>
+    private bool IsMouseOverAnyDebugRect()
+    {
+        var mouse = Mouse.current;
+        if (mouse == null) return false;
+
+        // 屏幕坐标（y 从下）转换为 GUI 坐标（y 从上）
+        Vector2 sp     = mouse.position.ReadValue();
+        Vector2 guiPos = new Vector2(sp.x, Screen.height - sp.y);
+
+        float margin     = 20f;
+        float panelWidth = Mathf.Clamp(Screen.width * 0.32f, 320f, 420f);
+        float panelH     = Mathf.Max(300f, Screen.height - margin * 2f);
+
+        // 左パネル
+        if (new Rect(margin, margin, panelWidth, panelH).Contains(guiPos)) return true;
+
+        // 装備状態ウィンドウ + Hikari デバッグウィンドウ（左パネル右側）
+        const float gap      = 12f;
+        const float midWidth = 360f;  // 装備(310) と Hikari(360) の広い方
+        float midX = margin + panelWidth + gap;
+        if (new Rect(midX, margin, midWidth, panelH).Contains(guiPos)) return true;
+
+        // 右パネル（背包调试）
+        float invW = Mathf.Clamp(Screen.width * 0.28f, 320f, 460f);
+        float invX = Screen.width - invW - margin;
+        if (new Rect(invX, margin, invW, panelH).Contains(guiPos)) return true;
+
+        return false;
+    }
+
+
 
     void OnGUI()
     {

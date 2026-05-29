@@ -88,7 +88,10 @@ public class MouseInputGate : MonoBehaviour
 
     private static bool IsPointerOverUI(Vector2 screenPos)
     {
-        if (EventSystem.current == null) return false;
+        // IMGUI (OnGUI) は EventSystem に登録されないため、別途チェックする
+        if (SkeletonDebugUI.IsMouseOverDebugUI) return true;
+
+                if (EventSystem.current == null) return false;
 
         if (_pointerEventData == null || _pointerEventData.currentInputModule == null)
             _pointerEventData = new PointerEventData(EventSystem.current);
