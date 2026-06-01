@@ -173,8 +173,8 @@ public class PlayerSkillCanvasUI : MonoBehaviour
     private void UpdateGuardCounterDisplay()
     {
         if (_guardCounter == null) { ApplyConditionLockedUI(); return; }
-        if (_guardCounter.HasGuardCharge)
-            ApplyProcReadyUI(_guardCounter.CurrentGuardCharge, _guardCounter.MaxGuardCharge);
+        if (_guardCounter.HasCombatMomentum)
+            ApplyProcReadyUI(_guardCounter.CurrentCombatMomentum, _guardCounter.MaxCombatMomentum);
         else
             ApplyConditionLockedUI();
     }

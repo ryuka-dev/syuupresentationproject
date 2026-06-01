@@ -1,19 +1,18 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// 守護反击 / Radiant Riposte コントローラー。
 ///
-/// Guard Resonance 成功時に反撃機会を取得する。
+/// Guard Resonance 成功時に Combat Momentum（戦闘勢能）を取得する。
 /// 入力は PlayerSkillManager が分発し、TryUseCounter(skillData) で実行する。
 /// このスクリプト自身はキーボードを直接読まない。
 ///
 /// 授権ルール:
-///   Guard Resonance イベントの grantsGuardCounter == true の場合のみ Ready を更新。
-///   false の場合（Stone Guard のみで Guard Resonance）は Ready を変更しない。
+///   Guard Resonance イベントの grantsGuardCounter == true の場合のみ Combat Momentum を増加。
+///   false の場合（Stone Guard のみで Guard Resonance）は Combat Momentum を変更しない。
 ///
 /// 死亡ガード:
-///   HealthComponent.OnDied を購読して死亡時に ClearCounter する。
-///   CanUseCounter / TryUseCounter で IsDead を確認する。
+///   HealthComponent.OnDied を購読して死亡時に Combat Momentum をリセット。
 /// </summary>
 public class PlayerGuardCounterController : MonoBehaviour
 {
@@ -33,8 +32,8 @@ public class PlayerGuardCounterController : MonoBehaviour
     [SerializeField] private PlayerCombatFacingController combatFacing;
 
     [Header("反撃パラメータ")]
-    [Tooltip("守护充能の最大値。")]
-    [SerializeField] private int maxGuardCharge = 3;
+    [Tooltip("戦闘勢能（Combat Momentum）の最大値。")]
+    [SerializeField] private int maxCombatMomentum = 3;
 
     [Tooltip("反撃伤害の PDU 倍率。1PDU = 20 enemy damage（BALANCE_BASELINE.md Tier 1）。")]
     [SerializeField] private float counterDamagePdu = 3f;
@@ -46,15 +45,17 @@ public class PlayerGuardCounterController : MonoBehaviour
     [Tooltip("前压後の攻击者との最小距離（メートル）。これより近づかない。デフォルト 1.2f。")]
     [SerializeField] private float minDistanceToTargetAfterLunge = 1.2f;
 
-    // ─── 運行時状態 ──────────────────────────────
+    // ─── 運行時状態 ──────────────────────────────────────────────
 
-    private int              _currentGuardCharge;  // 現在の Guard Charge 点数
-    private Transform        _counterTarget;        // 最近の Guard Resonance の攻撃者
-    private HealthComponent  _playerHealth;         // 自身 HealthComponent（死亡チェック用）
-    private Rigidbody        _rb;
-    private Coroutine        _lungeCoroutine;
+    private int             _currentCombatMomentum; // 現在の Combat Momentum 点数
+    private Transform       _counterTarget;          // 最近の Guard Resonance の攻撃者
+    private HealthComponent _playerHealth;           // 自身 HealthComponent（死亡チェック用）
+    private Rigidbody       _rb;
+    private Coroutine       _lungeCoroutine;
 
     private bool IsPlayerAlive => _playerHealth == null || !_playerHealth.IsDead;
+
+    // ─── Unity ライフサイクル ──────────────────────────────────────
 
     private void Awake()
     {
@@ -72,7 +73,6 @@ public class PlayerGuardCounterController : MonoBehaviour
 
     private void Start()
     {
-        // 左手ボーン自動探索（leftHandVfxAnchor が未設定の場合）
         if (leftHandVfxAnchor == null)
         {
             var wristL = transform.Find("Wrist_L");
@@ -94,71 +94,62 @@ public class PlayerGuardCounterController : MonoBehaviour
 
     // ─── Guard Resonance イベントハンドラ ─────────────────────────
 
-    /// <summary>
-    /// HikariSupportController.OnGuardResonanceTriggered(attacker, grantsGuardCounter) のハンドラ。
-    /// grantsGuardCounter == true の場合のみ Ready を更新・刷新する。
-    /// false（Stone Guard のみ）の場合は既存の Ready 状態を変えない。
-    /// </summary>
     private void HandleGuardResonanceTriggered(Transform attacker, bool grantsGuardCounter)
     {
         if (!grantsGuardCounter)
         {
-            Debug.Log("[GuardCharge] Guard Resonance 触发（grantsGuardCounter=false）— Guard Charge は変更しない。");
+            Debug.Log("[CombatMomentum] Guard Resonance 触发（grantsGuardCounter=false）— Combat Momentum は変更しない。");
             return;
         }
-
-        AddGuardCharge(1);
-        _counterTarget = attacker; // 最新の攻撃者を保持
+        AddCombatMomentum(1);
+        _counterTarget = attacker;
     }
 
     // ─── 死亡ハンドラ ────────────────────────────────────────────
 
     private void HandlePlayerDied()
     {
-        if (_currentGuardCharge <= 0) return;
-        Debug.Log("[GuardCharge] 玩家死亡 — Guard Charge 清除。");
+        if (_currentCombatMomentum <= 0) return;
+        Debug.Log("[CombatMomentum] 玩家死亡 — Combat Momentum 清除。");
         ClearCounter();
     }
 
+    // ─── Combat Momentum 公開 API ─────────────────────────────────
 
-    // ─── 公開状態プロパティ ───────────────────────────────────────
+    /// <summary>戦闘勢能（Combat Momentum）現在点数。</summary>
+    public int CurrentCombatMomentum => _currentCombatMomentum;
 
-    // ─── Guard Charge 公開 API ───────────────────────────────────────────
+    /// <summary>戦闘勢能（Combat Momentum）最大値。</summary>
+    public int MaxCombatMomentum => maxCombatMomentum;
 
-    /// <summary>守护充能现在点数。</summary>
-    public int CurrentGuardCharge => _currentGuardCharge;
+    /// <summary>1点以上の Combat Momentum を持っているか。</summary>
+    public bool HasCombatMomentum => _currentCombatMomentum > 0;
 
-    /// <summary>守护充能最大値。</summary>
-    public int MaxGuardCharge => maxGuardCharge;
-
-    /// <summary>1点以上の Guard Charge を持っているか。</summary>
-    public bool HasGuardCharge => _currentGuardCharge > 0;
-
-    /// <summary>指定点数だけ Guard Charge を増加する。最大値を超えない。</summary>
-    public void AddGuardCharge(int amount)
+    /// <summary>指定点数だけ Combat Momentum を増加する。最大値を超えない。</summary>
+    public void AddCombatMomentum(int amount)
     {
-        int prev = _currentGuardCharge;
-        _currentGuardCharge = Mathf.Min(_currentGuardCharge + amount, maxGuardCharge);
-        if (_currentGuardCharge > prev)
-            Debug.Log($"[GuardCharge] +{_currentGuardCharge - prev}: {_currentGuardCharge}/{maxGuardCharge}");
+        int prev = _currentCombatMomentum;
+        _currentCombatMomentum = Mathf.Min(_currentCombatMomentum + amount, maxCombatMomentum);
+        if (_currentCombatMomentum > prev)
+            Debug.Log($"[CombatMomentum] +{_currentCombatMomentum - prev}: {_currentCombatMomentum}/{maxCombatMomentum}");
         else
-            Debug.Log($"[GuardCharge] 充能已满: {_currentGuardCharge}/{maxGuardCharge}");
+            Debug.Log($"[CombatMomentum] 已满: {_currentCombatMomentum}/{maxCombatMomentum}");
     }
 
-    /// <summary>指定点数だけ Guard Charge を消費する。足りなければ false を返す。</summary>
-    public bool TrySpendGuardCharge(int amount)
+    /// <summary>指定点数だけ Combat Momentum を消費する。足りなければ false を返す。</summary>
+    public bool TrySpendCombatMomentum(int amount)
     {
-        if (_currentGuardCharge < amount) return false;
-        _currentGuardCharge -= amount;
-        Debug.Log($"[GuardCharge] 消費 -{amount}: {_currentGuardCharge}/{maxGuardCharge}");
+        if (_currentCombatMomentum < amount) return false;
+        _currentCombatMomentum -= amount;
+        Debug.Log($"[CombatMomentum] 消耗 -{amount}: {_currentCombatMomentum}/{maxCombatMomentum}");
         return true;
     }
 
-    // 後方互準プロパティ（技能欄 UI 互準）
-    public bool IsCounterReady => HasGuardCharge;
-    public bool IsReady => HasGuardCharge;
-    public float CounterRemainingTime => 0f; // 資源制に移行したためタイマーなし
-    public float RemainingWindow => 0f;
+    // ─── 後方互換プロパティ（技能欄 UI 互換） ─────────────────────
+    public bool  IsCounterReady       => HasCombatMomentum;
+    public bool  IsReady              => HasCombatMomentum;
+    public float CounterRemainingTime => 0f;
+    public float RemainingWindow      => 0f;
     public float CounterWindowSeconds => 0f;
 
     /// <summary>現在ターゲットの有効性チェック。</summary>
@@ -167,37 +158,33 @@ public class PlayerGuardCounterController : MonoBehaviour
         get
         {
             if (!IsPlayerAlive) return false;
-            if (_currentGuardCharge <= 0 || _counterTarget == null) return false;
+            if (_currentCombatMomentum <= 0 || _counterTarget == null) return false;
             var h = _counterTarget.GetComponent<HealthComponent>()
                  ?? _counterTarget.GetComponentInParent<HealthComponent>();
             return h != null && !h.IsDead;
         }
     }
 
+    // ─── 公開実行メソッド ─────────────────────────────────────────
 
-    /// <summary>
-    /// PlayerSkillManager から呼ばれる反撃実行メソッド。
-    /// 伤害来源名は skillData.SkillName / LocalizationKey から生成する。
-    /// CanUseCounter が false なら何もせず false を返す。
-    /// </summary>
     public bool TryUseCounter(PlayerSkillData skillData)
     {
         if (!IsPlayerAlive)
         {
-            Debug.Log("[GuardCharge] 玩家已死亡 — 反撃不可。");
+            Debug.Log("[CombatMomentum] 玩家已死亡 — 反撃不可。");
             ClearCounter();
             return false;
         }
 
-        if (_currentGuardCharge <= 0)
+        if (_currentCombatMomentum <= 0)
         {
-            Debug.Log("[GuardCharge] Guard Charge が 0 のため反撃不可。");
+            Debug.Log("[CombatMomentum] 为 0，无法释放 Radiant Riposte。");
             return false;
         }
 
         if (_counterTarget == null)
         {
-            Debug.Log("[GuardCharge] 攻撃者が null のため反撃不可。Guard Charge は保持。");
+            Debug.Log("[CombatMomentum] 攻击者为 null，无法释放。Combat Momentum 保持。");
             return false;
         }
 
@@ -205,7 +192,7 @@ public class PlayerGuardCounterController : MonoBehaviour
                   ?? _counterTarget.GetComponentInParent<HealthComponent>();
         if (hCheck == null || hCheck.IsDead)
         {
-            Debug.Log("[GuardCharge] 攻撃者死亡 / HealthComponent なし。Guard Charge は保持。");
+            Debug.Log("[CombatMomentum] 攻击者死亡，Combat Momentum 保持。");
             return false;
         }
 
@@ -217,14 +204,13 @@ public class PlayerGuardCounterController : MonoBehaviour
                 float dist = Vector3.Distance(transform.position, _counterTarget.position);
                 if (dist > maxRange)
                 {
-                    Debug.Log($"[GuardCharge] 攻撃者が射程外 ({dist:F1}m > {maxRange}m) — Guard Charge は保持。");
+                    Debug.Log($"[CombatMomentum] 攻击者射程外 ({dist:F1}m > {maxRange}m) — Combat Momentum 保持。");
                     return false;
                 }
             }
         }
 
-        // ─── 成功条件を満たした: 1 点消費して反撃実行 ───
-        if (!TrySpendGuardCharge(1)) return false; // 二重ガード（通常は到達しない）
+        if (!TrySpendCombatMomentum(1)) return false;
 
         var targetHealth = _counterTarget.GetComponent<HealthComponent>()
                         ?? _counterTarget.GetComponentInParent<HealthComponent>();
@@ -242,7 +228,7 @@ public class PlayerGuardCounterController : MonoBehaviour
         combatAnimation?.PlayRadiantRiposte();
 
         targetHealth.TakeDamage(damage, transform, sourceLabel);
-        Debug.Log($"[GuardCharge] 守護反击命中！ 目标: {targetHealth.name} | 伤害: {damage} ({counterDamagePdu} PDU) | 剩余 Charge: {_currentGuardCharge}/{maxGuardCharge}");
+        Debug.Log($"[CombatMomentum] 守護反击命中！ 目标: {targetHealth.name} | 伤害: {damage} ({counterDamagePdu} PDU) | 剩余势能: {_currentCombatMomentum}/{maxCombatMomentum}");
         SimpleScreenFeedback.TriggerCounterFeedback(transform, leftHandVfxAnchor);
         TryStartLunge(_counterTarget);
 
@@ -253,13 +239,10 @@ public class PlayerGuardCounterController : MonoBehaviour
 
     private void ClearCounter()
     {
-        _currentGuardCharge = 0;
-        _counterTarget      = null;
+        _currentCombatMomentum = 0;
+        _counterTarget         = null;
     }
-    /// <summary>
-    /// Radiant Riposte 成功時に短距離前压 Coroutine を開始する。
-    /// _rb が null の場合や target が null の場合は前压せず、ダメージ/アニメ/VFX には影響しない。
-    /// </summary>
+
     private void TryStartLunge(Transform target)
     {
         if (_rb == null || target == null) return;
@@ -267,11 +250,6 @@ public class PlayerGuardCounterController : MonoBehaviour
         _lungeCoroutine = StartCoroutine(LungeCoroutine(target));
     }
 
-    /// <summary>
-    /// 攻击者方向（XZ 水平面）に短距離前压する Coroutine。
-    /// MovePosition で移動するため PlayerController の linearVelocity と干渉しない。
-    /// 前压後 PlayerController の移動は通常通り再開される。
-    /// </summary>
     private System.Collections.IEnumerator LungeCoroutine(Transform target)
     {
         Vector3 startPos = transform.position;
@@ -301,7 +279,6 @@ public class PlayerGuardCounterController : MonoBehaviour
         }
         _lungeCoroutine = null;
     }
-
 
     private void ResolveHikariSupport()
     {
@@ -336,7 +313,6 @@ public class PlayerGuardCounterController : MonoBehaviour
             _playerHealth.OnDied -= HandlePlayerDied;
     }
 
-    /// <summary>Transform ツリーを再帰的に探索する最小ヘルパー。</summary>
     private static Transform FindDeepChild(Transform parent, string name)
     {
         foreach (Transform child in parent)
