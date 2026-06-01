@@ -19,12 +19,15 @@ public class PlayerStatusEffectController : MonoBehaviour
     [Header("调试")]
     [SerializeField] private bool logDamageModification = true;
 
+    private PlayerBuffController _buffController;
+
 
     // ─── Unity 生命周期 ───────────────────────────────────────────
 
     private void Awake()
     {
         ResolveSkillManager();
+        _buffController = GetComponent<PlayerBuffController>();
     }
 
     // ─── 公开方法 ─────────────────────────────────────────────────
@@ -143,7 +146,9 @@ public class PlayerStatusEffectController : MonoBehaviour
     private float _nextSkillDamageMultiplier = 1f;
 
     /// <summary>現在 Next Skill Damage Boost が設定されているか。</summary>
-    public bool HasNextSkillDamageBoost => _hasNextSkillDamageBoost;
+    public bool HasNextSkillDamageBoost => (_buffController != null)
+        ? _buffController.HasBuff(PlayerBuffController.NEXT_DAMAGE_BOOST_ID)
+        : _hasNextSkillDamageBoost;
 
     /// <summary>
     /// 次のプレイヤー技能ダメージ強化を設定する。
@@ -158,18 +163,63 @@ public class PlayerStatusEffectController : MonoBehaviour
     }
 
     /// <summary>
+    /// Buff 情報付きオーバーロード。PlayerBuffController がある場合はそちらで管理する。
+    /// </summary>
+    public void SetNextSkillDamageBoost(float multiplier, PlayerSkillData sourceSkill, float duration)
+    {
+        float effectiveDuration = (duration > 0f) ? duration : 10f;
+        Sprite icon     = sourceSkill?.Icon;
+        string name_str = sourceSkill?.SkillName ?? "Next Damage Boost";
+
+        if (_buffController != null)
+        {
+            _buffController.AddOrOverwrite(
+                PlayerBuffController.NEXT_DAMAGE_BOOST_ID,
+                name_str,
+                icon,
+                effectiveDuration,
+                Mathf.Max(1f, multiplier));
+            Debug.Log($"[NextDamageBoost] next player skill damage x{Mathf.Max(1f, multiplier):F2} (via BuffController, {effectiveDuration:F0}s)");
+            // fallback 内部フラグも更新（ApplyAndConsume fallback 用）
+            _nextSkillDamageMultiplier = Mathf.Max(1f, multiplier);
+            _hasNextSkillDamageBoost   = true;
+        }
+        else
+        {
+            // PlayerBuffController がない場合は元の単一引数メソッドに委譲
+            SetNextSkillDamageBoost(multiplier);
+        }
+    }
+
+    /// <summary>
     /// 次のプレイヤー技能ダメージ強化を適用して消費する。
     /// boost がない場合は damage をそのまま返す。
     /// </summary>
     public float ApplyAndConsumeNextSkillDamageBoost(float damage, string sourceLabel = null)
     {
+        // BuffController 経由消費
+        if (_buffController != null)
+        {
+            var buff = _buffController.GetBuff(PlayerBuffController.NEXT_DAMAGE_BOOST_ID);
+            if (buff == null) return damage;
+            float mult   = buff.Multiplier;
+            float boosted = damage * mult;
+            _buffController.ConsumeBuff(PlayerBuffController.NEXT_DAMAGE_BOOST_ID);
+            _hasNextSkillDamageBoost   = false;
+            _nextSkillDamageMultiplier = 1f;
+            string label = string.IsNullOrEmpty(sourceLabel) ? "skill" : sourceLabel;
+            Debug.Log($"[NextDamageBoost] consumed by {label}: {damage:F1} -> {boosted:F1} (x{mult:F2})");
+            return boosted;
+        }
+
+        // fallback: BuffController なし
         if (!_hasNextSkillDamageBoost) return damage;
-        float boosted = damage * _nextSkillDamageMultiplier;
+        float boosted2 = damage * _nextSkillDamageMultiplier;
         _hasNextSkillDamageBoost   = false;
         _nextSkillDamageMultiplier = 1f;
-        string label = string.IsNullOrEmpty(sourceLabel) ? "skill" : sourceLabel;
-        Debug.Log($"[NextDamageBoost] consumed by {label}: {damage:F1} -> {boosted:F1}");
-        return boosted;
+        string label2 = string.IsNullOrEmpty(sourceLabel) ? "skill" : sourceLabel;
+        Debug.Log($"[NextDamageBoost] consumed by {label2}: {damage:F1} -> {boosted2:F1}");
+        return boosted2;
     }
 
     private void ResolveSkillManager()

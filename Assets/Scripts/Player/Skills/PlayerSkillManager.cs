@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Collections.Generic;
@@ -368,7 +368,11 @@ private void HandleSkillInput()
             return;
         }
 
-        _statusEffectController.SetNextSkillDamageBoost(state.SkillData.NextSkillDamageMultiplier);
+        float buffDuration = state.SkillData.Duration > 0f ? state.SkillData.Duration : 10f;
+        _statusEffectController.SetNextSkillDamageBoost(
+            state.SkillData.NextSkillDamageMultiplier,
+            state.SkillData,
+            buffDuration);
         state.TryActivate();
         OnSkillActivated?.Invoke(state);
         if (logSkillActivation)

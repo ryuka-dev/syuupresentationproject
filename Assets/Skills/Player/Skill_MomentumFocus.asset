@@ -20,7 +20,7 @@ MonoBehaviour:
   inputSlot: 6
   keyLabel: 6
   cooldown: 3
-  duration: 0
+  duration: 10
   effectType: 7
   damageTakenMultiplier: 1
   attackPowerMultiplier: 1
