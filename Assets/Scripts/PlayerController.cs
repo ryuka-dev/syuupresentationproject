@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(Rigidbody))]
@@ -19,7 +19,7 @@ public class PlayerController : MonoBehaviour
 
     [Header("旋转")]
     [SerializeField] private float rotationSpeed = 12f;
-    private PlayerCombatFacingController _facingCtrl; // 技能朝向ロック用
+    private PlayerCombatFacingController _facingCtrl;
 
     [Header("摄像机参考")]
     public Transform cameraTransform;
@@ -43,9 +43,7 @@ public class PlayerController : MonoBehaviour
     private bool    _autoForwardCameraReturnActive;
     private Vector3 _autoForwardLockedForward;
     private bool    _mouseGateWarned;
-    // R 開启時に既に双键が押されていた場合、その双键が松开されるまで打断を抑制するフラグ
     private bool    _suppressBothMouseBreakUntilReleased;
-    // R 開启時に既に方向入力があった場合、その入力が中立に戻るまで打断を抑制するフラグ
     private bool    _suppressDirectionalBreakUntilReleased;
 
     // ── Rigidbody / Animator ──────────────────────────────────────
@@ -59,12 +57,19 @@ public class PlayerController : MonoBehaviour
     private int  _groundedFrameCount;
     private const int GroundedFrameThreshold = 2;
 
+    // ── 死亡ガード ────────────────────────────────────────────────
+    private HealthComponent _health;
+    private bool            _deathGuardLogged;
+
+    private bool IsPlayerDead() => _health != null && _health.IsDead;
+
     // ─────────────────────────────────────────────────────────────
     void Awake()
     {
-        _facingCtrl = GetComponent<PlayerCombatFacingController>();
-        rb   = GetComponent<Rigidbody>();
-        anim = GetComponent<Animator>();
+        _facingCtrl   = GetComponent<PlayerCombatFacingController>();
+        rb            = GetComponent<Rigidbody>();
+        anim          = GetComponent<Animator>();
+        _health       = GetComponent<HealthComponent>();
         rb.freezeRotation = true;
         rb.isKinematic    = false;
         if (anim != null) anim.applyRootMotion = false;
@@ -84,6 +89,18 @@ public class PlayerController : MonoBehaviour
     // ─────────────────────────────────────────────────────────────
     void Update()
     {
+        // ■ 死亡ガード：死亡中は Update 全処理をスキップ
+        if (IsPlayerDead())
+        {
+            if (!_deathGuardLogged)
+            {
+                Debug.Log("[DeathDebug] PlayerController dead guard active, movement blocked");
+                _deathGuardLogged = true;
+            }
+            return;
+        }
+        _deathGuardLogged = false;
+
         // ── 着地検出 ───────────────────────────────────────────────
         bool rawGrounded = Physics.Raycast(
             transform.position + Vector3.up * 0.2f,
@@ -98,7 +115,6 @@ public class PlayerController : MonoBehaviour
         var keyboard = Keyboard.current;
         if (keyboard == null) return;
 
-        // ── 方向入力の有無（Update 先頭で一度だけ計算） ───────────
         bool hasDirectionalInput = HasManualDirectionalInput(keyboard);
 
         // ── IsJumping 1フレームクリア ──────────────────────────────
@@ -114,7 +130,7 @@ public class PlayerController : MonoBehaviour
             if (anim != null) anim.SetBool("IsJumping", false);
         }
 
-        // ── ジャンプ（Space は方向入力ではないため自动前進を打断しない） ─
+        // ── ジャンプ ───────────────────────────────────────────────
         if (keyboard.spaceKey.wasPressedThisFrame && isGrounded && !_jumpConsumed)
         {
             _jumpConsumed            = true;
@@ -136,16 +152,13 @@ public class PlayerController : MonoBehaviour
             autoForwardActive = !autoForwardActive;
             if (autoForwardActive)
             {
-                // 自动前进 ON：双键が既に押されていたらその打断を次回松开まで抑制
                 if (mouseInputGate != null && mouseInputGate.BothWorldButtonsHeld)
                     _suppressBothMouseBreakUntilReleased = true;
-                // 自动前进 ON：方向入力が既にあったらその打断を中立に戻るまで抑制
                 if (hasDirectionalInput)
                     _suppressDirectionalBreakUntilReleased = true;
             }
             else
             {
-                // 自动前进 OFF 時：全 suppress と自由镜头 / 回正を一斉クリア
                 _autoForwardFreeLookActive             = false;
                 _autoForwardCameraReturnActive         = false;
                 _suppressBothMouseBreakUntilReleased   = false;
@@ -153,21 +166,12 @@ public class PlayerController : MonoBehaviour
             }
         }
 
-        // ── suppress フラグ更新 ────────────────────────────────────
-        // 方向入力が中立に戻ったら directional suppress を解除
         if (!hasDirectionalInput)
             _suppressDirectionalBreakUntilReleased = false;
-        // 双键が松开されたら mouse suppress を解除
         if (mouseInputGate == null || !mouseInputGate.BothWorldButtonsHeld)
             _suppressBothMouseBreakUntilReleased = false;
 
-        // ── 方向入力で自动前進をキャンセル ──────────────────────────
-        // WASD いずれかが押されているとき、suppress でなければ打断する。
-        // FixedUpdate の h / v は独立して読まれるため入力は吞まない。
-        // Space / Shift / マウスは HasManualDirectionalInput に含まれないため打断しない。
-        if (autoForwardActive
-            && hasDirectionalInput
-            && !_suppressDirectionalBreakUntilReleased)
+        if (autoForwardActive && hasDirectionalInput && !_suppressDirectionalBreakUntilReleased)
         {
             autoForwardActive                      = false;
             _autoForwardFreeLookActive             = false;
@@ -176,8 +180,6 @@ public class PlayerController : MonoBehaviour
             _suppressDirectionalBreakUntilReleased = false;
         }
 
-        // ── 左右键双键で自动前進をキャンセル ─────────────────────
-        // BothWorldButtonsHeld は UI 起点を除外済み。当フレームの双键前進は FixedUpdate で正常に読まれる。
         if (autoForwardActive
             && mouseInputGate != null
             && mouseInputGate.BothWorldButtonsHeld
@@ -190,21 +192,18 @@ public class PlayerController : MonoBehaviour
             _suppressDirectionalBreakUntilReleased = false;
         }
 
-        // ── 自由镜头 状態更新（mouseInputGate がある場合のみ） ───────
+        // ── 自由镜头 状態更新 ──────────────────────────────────────
         if (mouseInputGate != null && autoForwardActive)
         {
             bool leftHeld  = mouseInputGate.LeftWorldHeld;
             bool rightHeld = mouseInputGate.RightWorldHeld;
 
-            // 右键優先：FreeLook 中 or CameraReturn 中どちらでも右键が来たら locked forward を解放
             if (rightHeld && (_autoForwardFreeLookActive || _autoForwardCameraReturnActive))
             {
                 _autoForwardFreeLookActive     = false;
                 _autoForwardCameraReturnActive = false;
-                // autoForwardActive はそのまま維持（右键単独は打断しない）
             }
 
-            // 左键のみ押されているとき（右键なし）→ 自由镜头モード
             if (leftHeld && !rightHeld)
             {
                 if (!_autoForwardFreeLookActive)
@@ -218,7 +217,6 @@ public class PlayerController : MonoBehaviour
                 }
             }
 
-            // 左键が離れた → 自由镜头 終了、回正開始
             if (!leftHeld && _autoForwardFreeLookActive)
             {
                 _autoForwardFreeLookActive     = false;
@@ -230,6 +228,18 @@ public class PlayerController : MonoBehaviour
     // ─────────────────────────────────────────────────────────────
     void FixedUpdate()
     {
+        // ■ 死亡ガード：死亡中は移動を完全停止
+        if (IsPlayerDead())
+        {
+            rb.linearVelocity = new Vector3(0f, rb.linearVelocity.y, 0f);
+            if (anim != null)
+            {
+                anim.SetFloat("Speed",      0f, 0.05f, Time.fixedDeltaTime);
+                anim.SetBool ("IsSprinting", false);
+            }
+            return;
+        }
+
         var keyboard = Keyboard.current;
         if (keyboard == null) return;
 
@@ -256,7 +266,6 @@ public class PlayerController : MonoBehaviour
         bool  isSprinting  = hasMoveInput && keyboard.leftShiftKey.isPressed;
         float currentSpeed = isSprinting ? sprintSpeed : moveSpeed;
 
-        // ── 移動方向の決定 ────────────────────────────────────────
         Vector3 dir = Vector3.zero;
         if (hasMoveInput)
         {
@@ -292,14 +301,11 @@ public class PlayerController : MonoBehaviour
         rb.linearVelocity = new Vector3(dir.x * currentSpeed, rb.linearVelocity.y, dir.z * currentSpeed);
         ApplyJumpGravityTuning();
 
-        // ── 技能朝向ロック中はロック朝向を強制保持（移動入力による覆盖を防ぐ）────────
         if (_facingCtrl != null && _facingCtrl.IsFacingLocked)
         {
             transform.rotation = _facingCtrl.LockedFacingRotation;
-            // 速度は維持（移動速度はロックしない）
         }
-        else
-        if (dir.sqrMagnitude > 0.001f)
+        else if (dir.sqrMagnitude > 0.001f)
         {
             Quaternion targetRot = Quaternion.LookRotation(dir, Vector3.up);
             transform.rotation   = Quaternion.Slerp(transform.rotation, targetRot, rotationSpeed * Time.fixedDeltaTime);
@@ -315,6 +321,34 @@ public class PlayerController : MonoBehaviour
     }
 
     // ─────────────────────────────────────────────────────────────
+    /// <summary>
+    /// 死亡時に PlayerDeathHandler から呼ばれる。
+    /// 自動前進・入力フラグをクリアし、Rigidbody と Animator を停止する。
+    /// </summary>
+    public void StopMovementForDeath()
+    {
+        Debug.Log("[DeathDebug] StopMovementForDeath called");
+        autoForwardActive                      = false;
+        _autoForwardFreeLookActive             = false;
+        _autoForwardCameraReturnActive         = false;
+        _suppressBothMouseBreakUntilReleased   = false;
+        _suppressDirectionalBreakUntilReleased = false;
+        _jumpConsumed                          = true;
+
+        if (rb != null)
+        {
+            rb.linearVelocity  = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+        }
+        if (anim != null)
+        {
+            anim.SetFloat("Speed",      0f);
+            anim.SetFloat("Horizontal", 0f);
+            anim.SetBool ("IsSprinting", false);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
     /// <summary>RPGCameraController から呼ばれる：カメラ回正完了通知</summary>
     public void NotifyCameraReturnComplete()
     {
@@ -322,11 +356,6 @@ public class PlayerController : MonoBehaviour
     }
 
     // ─────────────────────────────────────────────────────────────
-    /// <summary>
-    /// キーボードのプレイヤー移動方向入力が存在するかを返す。
-    /// Space（ジャンプ）/ Shift（ダッシュ）/ マウスは含まない。
-    /// 将来のゲームパッド対応時はここにスティック入力を追加する。
-    /// </summary>
     private bool HasManualDirectionalInput(Keyboard keyboard)
     {
         if (keyboard == null) return false;
