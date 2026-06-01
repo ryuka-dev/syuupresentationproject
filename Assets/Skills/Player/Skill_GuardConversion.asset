@@ -34,7 +34,7 @@ MonoBehaviour:
   combatMomentumCost: 1
   nextSkillDamageMultiplier: 1
   nextIncomingDamageTakenMultiplier: 1
-  shieldAmount: 15
+  shieldAmount: 33
   combatMomentumRefundOnShieldBreak: 1
   category: 0
   passiveTriggerType: 0

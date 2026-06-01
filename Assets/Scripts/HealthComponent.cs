@@ -17,6 +17,11 @@ public class HealthComponent : MonoBehaviour
 
 
     public bool IsDead => currentHealth <= 0f;
+    /// <summary>現在 HP（UI 参照用）。</summary>
+    public float CurrentHealth => currentHealth;
+    /// <summary>最大 HP（UI 参照用）。</summary>
+    public float MaxHealth => maxHealth;
+
 
     /// <summary>最近の Heal() で適用された被治療倍率。1f は強化なし。</summary>
     public float LastHealingReceivedMultiplier { get; private set; } = 1f;
