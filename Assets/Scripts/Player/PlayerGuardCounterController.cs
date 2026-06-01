@@ -2,22 +2,10 @@
 
 /// <summary>
 /// 守護反击 / Radiant Riposte コントローラー。
-///
 /// Guard Resonance 成功時に Combat Momentum（戦闘勢能）を取得する。
-/// 入力は PlayerSkillManager が分発し、TryUseCounter(skillData) で実行する。
-/// このスクリプト自身はキーボードを直接読まない。
-///
-/// 授権ルール:
-///   Guard Resonance イベントの grantsGuardCounter == true の場合のみ Combat Momentum を増加。
-///   false の場合（Stone Guard のみで Guard Resonance）は Combat Momentum を変更しない。
-///
-/// 死亡ガード:
-///   HealthComponent.OnDied を購読して死亡時に Combat Momentum をリセット。
 /// </summary>
 public class PlayerGuardCounterController : MonoBehaviour
 {
-    // ─── Inspector フィールド ─────────────────────────────────────
-
     [Header("Hikari 参照（空の場合 Start() で自動検索）")]
     [SerializeField] private HikariSupportController hikariSupport;
 
@@ -34,10 +22,8 @@ public class PlayerGuardCounterController : MonoBehaviour
     [Header("反撃パラメータ")]
     [Tooltip("戦闘勢能（Combat Momentum）の最大値。")]
     [SerializeField] private int maxCombatMomentum = 3;
-
     [Tooltip("反撃伤害の PDU 倍率。1PDU = 20 enemy damage（BALANCE_BASELINE.md Tier 1）。")]
     [SerializeField] private float counterDamagePdu = 3f;
-
     [Tooltip("反撃時の前方短距離前压量（メートル）。デフォルト 0.75f。")]
     [SerializeField] private float lungeDistance = 0.75f;
     [Tooltip("前压の所要時間（秒）。デフォルト 0.10f。")]
@@ -45,13 +31,22 @@ public class PlayerGuardCounterController : MonoBehaviour
     [Tooltip("前压後の攻击者との最小距離（メートル）。これより近づかない。デフォルト 1.2f。")]
     [SerializeField] private float minDistanceToTargetAfterLunge = 1.2f;
 
+    [Header("リポステ被動 — 冷却返还")]
+    [Tooltip("有効時、Radiant Riposte 成功後に指定技能の冷却を少なくする。")]
+    [SerializeField] private bool enableRiposteCooldownRefundPassive = true;
+    [Tooltip("減少する冷却秒数。")]
+    [SerializeField] private float riposteCooldownRefundSeconds = 1f;
+    [Tooltip("冷却を少なくする対象技能（PlayerSkillData）。未割り当て時はスキップ。")]
+    [SerializeField] private PlayerSkillData riposteCooldownRefundTargetSkill;
+
     // ─── 運行時状態 ──────────────────────────────────────────────
 
-    private int             _currentCombatMomentum; // 現在の Combat Momentum 点数
-    private Transform       _counterTarget;          // 最近の Guard Resonance の攻撃者
-    private HealthComponent _playerHealth;           // 自身 HealthComponent（死亡チェック用）
-    private Rigidbody       _rb;
-    private Coroutine       _lungeCoroutine;
+    private int              _currentCombatMomentum;
+    private Transform        _counterTarget;
+    private HealthComponent  _playerHealth;
+    private Rigidbody        _rb;
+    private Coroutine        _lungeCoroutine;
+    private PlayerSkillManager _skillManager;
 
     private bool IsPlayerAlive => _playerHealth == null || !_playerHealth.IsDead;
 
@@ -62,13 +57,12 @@ public class PlayerGuardCounterController : MonoBehaviour
         if (combatAnimation == null)
             combatAnimation = GetComponent<PlayerCombatAnimationController>() ?? GetComponentInChildren<PlayerCombatAnimationController>();
         if (combatFacing == null) combatFacing = GetComponent<PlayerCombatFacingController>();
-        if (combatStats == null)
-            combatStats = GetComponent<PlayerCombatStats>();
-        if (combatStats == null)
-            Debug.LogWarning("[RadiantRiposte] PlayerCombatStats not found.");
+        if (combatStats == null) combatStats = GetComponent<PlayerCombatStats>();
+        if (combatStats == null) Debug.LogWarning("[RadiantRiposte] PlayerCombatStats not found.");
 
-        _playerHealth = GetComponent<HealthComponent>();
-        _rb = GetComponent<Rigidbody>();
+        _playerHealth  = GetComponent<HealthComponent>();
+        _rb            = GetComponent<Rigidbody>();
+        _skillManager  = GetComponent<PlayerSkillManager>();
     }
 
     private void Start()
@@ -105,8 +99,6 @@ public class PlayerGuardCounterController : MonoBehaviour
         _counterTarget = attacker;
     }
 
-    // ─── 死亡ハンドラ ────────────────────────────────────────────
-
     private void HandlePlayerDied()
     {
         if (_currentCombatMomentum <= 0) return;
@@ -116,16 +108,10 @@ public class PlayerGuardCounterController : MonoBehaviour
 
     // ─── Combat Momentum 公開 API ─────────────────────────────────
 
-    /// <summary>戦闘勢能（Combat Momentum）現在点数。</summary>
-    public int CurrentCombatMomentum => _currentCombatMomentum;
+    public int  CurrentCombatMomentum => _currentCombatMomentum;
+    public int  MaxCombatMomentum     => maxCombatMomentum;
+    public bool HasCombatMomentum     => _currentCombatMomentum > 0;
 
-    /// <summary>戦闘勢能（Combat Momentum）最大値。</summary>
-    public int MaxCombatMomentum => maxCombatMomentum;
-
-    /// <summary>1点以上の Combat Momentum を持っているか。</summary>
-    public bool HasCombatMomentum => _currentCombatMomentum > 0;
-
-    /// <summary>指定点数だけ Combat Momentum を増加する。最大値を超えない。</summary>
     public void AddCombatMomentum(int amount)
     {
         int prev = _currentCombatMomentum;
@@ -136,7 +122,6 @@ public class PlayerGuardCounterController : MonoBehaviour
             Debug.Log($"[CombatMomentum] 已满: {_currentCombatMomentum}/{maxCombatMomentum}");
     }
 
-    /// <summary>指定点数だけ Combat Momentum を消費する。足りなければ false を返す。</summary>
     public bool TrySpendCombatMomentum(int amount)
     {
         if (_currentCombatMomentum < amount) return false;
@@ -145,14 +130,13 @@ public class PlayerGuardCounterController : MonoBehaviour
         return true;
     }
 
-    // ─── 後方互換プロパティ（技能欄 UI 互換） ─────────────────────
+    // ─── 後方互換プロパティ ────────────────────────────────────────
     public bool  IsCounterReady       => HasCombatMomentum;
     public bool  IsReady              => HasCombatMomentum;
     public float CounterRemainingTime => 0f;
     public float RemainingWindow      => 0f;
     public float CounterWindowSeconds => 0f;
 
-    /// <summary>現在ターゲットの有効性チェック。</summary>
     public bool CanUseCounter
     {
         get
@@ -231,11 +215,36 @@ public class PlayerGuardCounterController : MonoBehaviour
         Debug.Log($"[CombatMomentum] 守護反击命中！ 目标: {targetHealth.name} | 伤害: {damage} ({counterDamagePdu} PDU) | 剩余势能: {_currentCombatMomentum}/{maxCombatMomentum}");
         SimpleScreenFeedback.TriggerCounterFeedback(transform, leftHandVfxAnchor);
         TryStartLunge(_counterTarget);
+        TryApplyRiposteCooldownRefund();
 
         return true;
     }
 
     // ─── Private ─────────────────────────────────────────────────
+
+    private void TryApplyRiposteCooldownRefund()
+    {
+        if (!enableRiposteCooldownRefundPassive) return;
+
+        if (_skillManager == null)
+        {
+            Debug.LogWarning("[RipostePassive] PlayerSkillManager not found — passive disabled.");
+            enableRiposteCooldownRefundPassive = false;
+            return;
+        }
+
+        if (riposteCooldownRefundTargetSkill == null)
+        {
+            Debug.Log("[RipostePassive] cooldown refund target skill is not assigned");
+            return;
+        }
+
+        bool reduced = _skillManager.ReduceCooldown(riposteCooldownRefundTargetSkill, riposteCooldownRefundSeconds);
+        if (reduced)
+            Debug.Log($"[RipostePassive] {riposteCooldownRefundTargetSkill.SkillName} cooldown -{riposteCooldownRefundSeconds:F1}s");
+        else
+            Debug.Log("[RipostePassive] target skill runtime state not found");
+    }
 
     private void ClearCounter()
     {

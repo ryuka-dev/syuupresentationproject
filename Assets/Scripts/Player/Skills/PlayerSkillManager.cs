@@ -86,6 +86,16 @@ public class PlayerSkillRuntimeState
 
     public bool MatchesSkillId(string id)              => skillData != null && skillData.SkillId == id;
     public bool MatchesInputSlot(PlayerSkillInputSlot slot) => skillData != null && skillData.InputSlot == slot;
+
+    /// <summary>
+    /// 冒撤リマインを指定秒数少なくする。最小 0。冒撤中でない場合は何もしない。
+    /// </summary>
+    public void ReduceCooldown(float seconds)
+    {
+        if (cooldownRemainingTime <= 0f) return;
+        cooldownRemainingTime = Mathf.Max(0f, cooldownRemainingTime - seconds);
+    }
+
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,6 +179,21 @@ public class PlayerSkillManager : MonoBehaviour
         return TryActivateSkill(state);
     }
 
+    /// <summary>
+    /// 指定した PlayerSkillData の現在冒撤を指定秒数少なくする。
+    /// skillData が null / seconds ≤ 0 / RuntimeState が見つからない場合は false 。
+    /// skillData.Cooldown の周期属性自体は変更しない。
+    /// </summary>
+    public bool ReduceCooldown(PlayerSkillData skillData, float seconds)
+    {
+        if (skillData == null || seconds <= 0f) return false;
+        var state = GetStateBySkillId(skillData.SkillId);
+        if (state == null) return false;
+        state.ReduceCooldown(seconds);
+        return true;
+    }
+
+    // ─── Unity 生命周期 ───────────────────────────────────────────
     // ─── Unity 生命周期 ───────────────────────────────────────────
 
     private void Awake()
