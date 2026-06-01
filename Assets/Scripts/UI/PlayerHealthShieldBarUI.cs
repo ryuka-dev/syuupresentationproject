@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 
@@ -56,8 +56,8 @@ public class PlayerHealthShieldBarUI : MonoBehaviour
         float shieldRatio = Mathf.Clamp01(shieldAmount / maxHP);
 
         // Shield \u304c HP \u6761\u306e\u7bc4\u56f2\u3092\u8d85\u3048\u308b\u5834\u5408\u306f\u8aad\u308a\u88c5\u308b
-        float maxShieldRatio = 1f - healthRatio;
-        float displayShieldRatio = Mathf.Min(shieldRatio, maxShieldRatio);
+        // Shield Fill は常に左端から開始，HP Fill の上層に覆いながる
+        float displayShieldRatio = Mathf.Clamp01(shieldRatio); // 最大 100%
 
         // \u5e45 = sizeDelta.x \u3067\u5236\u5fa1\uff08anchorMin.x == anchorMax.x == 0 \u3067\u5de6\u5bc4\u308a\u524d\u63d0\uff09
         if (healthFill != null)
@@ -65,18 +65,17 @@ public class PlayerHealthShieldBarUI : MonoBehaviour
             var sd = healthFill.sizeDelta;
             sd.x = healthRatio * _barWidth;
             healthFill.sizeDelta = sd;
-        }
-
         if (shieldFill != null)
         {
-            float shieldX = healthRatio * _barWidth;
-            float shieldW = displayShieldRatio * _barWidth;
+            var shieldSD  = shieldFill.sizeDelta;
+            shieldSD.x    = displayShieldRatio * _barWidth;
+            shieldFill.sizeDelta = shieldSD;
+            // 常に左端から開始
             var pos = shieldFill.anchoredPosition;
-            pos.x = shieldX;
+            pos.x   = 0f;
             shieldFill.anchoredPosition = pos;
-            var sd = shieldFill.sizeDelta;
-            sd.x = shieldW;
-            shieldFill.sizeDelta = sd;
+            shieldFill.gameObject.SetActive(shieldAmount > 0.01f);
+        }
             shieldFill.gameObject.SetActive(shieldAmount > 0.01f);
         }
 
