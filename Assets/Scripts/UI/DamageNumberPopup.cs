@@ -67,6 +67,21 @@ public class DamageNumberPopup : MonoBehaviour
     }
 
     /// <summary>
+    /// 護盾ブロック専用。damage = 0 でも "-0" を表示する。
+    /// </summary>
+    public void InitializeBlockedDamage(Camera targetCamera)
+    {
+        if (text == null)
+            text = GetComponentInChildren<TextMeshPro>();
+        if (text == null) { Destroy(gameObject); return; }
+        _mainCamera = targetCamera ?? Camera.main;
+        text.text   = "-0";
+        _startColor = text.color;
+        _timer      = 0f;
+        transform.position += worldOffset;
+    }
+
+    /// <summary>
     /// 副テキスト付きオーバーロード。
     /// subLabel が空 / null の場合は元の Initialize(damage, camera) と同じ動作。
     /// subLabel が非空の場合、数字の下方に小さいテキストを生成して一緒にフェードアウトさせる。

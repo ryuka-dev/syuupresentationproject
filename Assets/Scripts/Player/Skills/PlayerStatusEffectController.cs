@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// 玩家状态效果控制器 — v0.1 DamageReduction 专用。
@@ -41,6 +41,8 @@ public class PlayerStatusEffectController : MonoBehaviour
     public float ModifyIncomingDamage(float damage)
     {
         if (damage <= 0f) return damage;
+        LastIncomingDamageFullyBlockedByShield = false; // 毎回リセット
+
 
         float finalDamage = damage;
 
@@ -287,7 +289,10 @@ public class PlayerStatusEffectController : MonoBehaviour
     private PlayerGuardCounterController _guardCounterCtrl;
 
     /// <summary>Guard Conversion 護盾が設定されているか。</summary>
-    public bool HasGuardConversionShield => _hasGuardConversionShield;
+    public bool  HasGuardConversionShield            => _hasGuardConversionShield;
+    /// <summary>直前の ModifyIncomingDamage で护盾が全量吸收したか。HealthComponent が毎回リセットする。</summary>
+    public bool  LastIncomingDamageFullyBlockedByShield { get; private set; }
+
     /// <summary>護盾残量。</summary>
     public float GuardConversionShieldRemaining => _guardConversionShieldRemaining;
     /// <summary>護盾最大量。</summary>
@@ -338,25 +343,19 @@ public class PlayerStatusEffectController : MonoBehaviour
         {
             // 護盾で完全吸収
             _guardConversionShieldRemaining -= incomingDamage;
-            string lbl = string.IsNullOrEmpty(label) ? "damage" : label;
             Debug.Log($"[GuardConversionShield] absorbed: {incomingDamage:F1}, remaining: {_guardConversionShieldRemaining:F1}");
+            LastIncomingDamageFullyBlockedByShield = true;
             return 0f;
         }
         else
         {
             // 護盾を割って余剰ダメージが残る
             float overflow = incomingDamage - _guardConversionShieldRemaining;
-            string lbl     = string.IsNullOrEmpty(label) ? "damage" : label;
             Debug.Log($"[GuardConversionShield] broke, absorbed: {_guardConversionShieldRemaining:F1}, overflow damage: {overflow:F1}");
-
             _hasGuardConversionShield       = false;
             _guardConversionShieldRemaining = 0f;
             _guardConversionShieldMax       = 0f;
-
-            // Buff UI を削除
             _buffController?.ConsumeBuff(_GCS_ID);
-
-            // Combat Momentum 返還
             if (_guardConversionRefundOnBreak > 0 && _guardCounterCtrl != null)
             {
                 _guardCounterCtrl.AddCombatMomentum(_guardConversionRefundOnBreak);

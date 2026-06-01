@@ -11,7 +11,10 @@ public class HealthComponent : MonoBehaviour
     public float currentHealth { get; private set; }
 
     public event Action<float, float>     OnHealthChanged;  // (current, max)
-    public event Action<float, Transform> OnDamaged;        // (最终伤害值, 攻击来源)
+    public event Action<float, Transform> OnDamaged;        // (最终伤害値, 攻击来源)
+    /// <summary>護盾により全量吸収された時のビジュアル専用イベント。gameplay 副作用なし。</summary>
+    public event Action<float, Transform> OnDamageBlocked;  // (原始 raw damage, 攻击来源) 护盾全量吸収時
+
     public event Action                   OnDied;
     public event Action<float, Transform> OnHealed;         // (actualHealAmount, healer)
 
@@ -78,7 +81,15 @@ public class HealthComponent : MonoBehaviour
         Debug.Log($"[Health] After damage: current={currentHealth} (finalDamage={finalDamage:F1})");
         OnHealthChanged?.Invoke(currentHealth, maxHealth);
         OnDamaged?.Invoke(finalDamage, attacker);
-        if (currentHealth <= 0f) OnDied?.Invoke();
+
+        // 護盾全量吸収時はビジュアル専用イベントを発火（gameplay 副作用なし）
+        if (amount > 0f && finalDamage <= 0f
+            && _statusEffectController != null
+            && _statusEffectController.LastIncomingDamageFullyBlockedByShield)
+        {
+            OnDamageBlocked?.Invoke(amount, attacker);
+        }
+
     }
 
     public void Heal(float amount)

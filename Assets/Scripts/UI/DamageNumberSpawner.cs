@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// 伤害飘字生成器。
@@ -45,8 +45,9 @@ public class DamageNumberSpawner : MonoBehaviour
     {
         if (_health != null)
         {
-            _health.OnDamaged += HandleDamaged;
-            _health.OnHealed  += HandleHealed;
+            _health.OnDamaged       += HandleDamaged;
+            _health.OnHealed        += HandleHealed;
+            _health.OnDamageBlocked += HandleDamageBlocked;
         }
     }
 
@@ -54,8 +55,9 @@ public class DamageNumberSpawner : MonoBehaviour
     {
         if (_health != null)
         {
-            _health.OnDamaged -= HandleDamaged;
-            _health.OnHealed  -= HandleHealed;
+            _health.OnDamaged       -= HandleDamaged;
+            _health.OnHealed        -= HandleHealed;
+            _health.OnDamageBlocked -= HandleDamageBlocked;
         }
     }
 
@@ -65,6 +67,23 @@ public class DamageNumberSpawner : MonoBehaviour
     /// HealthComponent.OnDamaged から呼ばれる。
     /// damage は最終実際ダメージ（減伤適用済み）。
     /// </summary>
+    /// <summary>
+    /// 護盾により全量吸収された時に呼ばれる。-0 飘字を表示する。
+    /// OnDamaged の gameplay 副作用を避けるための専用ビジュアルイベント。
+    /// </summary>
+    private void HandleDamageBlocked(float rawDamage, Transform attacker)
+    {
+        if (popupPrefab == null) return;
+        Vector3 randomH = new Vector3(
+            Random.Range(-randomHorizontalOffset, randomHorizontalOffset),
+            0f,
+            Random.Range(-randomHorizontalOffset, randomHorizontalOffset)
+        );
+        Vector3 spawnPos = transform.position + popupOffset + randomH;
+        DamageNumberPopup popup = Instantiate(popupPrefab, spawnPos, Quaternion.identity);
+        popup.InitializeBlockedDamage(_mainCamera);
+    }
+
     private void HandleDamaged(float damage, Transform attacker)
     {
         if (damage <= 0f) return;
