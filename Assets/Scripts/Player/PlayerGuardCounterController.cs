@@ -33,13 +33,12 @@ public class PlayerGuardCounterController : MonoBehaviour
     [SerializeField] private PlayerCombatFacingController combatFacing;
 
     [Header("反撃パラメータ")]
-    [Tooltip("反撃機会の有効時間（秒）。")]
-    [SerializeField] private float counterWindowSeconds = 10f;
+    [Tooltip("守护充能の最大値。")]
+    [SerializeField] private int maxGuardCharge = 3;
 
     [Tooltip("反撃伤害の PDU 倍率。1PDU = 20 enemy damage（BALANCE_BASELINE.md Tier 1）。")]
     [SerializeField] private float counterDamagePdu = 3f;
 
-    [Header("Short Lunge パラメータ")]
     [Tooltip("反撃時の前方短距離前压量（メートル）。デフォルト 0.75f。")]
     [SerializeField] private float lungeDistance = 0.75f;
     [Tooltip("前压の所要時間（秒）。デフォルト 0.10f。")]
@@ -47,16 +46,15 @@ public class PlayerGuardCounterController : MonoBehaviour
     [Tooltip("前压後の攻击者との最小距離（メートル）。これより近づかない。デフォルト 1.2f。")]
     [SerializeField] private float minDistanceToTargetAfterLunge = 1.2f;
 
-    // ─── 運行時状態 ──────────────────────────────────────────────
+    // ─── 運行時状態 ──────────────────────────────
 
-    private bool             _isReady;
-    private float            _remainingWindow;
-    private Transform        _counterTarget;
-    private HealthComponent  _playerHealth;   // 自身 HealthComponent（死亡チェック用）
+    private int              _currentGuardCharge;  // 現在の Guard Charge 点数
+    private Transform        _counterTarget;        // 最近の Guard Resonance の攻撃者
+    private HealthComponent  _playerHealth;         // 自身 HealthComponent（死亡チェック用）
     private Rigidbody        _rb;
     private Coroutine        _lungeCoroutine;
 
-    // ─── Unity ライフサイクル ──────────────────────────────────────
+    private bool IsPlayerAlive => _playerHealth == null || !_playerHealth.IsDead;
 
     private void Awake()
     {
@@ -92,18 +90,7 @@ public class PlayerGuardCounterController : MonoBehaviour
         UnsubscribeFromPlayerDeath();
     }
 
-    private void Update()
-    {
-        if (_isReady)
-        {
-            _remainingWindow -= Time.deltaTime;
-            if (_remainingWindow <= 0f)
-            {
-                Debug.Log("[RadiantRiposte] 反撃機会が期限切れ（10秒）。");
-                ClearCounter();
-            }
-        }
-    }
+    private void Update() { }
 
     // ─── Guard Resonance イベントハンドラ ─────────────────────────
 
@@ -116,60 +103,77 @@ public class PlayerGuardCounterController : MonoBehaviour
     {
         if (!grantsGuardCounter)
         {
-            Debug.Log("[RadiantRiposte] Guard Resonance 触发（grantsGuardCounter=false）— Radiant Riposte は更新しない。");
+            Debug.Log("[GuardCharge] Guard Resonance 触发（grantsGuardCounter=false）— Guard Charge は変更しない。");
             return;
         }
 
-        _isReady         = true;
-        _counterTarget   = attacker;
-        _remainingWindow = counterWindowSeconds;
-        Debug.Log($"[RadiantRiposte] Radiant Riposte Ready（Iron Bulwark 授権）— 攻击者: {(attacker != null ? attacker.name : "null")} | 有效时间: {counterWindowSeconds}s");
+        AddGuardCharge(1);
+        _counterTarget = attacker; // 最新の攻撃者を保持
     }
 
     // ─── 死亡ハンドラ ────────────────────────────────────────────
 
     private void HandlePlayerDied()
     {
-        if (!_isReady) return;
-        Debug.Log("[RadiantRiposte] 玩家死亡 — Radiant Riposte Ready 清除。");
+        if (_currentGuardCharge <= 0) return;
+        Debug.Log("[GuardCharge] 玩家死亡 — Guard Charge 清除。");
         ClearCounter();
     }
 
+
     // ─── 公開状態プロパティ ───────────────────────────────────────
 
-    /// <summary>プレイヤーが生存しているか。</summary>
-    private bool IsPlayerAlive => _playerHealth == null || !_playerHealth.IsDead;
+    // ─── Guard Charge 公開 API ───────────────────────────────────────────
 
-    /// <summary>反撃機会が 10 秒窓内にあるか。</summary>
-    public bool IsCounterReady => _isReady;
+    /// <summary>守护充能现在点数。</summary>
+    public int CurrentGuardCharge => _currentGuardCharge;
 
-    /// <summary>残り有効時間（秒）。</summary>
-    public float CounterRemainingTime => _remainingWindow;
+    /// <summary>守护充能最大値。</summary>
+    public int MaxGuardCharge => maxGuardCharge;
 
-    /// <summary>最大有効時間（秒）。</summary>
-    public float CounterWindowSeconds => counterWindowSeconds;
+    /// <summary>1点以上の Guard Charge を持っているか。</summary>
+    public bool HasGuardCharge => _currentGuardCharge > 0;
 
-    /// <summary>
-    /// 今すぐ反撃を実行できるか。
-    /// IsCounterReady かつプレイヤー生存 かつ目標が生存している場合のみ true。
-    /// </summary>
+    /// <summary>指定点数だけ Guard Charge を増加する。最大値を超えない。</summary>
+    public void AddGuardCharge(int amount)
+    {
+        int prev = _currentGuardCharge;
+        _currentGuardCharge = Mathf.Min(_currentGuardCharge + amount, maxGuardCharge);
+        if (_currentGuardCharge > prev)
+            Debug.Log($"[GuardCharge] +{_currentGuardCharge - prev}: {_currentGuardCharge}/{maxGuardCharge}");
+        else
+            Debug.Log($"[GuardCharge] 充能已满: {_currentGuardCharge}/{maxGuardCharge}");
+    }
+
+    /// <summary>指定点数だけ Guard Charge を消費する。足りなければ false を返す。</summary>
+    public bool TrySpendGuardCharge(int amount)
+    {
+        if (_currentGuardCharge < amount) return false;
+        _currentGuardCharge -= amount;
+        Debug.Log($"[GuardCharge] 消費 -{amount}: {_currentGuardCharge}/{maxGuardCharge}");
+        return true;
+    }
+
+    // 後方互準プロパティ（技能欄 UI 互準）
+    public bool IsCounterReady => HasGuardCharge;
+    public bool IsReady => HasGuardCharge;
+    public float CounterRemainingTime => 0f; // 資源制に移行したためタイマーなし
+    public float RemainingWindow => 0f;
+    public float CounterWindowSeconds => 0f;
+
+    /// <summary>現在ターゲットの有効性チェック。</summary>
     public bool CanUseCounter
     {
         get
         {
-            if (!IsPlayerAlive)           return false;
-            if (!_isReady || _counterTarget == null) return false;
+            if (!IsPlayerAlive) return false;
+            if (_currentGuardCharge <= 0 || _counterTarget == null) return false;
             var h = _counterTarget.GetComponent<HealthComponent>()
                  ?? _counterTarget.GetComponentInParent<HealthComponent>();
             return h != null && !h.IsDead;
         }
     }
 
-    // 後方互換プロパティ
-    public bool IsReady => _isReady;
-    public float RemainingWindow => _remainingWindow;
-
-    // ─── 公開実行メソッド ─────────────────────────────────────────
 
     /// <summary>
     /// PlayerSkillManager から呼ばれる反撃実行メソッド。
@@ -178,36 +182,33 @@ public class PlayerGuardCounterController : MonoBehaviour
     /// </summary>
     public bool TryUseCounter(PlayerSkillData skillData)
     {
-        // 死亡チェック（二重ガード）
         if (!IsPlayerAlive)
         {
-            Debug.Log("[RadiantRiposte] 玩家已死亡 — 反撃不可。");
+            Debug.Log("[GuardCharge] 玩家已死亡 — 反撃不可。");
             ClearCounter();
             return false;
         }
 
-        if (!CanUseCounter)
+        if (_currentGuardCharge <= 0)
         {
-            if (_isReady && _counterTarget == null)
-            {
-                Debug.Log("[RadiantRiposte] 攻击者が null のため反撃失败。Ready 清除。");
-                ClearCounter();
-            }
-            else if (_isReady)
-            {
-                var hCheck = _counterTarget.GetComponent<HealthComponent>()
-                          ?? _counterTarget.GetComponentInParent<HealthComponent>();
-                if (hCheck != null && hCheck.IsDead)
-                {
-                    Debug.Log("[RadiantRiposte] 攻击者已死亡，反撃失败。Ready 清除。");
-                    ClearCounter();
-                }
-            }
+            Debug.Log("[GuardCharge] Guard Charge が 0 のため反撃不可。");
             return false;
         }
 
-        // 距離チェック: skillData.EffectiveRange（Ranged = 20m）を超えていたら打てない。
-        // Ready は消費しない。プレイヤーが近づいてから再び試みることができる。
+        if (_counterTarget == null)
+        {
+            Debug.Log("[GuardCharge] 攻撃者が null のため反撃不可。Guard Charge は保持。");
+            return false;
+        }
+
+        var hCheck = _counterTarget.GetComponent<HealthComponent>()
+                  ?? _counterTarget.GetComponentInParent<HealthComponent>();
+        if (hCheck == null || hCheck.IsDead)
+        {
+            Debug.Log("[GuardCharge] 攻撃者死亡 / HealthComponent なし。Guard Charge は保持。");
+            return false;
+        }
+
         if (skillData != null)
         {
             float maxRange = skillData.EffectiveRange;
@@ -216,11 +217,14 @@ public class PlayerGuardCounterController : MonoBehaviour
                 float dist = Vector3.Distance(transform.position, _counterTarget.position);
                 if (dist > maxRange)
                 {
-                    Debug.Log($"[RadiantRiposte] 攻击者が射程外 ({dist:F1}m > {maxRange}m) — 反撃失败。Ready は保持。");
-                    return false; // Ready 消費しない
+                    Debug.Log($"[GuardCharge] 攻撃者が射程外 ({dist:F1}m > {maxRange}m) — Guard Charge は保持。");
+                    return false;
                 }
             }
         }
+
+        // ─── 成功条件を満たした: 1 点消費して反撃実行 ───
+        if (!TrySpendGuardCharge(1)) return false; // 二重ガード（通常は到達しない）
 
         var targetHealth = _counterTarget.GetComponent<HealthComponent>()
                         ?? _counterTarget.GetComponentInParent<HealthComponent>();
@@ -234,16 +238,14 @@ public class PlayerGuardCounterController : MonoBehaviour
             fallbackText    = skillData != null ? skillData.SkillName        : "Radiant Riposte"
         };
 
-        combatFacing?.FaceTarget(_counterTarget); // 守護反撃前に汫標方向に転向
-
-        combatAnimation?.PlayRadiantRiposte(); // 守護反击動作（失败しても伤害結算に影響なし）
+        combatFacing?.FaceTarget(_counterTarget);
+        combatAnimation?.PlayRadiantRiposte();
 
         targetHealth.TakeDamage(damage, transform, sourceLabel);
-        Debug.Log($"[RadiantRiposte] 守護反击命中！ 目标: {targetHealth.name} | 伤害: {damage} ({counterDamagePdu} PDU) | 来源: {sourceLabel.GetDisplayText()}");
-        SimpleScreenFeedback.TriggerCounterFeedback(transform, leftHandVfxAnchor); // 守護反击命中フィードバック
+        Debug.Log($"[GuardCharge] 守護反击命中！ 目标: {targetHealth.name} | 伤害: {damage} ({counterDamagePdu} PDU) | 剩余 Charge: {_currentGuardCharge}/{maxGuardCharge}");
+        SimpleScreenFeedback.TriggerCounterFeedback(transform, leftHandVfxAnchor);
         TryStartLunge(_counterTarget);
 
-        ClearCounter();
         return true;
     }
 
@@ -251,9 +253,8 @@ public class PlayerGuardCounterController : MonoBehaviour
 
     private void ClearCounter()
     {
-        _isReady         = false;
-        _counterTarget   = null;
-        _remainingWindow = 0f;
+        _currentGuardCharge = 0;
+        _counterTarget      = null;
     }
     /// <summary>
     /// Radiant Riposte 成功時に短距離前压 Coroutine を開始する。

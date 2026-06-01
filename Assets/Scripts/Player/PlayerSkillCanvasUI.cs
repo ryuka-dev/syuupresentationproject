@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 
@@ -173,8 +173,10 @@ public class PlayerSkillCanvasUI : MonoBehaviour
     private void UpdateGuardCounterDisplay()
     {
         if (_guardCounter == null) { ApplyConditionLockedUI(); return; }
-        if (_guardCounter.IsCounterReady) ApplyProcReadyUI(_guardCounter.CounterRemainingTime);
-        else                              ApplyConditionLockedUI();
+        if (_guardCounter.HasGuardCharge)
+            ApplyProcReadyUI(_guardCounter.CurrentGuardCharge, _guardCounter.MaxGuardCharge);
+        else
+            ApplyConditionLockedUI();
     }
 
     private void ApplyConditionLockedUI()
@@ -187,7 +189,7 @@ public class PlayerSkillCanvasUI : MonoBehaviour
         if (_procRemainingText      != null) _procRemainingText.text = string.Empty;
     }
 
-    private void ApplyProcReadyUI(float remaining)
+    private void ApplyProcReadyUI(int currentCharge, int maxCharge)
     {
         SetIconBrightness(1f);
         SetOverlayActive(false);
@@ -201,7 +203,7 @@ public class PlayerSkillCanvasUI : MonoBehaviour
             _procReadyGlow.color = c;
         }
         if (_procRemainingText != null)
-            _procRemainingText.text = Mathf.CeilToInt(remaining).ToString();
+            _procRemainingText.text = $"{currentCharge}/{maxCharge}";
     }
 
     // ─── 通常状態 ─────────────────────────────────────────────────
