@@ -3,6 +3,7 @@
 /// <summary>
 /// 守護反击 / Radiant Riposte コントローラー。
 /// Guard Resonance 成功時に Combat Momentum（戦闘勢能）を取得する。
+/// 被动技能は PlayerSkillManager.NotifyPassiveTrigger で統一管理する。
 /// </summary>
 public class PlayerGuardCounterController : MonoBehaviour
 {
@@ -31,14 +32,6 @@ public class PlayerGuardCounterController : MonoBehaviour
     [Tooltip("前压後の攻击者との最小距離（メートル）。これより近づかない。デフォルト 1.2f。")]
     [SerializeField] private float minDistanceToTargetAfterLunge = 1.2f;
 
-    [Header("リポステ被動 — 冷却返还")]
-    [Tooltip("有効時、Radiant Riposte 成功後に指定技能の冷却を少なくする。")]
-    [SerializeField] private bool enableRiposteCooldownRefundPassive = true;
-    [Tooltip("減少する冷却秒数。")]
-    [SerializeField] private float riposteCooldownRefundSeconds = 1f;
-    [Tooltip("冷却を少なくする対象技能（PlayerSkillData）。未割り当て時はスキップ。")]
-    [SerializeField] private PlayerSkillData riposteCooldownRefundTargetSkill;
-
     // ─── 運行時状態 ──────────────────────────────────────────────
 
     private int              _currentCombatMomentum;
@@ -46,7 +39,8 @@ public class PlayerGuardCounterController : MonoBehaviour
     private HealthComponent  _playerHealth;
     private Rigidbody        _rb;
     private Coroutine        _lungeCoroutine;
-    private PlayerSkillManager _skillManager;
+    private PlayerSkillManager          _skillManager;
+    private PlayerStatusEffectController _statusEffectController;
 
     private bool IsPlayerAlive => _playerHealth == null || !_playerHealth.IsDead;
 
@@ -62,7 +56,8 @@ public class PlayerGuardCounterController : MonoBehaviour
 
         _playerHealth  = GetComponent<HealthComponent>();
         _rb            = GetComponent<Rigidbody>();
-        _skillManager  = GetComponent<PlayerSkillManager>();
+        _skillManager             = GetComponent<PlayerSkillManager>();
+        _statusEffectController   = GetComponent<PlayerStatusEffectController>();
     }
 
     private void Start()
@@ -211,40 +206,20 @@ public class PlayerGuardCounterController : MonoBehaviour
         combatFacing?.FaceTarget(_counterTarget);
         combatAnimation?.PlayRadiantRiposte();
 
+        if (_statusEffectController != null)
+            damage = _statusEffectController.ApplyAndConsumeNextSkillDamageBoost(damage, "Radiant Riposte");
         targetHealth.TakeDamage(damage, transform, sourceLabel);
         Debug.Log($"[CombatMomentum] 守護反击命中！ 目标: {targetHealth.name} | 伤害: {damage} ({counterDamagePdu} PDU) | 剩余势能: {_currentCombatMomentum}/{maxCombatMomentum}");
         SimpleScreenFeedback.TriggerCounterFeedback(transform, leftHandVfxAnchor);
         TryStartLunge(_counterTarget);
-        TryApplyRiposteCooldownRefund();
+
+        // 被动技能触发（统一通过 PlayerSkillManager 管理）
+        _skillManager?.NotifyPassiveTrigger(PlayerPassiveTriggerType.OnRadiantRiposteSuccess);
 
         return true;
     }
 
     // ─── Private ─────────────────────────────────────────────────
-
-    private void TryApplyRiposteCooldownRefund()
-    {
-        if (!enableRiposteCooldownRefundPassive) return;
-
-        if (_skillManager == null)
-        {
-            Debug.LogWarning("[RipostePassive] PlayerSkillManager not found — passive disabled.");
-            enableRiposteCooldownRefundPassive = false;
-            return;
-        }
-
-        if (riposteCooldownRefundTargetSkill == null)
-        {
-            Debug.Log("[RipostePassive] cooldown refund target skill is not assigned");
-            return;
-        }
-
-        bool reduced = _skillManager.ReduceCooldown(riposteCooldownRefundTargetSkill, riposteCooldownRefundSeconds);
-        if (reduced)
-            Debug.Log($"[RipostePassive] {riposteCooldownRefundTargetSkill.SkillName} cooldown -{riposteCooldownRefundSeconds:F1}s");
-        else
-            Debug.Log("[RipostePassive] target skill runtime state not found");
-    }
 
     private void ClearCounter()
     {

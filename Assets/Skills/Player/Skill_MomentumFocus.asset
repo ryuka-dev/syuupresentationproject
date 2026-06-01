@@ -1,0 +1,40 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 90bf24020f4e1cb4c8c7417a83149f7b, type: 3}
+  m_Name: Skill_MomentumFocus
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerSkillData
+  skillId: momentum_focus
+  skillName: Momentum Focus
+  description: 
+  icon: {fileID: 0}
+  localizationKey: skill.player.momentum_focus
+  inputSlot: 6
+  keyLabel: 6
+  cooldown: 3
+  duration: 0
+  effectType: 7
+  damageTakenMultiplier: 1
+  attackPowerMultiplier: 1
+  areaRadius: 3
+  areaDamageMultiplier: 0.8
+  healingReceivedMultiplier: 1
+  grantsGuardCounter: 0
+  rangeType: 0
+  customRange: 0
+  visualType: 0
+  combatMomentumCost: 1
+  nextSkillDamageMultiplier: 1.2
+  category: 0
+  passiveTriggerType: 0
+  passiveEffectType: 0
+  passiveTargetSkill: {fileID: 0}
+  passiveValue: 0

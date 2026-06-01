@@ -13797,6 +13797,9 @@ MonoBehaviour:
   - {fileID: 11400000, guid: b26a4bde9ce8d634b95b743135f5b8e9, type: 2}
   - {fileID: 11400000, guid: 10f9ee01c82a06941ba5897c975cbdc2, type: 2}
   - {fileID: 11400000, guid: 017ad94744434b049875d1d31b6e1e77, type: 2}
+  - {fileID: 11400000, guid: 2e5ba5e269a2742429df4c30fc1023a0, type: 2}
+  equippedPassiveSkills:
+  - {fileID: 11400000, guid: 266ef10ce4cab3f4890f2c4ae04e6f06, type: 2}
   logSkillActivation: 1
   runtimeStates: []
 --- !u!114 &919417070
@@ -13880,8 +13883,11 @@ MonoBehaviour:
   leftHandVfxAnchor: {fileID: 0}
   combatAnimation: {fileID: 919417083}
   combatFacing: {fileID: 919417084}
-  counterWindowSeconds: 10
+  maxCombatMomentum: 3
   counterDamagePdu: 3
+  lungeDistance: 0.75
+  lungeDuration: 0.1
+  minDistanceToTargetAfterLunge: 1.2
 --- !u!114 &919417077
 MonoBehaviour:
   m_ObjectHideFlags: 0

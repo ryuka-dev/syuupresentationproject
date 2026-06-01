@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 90bf24020f4e1cb4c8c7417a83149f7b, type: 3}
+  m_Name: Skill_Passive_RiposteFlow
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerSkillData
+  skillId: passive_riposte_flow
+  skillName: Riposte Flow
+  description: 
+  icon: {fileID: 0}
+  localizationKey: skill.passive.riposte_flow
+  inputSlot: 0
+  keyLabel: Passive
+  cooldown: 0
+  duration: 0
+  effectType: 0
+  damageTakenMultiplier: 1
+  attackPowerMultiplier: 1
+  areaRadius: 3
+  areaDamageMultiplier: 0.8
+  healingReceivedMultiplier: 1
+  grantsGuardCounter: 0
+  rangeType: 0
+  customRange: 0
+  visualType: 0
+  category: 1
+  passiveTriggerType: 1
+  passiveEffectType: 1
+  passiveTargetSkill: {fileID: 11400000, guid: 069070b5ecee0574fb042b7859fde373, type: 2}
+  passiveValue: 1

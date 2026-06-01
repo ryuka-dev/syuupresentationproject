@@ -116,6 +116,10 @@ public class PlayerSkillManager : MonoBehaviour
     [Header("技能数据")]
     [SerializeField] private PlayerSkillData[] skills;
 
+    [Header("装备被动技能（临时构筑入口，未来由技能解锁系统控制）")]
+    [SerializeField] private PlayerSkillData[] equippedPassiveSkills;
+
+
     [Header("调试")]
     [SerializeField] private bool logSkillActivation = true;
 
@@ -127,6 +131,7 @@ public class PlayerSkillManager : MonoBehaviour
     // 最後に対応キーを押した技能の RuntimeState（冷却中でも更新される）
     private PlayerSkillRuntimeState lastPressedSkillState;
     private PlayerGuardCounterController _guardCounterController;
+    private PlayerStatusEffectController     _statusEffectController;
     private PlayerBasicAttackController      _basicAttackController;
     private HealthComponent                  _playerHealth;
 
@@ -193,13 +198,60 @@ public class PlayerSkillManager : MonoBehaviour
         return true;
     }
 
-    // ─── Unity 生命周期 ───────────────────────────────────────────
+
+    /// <summary>装備中の被动技能配列（読み取り専用）。</summary>
+    public PlayerSkillData[] EquippedPassiveSkills => equippedPassiveSkills;
+
+    /// <summary>
+    /// 被动技能のトリガー入口。
+    /// PlayerGuardCounterController などが成功イベント後に呼び出す。
+    /// </summary>
+    public void NotifyPassiveTrigger(PlayerPassiveTriggerType triggerType)
+    {
+        if (triggerType == PlayerPassiveTriggerType.None) return;
+        if (equippedPassiveSkills == null) return;
+
+        foreach (var passive in equippedPassiveSkills)
+        {
+            if (passive == null) continue;
+            if (!passive.IsPassive) continue;
+            if (passive.PassiveTriggerType != triggerType) continue;
+
+            switch (passive.PassiveEffectType)
+            {
+                case PlayerPassiveEffectType.ReduceCooldown:
+                    if (passive.PassiveTargetSkill != null && passive.PassiveValue > 0f)
+                    {
+                        bool ok = ReduceCooldown(passive.PassiveTargetSkill, passive.PassiveValue);
+                        if (ok)
+                            Debug.Log($"[PassiveSkill] {passive.SkillName}: {passive.PassiveTargetSkill.SkillName} cooldown -{passive.PassiveValue:F1}s");
+                        else
+                            Debug.Log($"[PassiveSkill] {passive.SkillName}: target skill runtime state not found");
+                    }
+                    else
+                    {
+                        Debug.Log($"[PassiveSkill] {passive.SkillName}: PassiveTargetSkill または PassiveValue が未設定。");
+                    }
+                    break;
+
+                case PlayerPassiveEffectType.AddNextSkillDamageMultiplier:
+                    // 未実装—将来の構築システム用
+                    Debug.Log($"[PassiveSkill] {passive.SkillName}: AddNextSkillDamageMultiplier は未実装。");
+                    break;
+
+                default:
+                    break;
+            }
+        }
+    }
+
     // ─── Unity 生命周期 ───────────────────────────────────────────
 
     private void Awake()
     {
         BuildRuntimeStates();
         _guardCounterController = GetComponent<PlayerGuardCounterController>();
+        _statusEffectController  = GetComponent<PlayerStatusEffectController>();
         _basicAttackController  = GetComponent<PlayerBasicAttackController>();
         _playerHealth = GetComponent<HealthComponent>();
     }
@@ -282,12 +334,45 @@ private void HandleSkillInput()
                     if (_guardCounterController != null)
                         _guardCounterController.TryUseCounter(state.SkillData);
                 }
+                else if (state.SkillData.EffectType == PlayerSkillEffectType.NextSkillDamageBoost)
+                {
+                    TryActivateNextSkillDamageBoost(state);
+                }
                 else
                 {
                     TryActivateSkill(state);
                 }
             }
         }
+    }
+
+    private void TryActivateNextSkillDamageBoost(PlayerSkillRuntimeState state)
+    {
+        if (state == null || state.SkillData == null) return;
+        Debug.Log($"[MomentumFocus] TryActivateNextSkillDamageBoost called: {state.SkillData.SkillName}");
+
+
+        int cost = state.SkillData.CombatMomentumCost;
+        if (cost > 0)
+        {
+            if (_guardCounterController == null || !_guardCounterController.TrySpendCombatMomentum(cost))
+            {
+                Debug.Log($"[MomentumFocus] Combat Momentum 不足（{state.SkillData.SkillName} には {cost} 点必要）。");
+                return;
+            }
+        }
+
+        if (_statusEffectController == null)
+        {
+            Debug.LogWarning("[MomentumFocus] PlayerStatusEffectController not found。");
+            return;
+        }
+
+        _statusEffectController.SetNextSkillDamageBoost(state.SkillData.NextSkillDamageMultiplier);
+        state.TryActivate();
+        OnSkillActivated?.Invoke(state);
+        if (logSkillActivation)
+            Debug.Log($"[PlayerSkillManager] Activated: {state.SkillData.SkillName}");
     }
 
     private bool TryActivateSkill(PlayerSkillRuntimeState state)

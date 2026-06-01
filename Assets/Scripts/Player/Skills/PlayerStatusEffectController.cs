@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// 玩家状态效果控制器 — v0.1 DamageReduction 专用。
@@ -136,6 +136,41 @@ public class PlayerStatusEffectController : MonoBehaviour
         return result;
     }
 
+
+    // ─── Next Skill Damage Boost ─────────────────────────────────
+
+    private bool  _hasNextSkillDamageBoost;
+    private float _nextSkillDamageMultiplier = 1f;
+
+    /// <summary>現在 Next Skill Damage Boost が設定されているか。</summary>
+    public bool HasNextSkillDamageBoost => _hasNextSkillDamageBoost;
+
+    /// <summary>
+    /// 次のプレイヤー技能ダメージ強化を設定する。
+    /// multiplier &lt;= 1f の場合は 1.0 として扱う。
+    /// 既にある場合は上書き（v0.1 は非スタック）。
+    /// </summary>
+    public void SetNextSkillDamageBoost(float multiplier)
+    {
+        _nextSkillDamageMultiplier = Mathf.Max(1f, multiplier);
+        _hasNextSkillDamageBoost   = true;
+        Debug.Log($"[NextDamageBoost] next player skill damage x{_nextSkillDamageMultiplier:F2}");
+    }
+
+    /// <summary>
+    /// 次のプレイヤー技能ダメージ強化を適用して消費する。
+    /// boost がない場合は damage をそのまま返す。
+    /// </summary>
+    public float ApplyAndConsumeNextSkillDamageBoost(float damage, string sourceLabel = null)
+    {
+        if (!_hasNextSkillDamageBoost) return damage;
+        float boosted = damage * _nextSkillDamageMultiplier;
+        _hasNextSkillDamageBoost   = false;
+        _nextSkillDamageMultiplier = 1f;
+        string label = string.IsNullOrEmpty(sourceLabel) ? "skill" : sourceLabel;
+        Debug.Log($"[NextDamageBoost] consumed by {label}: {damage:F1} -> {boosted:F1}");
+        return boosted;
+    }
 
     private void ResolveSkillManager()
     {

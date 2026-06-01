@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 /// <summary>玩家技能输入槽位。</summary>
 public enum PlayerSkillInputSlot
@@ -6,6 +6,28 @@ public enum PlayerSkillInputSlot
     None,
     Slot1, Slot2, Slot3, Slot4, Slot5,
     Slot6, Slot7, Slot8, Slot9,
+}
+
+/// <summary>技能分类：主动 / 被动。</summary>
+public enum PlayerSkillCategory
+{
+    Active  = 0,
+    Passive = 1,
+}
+
+/// <summary>被动技能触发条件。</summary>
+public enum PlayerPassiveTriggerType
+{
+    None                    = 0,
+    OnRadiantRiposteSuccess = 1,
+}
+
+/// <summary>被动技能效果类型。</summary>
+public enum PlayerPassiveEffectType
+{
+    None                         = 0,
+    ReduceCooldown               = 1,
+    AddNextSkillDamageMultiplier = 2,  // 未来预留、未实现
 }
 
 /// <summary>
@@ -22,6 +44,7 @@ public enum PlayerSkillEffectType
     GuardCounter,
     BasicMeleeAttack,
     BasicAreaAttack,
+    NextSkillDamageBoost,   // 次のプレイヤー技能ダメージを強化（Momentum Focus 用）
 }
 
 /// <summary>玩家技能视觉表现类型。</summary>
@@ -88,6 +111,7 @@ public class PlayerSkillData : ScriptableObject
     private float healingReceivedMultiplier = 1f;
 
     [Header("Guard Counter")]
+    [Header("Guard Counter")]
     [Tooltip("true の場合、このスキルが Active 時に Guard Resonance が成功すると Radiant Riposte Ready を付与する。")]
     [SerializeField] private bool grantsGuardCounter = false;
 
@@ -97,6 +121,22 @@ public class PlayerSkillData : ScriptableObject
 
     [Header("视觉表现")]
     [SerializeField] private PlayerSkillVisualType visualType = PlayerSkillVisualType.None;
+
+    [Header("Combat Momentum")]
+    [Tooltip("この技能を使用する際に必要な Combat Momentum 点数。0 = 不要。")]
+    [SerializeField] private int combatMomentumCost = 0;
+
+    [Header("Next Skill Damage Boost")]
+    [Tooltip("次のプレイヤー技能ダメージ倉率。1.0 = 加成なし（1.2 = +20%）。")]
+    [SerializeField] private float nextSkillDamageMultiplier = 1f;
+
+    [Header("Passive Skill")]
+    [SerializeField] private PlayerSkillCategory      category           = PlayerSkillCategory.Active;
+    [SerializeField] private PlayerPassiveTriggerType passiveTriggerType = PlayerPassiveTriggerType.None;
+    [SerializeField] private PlayerPassiveEffectType  passiveEffectType  = PlayerPassiveEffectType.None;
+    [SerializeField] private PlayerSkillData          passiveTargetSkill;
+    [SerializeField] private float                    passiveValue       = 0f;
+
 
     // ─── 公开只读属性 ─────────────────────────────────────────────
 
@@ -119,6 +159,18 @@ public class PlayerSkillData : ScriptableObject
     public PlayerSkillRangeType  RangeType                 => rangeType;
     public float                 CustomRange               => customRange;
     public PlayerSkillVisualType VisualType                => visualType;
+    public int                   CombatMomentumCost        => combatMomentumCost;
+    public float                 NextSkillDamageMultiplier => nextSkillDamageMultiplier;
+
+
+    // ─── Passive 公开只读属性 ─────────────────────────────────────
+
+    public PlayerSkillCategory      Category           => category;
+    public bool                     IsPassive          => category == PlayerSkillCategory.Passive;
+    public PlayerPassiveTriggerType PassiveTriggerType => passiveTriggerType;
+    public PlayerPassiveEffectType  PassiveEffectType  => passiveEffectType;
+    public PlayerSkillData          PassiveTargetSkill => passiveTargetSkill;
+    public float                    PassiveValue       => passiveValue;
 
     /// <summary>
     /// 技能の有効距離（m）。RangeType に基づいた標準距離を返す。

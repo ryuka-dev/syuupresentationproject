@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -187,6 +187,8 @@ public class PlayerBasicAttackController : MonoBehaviour
             return false;
         }
         float finalDamage = CalculateNormalAttackDamage();
+        if (_statusEffectController != null)
+            finalDamage = _statusEffectController.ApplyAndConsumeNextSkillDamageBoost(finalDamage, "Basic Attack");
         StartBasicAttackRecast();
         _facingCtrl?.FaceTarget(target); // 攻撃前に目標方向に瞬間転向＋朝向ロック
 
@@ -217,7 +219,8 @@ public class PlayerBasicAttackController : MonoBehaviour
         float aoeDamage    = normalDamage * mult;
         var hits    = Physics.OverlapSphere(transform.position, radius);
         var damaged = new HashSet<HealthComponent>();
-        int hitCount = 0;
+        // 命中対象リストを収集してから boost を消費（1 回だけ）
+        var validTargets = new System.Collections.Generic.List<HealthComponent>();
         foreach (var col in hits)
         {
             if (col == null) continue;
@@ -227,6 +230,14 @@ public class PlayerBasicAttackController : MonoBehaviour
             var tf = col.GetComponentInParent<FactionComponent>();
             if (tf == null || _selfFaction == null) continue;
             if (!_selfFaction.ShouldAttack(tf.faction)) continue;
+            validTargets.Add(health);
+        }
+        // 1 体以上命中する場合のみ boost を消費
+        if (validTargets.Count > 0 && _statusEffectController != null)
+            aoeDamage = _statusEffectController.ApplyAndConsumeNextSkillDamageBoost(aoeDamage, "Area Attack");
+        int hitCount = 0;
+        foreach (var health in validTargets)
+        {
             health.TakeDamage(aoeDamage, transform);
             hitCount++;
         }
