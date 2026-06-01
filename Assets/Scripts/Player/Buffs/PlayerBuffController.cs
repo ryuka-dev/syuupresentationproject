@@ -48,4 +48,19 @@ public class PlayerBuffController : MonoBehaviour
         _buffs.Remove(buffId);
         return true;
     }
+
+    /// <summary>
+    /// PlayerSkillData から直接 Buff を追加 / 上書きする便利メソッド。
+    /// skillData == null または duration &lt;= 0 の場合は何もしない。
+    /// </summary>
+    public void AddOrOverwriteSkillBuff(PlayerSkillData skillData)
+    {
+        if (skillData == null || skillData.Duration <= 0f) return;
+        AddOrOverwrite(
+            skillData.SkillId,
+            skillData.SkillName,
+            skillData.Icon,
+            skillData.Duration,
+            1f);
+    }
 }

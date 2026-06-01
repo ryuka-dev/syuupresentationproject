@@ -131,6 +131,7 @@ public class PlayerSkillManager : MonoBehaviour
     // 最後に対応キーを押した技能の RuntimeState（冷却中でも更新される）
     private PlayerSkillRuntimeState lastPressedSkillState;
     private PlayerGuardCounterController _guardCounterController;
+    private PlayerBuffController             _buffController;
     private PlayerStatusEffectController     _statusEffectController;
     private PlayerBasicAttackController      _basicAttackController;
     private HealthComponent                  _playerHealth;
@@ -269,6 +270,7 @@ public class PlayerSkillManager : MonoBehaviour
     {
         BuildRuntimeStates();
         _guardCounterController = GetComponent<PlayerGuardCounterController>();
+        _buffController         = GetComponent<PlayerBuffController>();
         _statusEffectController  = GetComponent<PlayerStatusEffectController>();
         _basicAttackController  = GetComponent<PlayerBasicAttackController>();
         _playerHealth = GetComponent<HealthComponent>();
@@ -397,6 +399,19 @@ private void HandleSkillInput()
             Debug.Log($"[PlayerSkillManager] Activated: {state.SkillData.SkillName}");
     }
 
+    /// <summary>
+    /// この技能が Buff UI に持続表示すべきかどうかを判断する。
+    /// 瞬発技能（Basic Attack, GuardCounter, NextSkillDamageBoost）は除外。
+    /// </summary>
+    private static bool IsTimedSkillBuff(PlayerSkillData skill)
+    {
+        if (skill == null || skill.Duration <= 0f) return false;
+        if (skill.IsPassive) return false;
+        var et = skill.EffectType;
+        return et == PlayerSkillEffectType.DamageReduction
+            || et == PlayerSkillEffectType.AttackPowerMultiplier;
+    }
+
     private bool TryActivateSkill(PlayerSkillRuntimeState state)
     {
         if (state == null || state.SkillData == null) return false;
@@ -405,8 +420,24 @@ private void HandleSkillInput()
         {
             OnSkillActivated?.Invoke(state);
             if (logSkillActivation)
+            if (logSkillActivation)
                 Debug.Log($"[PlayerSkillManager] Activated skill: {state.SkillData.SkillName} ({state.SkillData.SkillId})");
-            return true;
+
+            // 持続型 Buff を Buff UI に追加
+            bool isTimedBuff = IsTimedSkillBuff(state.SkillData);
+            Debug.Log($"[SkillBuffDisplay] TryActivateSkill success: {state.SkillData.SkillName} | IsTimedSkillBuff={isTimedBuff}");
+            if (isTimedBuff)
+            {
+                if (_buffController != null)
+                {
+                    _buffController.AddOrOverwriteSkillBuff(state.SkillData);
+                    Debug.Log($"[SkillBuffDisplay] Add skill buff: {state.SkillData.SkillName} {state.SkillData.Duration:F1}s");
+                }
+                else
+                {
+                    Debug.Log("[SkillBuffDisplay] skip: PlayerBuffController not found");
+                }
+            }
         }
 
         // 失敗理由を出力（按键时のみ呼ばれるので毎フレーム刷屏にはならない）
