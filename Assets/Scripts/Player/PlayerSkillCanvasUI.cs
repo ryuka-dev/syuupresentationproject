@@ -145,7 +145,16 @@ public class PlayerSkillCanvasUI : MonoBehaviour
 
         if (state.IsActive)          ApplyActiveState(state.ActiveRemainingTime);
         else if (state.IsOnCooldown) ApplyCooldownState(state.CooldownRemainingTime, state.CooldownNormalized);
-        else                         ApplyReadyState();
+        else
+        {
+            if (state.SkillData != null
+                && state.SkillData.CombatMomentumCost > 0
+                && skillManager != null
+                && !skillManager.IsSkillResourceUsable(state.SkillData))
+                ApplyResourceLockedState();
+            else
+                ApplyReadyState();
+        }
     }
 
     // ─── BasicAttack 表示（共有冷却） ────────────────────────────
@@ -207,6 +216,17 @@ public class PlayerSkillCanvasUI : MonoBehaviour
     }
 
     // ─── 通常状態 ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// リソースコスト不足時のグレアウト表示。
+    /// GuardCounter 専用 overlay に依存せず、汎用アイコン暗化で実現。
+    /// </summary>
+    private void ApplyResourceLockedState()
+    {
+        SetIconBrightness(0.35f);
+        SetOverlayActive(false);
+        if (cooldownText != null) cooldownText.text = string.Empty;
+    }
 
     private void ApplyReadyState()
     {

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Collections.Generic;
@@ -200,6 +200,24 @@ public class PlayerSkillManager : MonoBehaviour
 
 
     /// <summary>装備中の被动技能配列（読み取り専用）。</summary>
+
+    /// <summary>
+    /// 技能が現在リソース条件を満たしているかを判定する。
+    /// UI および入力弱出期の共通クエリ。
+    /// - skillData == null → false
+    /// - CombatMomentumCost &lt;= 0 → true（コストなし）
+    /// - _guardCounterController == null → false
+    /// - CurrentCombatMomentum &gt;= CombatMomentumCost → true
+    /// - それ以外 → false
+    /// </summary>
+    public bool IsSkillResourceUsable(PlayerSkillData skillData)
+    {
+        if (skillData == null) return false;
+        if (skillData.CombatMomentumCost <= 0) return true;
+        if (_guardCounterController == null) return false;
+        return _guardCounterController.CurrentCombatMomentum >= skillData.CombatMomentumCost;
+    }
+
     public PlayerSkillData[] EquippedPassiveSkills => equippedPassiveSkills;
 
     /// <summary>
