@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 /// <summary>
 /// 玩家状态效果控制器 — v0.1 DamageReduction 专用。
@@ -40,21 +40,25 @@ public class PlayerStatusEffectController : MonoBehaviour
     /// </summary>
     public float ModifyIncomingDamage(float damage)
     {
-        if (damage <= 0f)           return damage;
-        if (skillManager == null)   return damage;
+        if (damage <= 0f) return damage;
 
         float finalDamage = damage;
-        var   states      = skillManager.RuntimeStates;
 
-        foreach (var state in states)
+        // 1. DamageReduction 持続減山（Iron Bulwark / Stone Guard 等）
+        if (skillManager != null)
         {
-            if (state == null)            continue;
-            if (state.SkillData == null)  continue;
-            if (!state.IsActive)          continue;
-            if (state.SkillData.EffectType != PlayerSkillEffectType.DamageReduction) continue;
-
-            finalDamage *= state.SkillData.DamageTakenMultiplier;
+            var states = skillManager.RuntimeStates;
+            foreach (var state in states)
+            {
+                if (state == null || state.SkillData == null || !state.IsActive) continue;
+                if (state.SkillData.EffectType != PlayerSkillEffectType.DamageReduction) continue;
+                finalDamage *= state.SkillData.DamageTakenMultiplier;
+            }
         }
+
+        // 2. Guard Conversion Shield 吸收（skillManager に依存しない）
+        Debug.Log($"[PlayerStatusEffectController] ModifyIncomingDamage before shield: {finalDamage:F1} (hasShield={_hasGuardConversionShield})");
+        finalDamage = ApplyGuardConversionShield(finalDamage, "incoming");
 
         if (logDamageModification && !Mathf.Approximately(finalDamage, damage))
             Debug.Log($"[PlayerStatusEffectController] Damage modified: original={damage:F1}, final={finalDamage:F1}");
@@ -220,6 +224,147 @@ public class PlayerStatusEffectController : MonoBehaviour
         string label2 = string.IsNullOrEmpty(sourceLabel) ? "skill" : sourceLabel;
         Debug.Log($"[NextDamageBoost] consumed by {label2}: {damage:F1} -> {boosted2:F1}");
         return boosted2;
+    }
+
+    // ─── Next Incoming Damage Reduction ─────────────────────────
+
+    private const string _NIDR_ID = PlayerBuffController.NEXT_INCOMING_DAMAGE_REDUCTION_ID;
+
+    /// <summary>Guard Conversion など次の受ダメージ剩減 Buff が設定されているか。</summary>
+    public bool HasNextIncomingDamageReduction => (_buffController != null)
+        ? _buffController.HasBuff(_NIDR_ID)
+        : false;
+
+    /// <summary>
+    /// 次の受ダメージ剩減 Buff を設定する（PlayerBuffController 経由）。
+    /// multiplier &gt;= 1f は無効として無視。0 以下は 0.01f にクランプ。
+    /// </summary>
+    public void SetNextIncomingDamageReduction(float damageTakenMultiplier, PlayerSkillData sourceSkill, float duration)
+    {
+        if (damageTakenMultiplier >= 1f) return;
+        float mult = Mathf.Clamp(damageTakenMultiplier, 0.01f, 1f);
+        float dur  = duration > 0f ? duration : 6f;
+
+        string name_str = sourceSkill?.SkillName ?? "Guard Conversion";
+        Sprite icon     = sourceSkill?.Icon;
+
+        if (_buffController != null)
+        {
+            _buffController.AddOrOverwrite(_NIDR_ID, name_str, icon, dur, mult);
+            Debug.Log($"[NextIncomingDamageReduction] Set: x{mult:F2} ({dur:F0}s) via BuffController");
+        }
+        else
+        {
+            Debug.LogWarning("[NextIncomingDamageReduction] PlayerBuffController not found。");
+        }
+    }
+
+    /// <summary>
+    /// 次の受ダメージ剩減 Buff を適用して消費する。
+    /// Buff がない場合は原値を返す。
+    /// </summary>
+    public float ApplyAndConsumeNextIncomingDamageReduction(float incomingDamage, string label = null)
+    {
+        if (_buffController == null) return incomingDamage;
+        var buff = _buffController.GetBuff(_NIDR_ID);
+        if (buff == null) return incomingDamage;
+
+        float reduced = incomingDamage * buff.Multiplier;
+        _buffController.ConsumeBuff(_NIDR_ID);
+        string lbl = string.IsNullOrEmpty(label) ? "damage" : label;
+        Debug.Log($"[NextIncomingDamageReduction] consumed by {lbl}: {incomingDamage:F1} -> {reduced:F1} (x{buff.Multiplier:F2})");
+        return reduced;
+    }
+
+    // ─── Guard Conversion Shield ─────────────────────────────────
+
+    private const string _GCS_ID = PlayerBuffController.GUARD_CONVERSION_SHIELD_ID;
+
+    private bool  _hasGuardConversionShield;
+    private float _guardConversionShieldRemaining;
+    private float _guardConversionShieldMax;
+    private int   _guardConversionRefundOnBreak;
+    private PlayerGuardCounterController _guardCounterCtrl;
+
+    /// <summary>Guard Conversion 護盾が設定されているか。</summary>
+    public bool HasGuardConversionShield => _hasGuardConversionShield;
+    /// <summary>護盾残量。</summary>
+    public float GuardConversionShieldRemaining => _guardConversionShieldRemaining;
+    /// <summary>護盾最大量。</summary>
+    public float GuardConversionShieldMax => _guardConversionShieldMax;
+
+    /// <summary>
+    /// Guard Conversion 護盾を設定する。
+    /// shieldAmount &lt;= 0 の場合は何もしない。同名護盾は上書き（返還なし）。
+    /// </summary>
+    public void SetGuardConversionShield(float shieldAmount, int refundOnBreak, PlayerSkillData sourceSkill, float duration)
+    {
+        if (shieldAmount <= 0f) return;
+        float dur = duration > 0f ? duration : 6f;
+
+        _hasGuardConversionShield       = true;
+        _guardConversionShieldRemaining = shieldAmount;
+        _guardConversionShieldMax       = shieldAmount;
+        _guardConversionRefundOnBreak   = refundOnBreak;
+
+        // PlayerGuardCounterController を遅延解決
+        if (_guardCounterCtrl == null)
+            _guardCounterCtrl = GetComponent<PlayerGuardCounterController>();
+
+        // Buff UI 追加
+        if (_buffController != null)
+        {
+            _buffController.AddOrOverwrite(
+                _GCS_ID,
+                sourceSkill?.SkillName ?? "Guard Conversion",
+                sourceSkill?.Icon,
+                dur,
+                1f);
+        }
+        Debug.Log($"[GuardConversionShield] Set shield: {shieldAmount:F1} for {dur:F1}s");
+    }
+
+    /// <summary>
+    /// Guard Conversion 護盾への受伤を処理する。
+    /// 護盾がない場合は incomingDamage をそのまま返す。
+    /// 護盾が残っている場合は吸収し、余剰ダメージのみ返す。
+    /// 護盾が割れた場合は Buff を削除し、Combat Momentum を返還する。
+    /// </summary>
+    public float ApplyGuardConversionShield(float incomingDamage, string label = null)
+    {
+        if (!_hasGuardConversionShield || incomingDamage <= 0f) return incomingDamage;
+
+        if (incomingDamage < _guardConversionShieldRemaining)
+        {
+            // 護盾で完全吸収
+            _guardConversionShieldRemaining -= incomingDamage;
+            string lbl = string.IsNullOrEmpty(label) ? "damage" : label;
+            Debug.Log($"[GuardConversionShield] absorbed: {incomingDamage:F1}, remaining: {_guardConversionShieldRemaining:F1}");
+            return 0f;
+        }
+        else
+        {
+            // 護盾を割って余剰ダメージが残る
+            float overflow = incomingDamage - _guardConversionShieldRemaining;
+            string lbl     = string.IsNullOrEmpty(label) ? "damage" : label;
+            Debug.Log($"[GuardConversionShield] broke, absorbed: {_guardConversionShieldRemaining:F1}, overflow damage: {overflow:F1}");
+
+            _hasGuardConversionShield       = false;
+            _guardConversionShieldRemaining = 0f;
+            _guardConversionShieldMax       = 0f;
+
+            // Buff UI を削除
+            _buffController?.ConsumeBuff(_GCS_ID);
+
+            // Combat Momentum 返還
+            if (_guardConversionRefundOnBreak > 0 && _guardCounterCtrl != null)
+            {
+                _guardCounterCtrl.AddCombatMomentum(_guardConversionRefundOnBreak);
+                Debug.Log($"[GuardConversionShield] refund Combat Momentum +{_guardConversionRefundOnBreak}");
+            }
+            _guardConversionRefundOnBreak = 0;
+            return overflow;
+        }
     }
 
     private void ResolveSkillManager()

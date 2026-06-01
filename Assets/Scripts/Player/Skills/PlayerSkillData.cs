@@ -44,7 +44,9 @@ public enum PlayerSkillEffectType
     GuardCounter,
     BasicMeleeAttack,
     BasicAreaAttack,
-    NextSkillDamageBoost,   // 次のプレイヤー技能ダメージを強化（Momentum Focus 用）
+    NextSkillDamageBoost,           // 次のプレイヤー技能ダメージを強化（Momentum Focus 用）
+    NextIncomingDamageReduction,    // 次の受ダメージを削減（旧設計、Guard Conversion v0.1 用）
+    DamageShield,                   // 护盾吸收伤害（Guard Conversion v0.2 用）
 }
 
 /// <summary>玩家技能视觉表现类型。</summary>
@@ -130,6 +132,17 @@ public class PlayerSkillData : ScriptableObject
     [Tooltip("次のプレイヤー技能ダメージ倉率。1.0 = 加成なし（1.2 = +20%）。")]
     [SerializeField] private float nextSkillDamageMultiplier = 1f;
 
+    [Header("Next Incoming Damage Reduction")]
+    [Tooltip("次の受ダメージの倉率（旧設計）。1.0 = 剩減なし（0.6 = 40%剩減）。")]
+    [SerializeField] private float nextIncomingDamageTakenMultiplier = 1f;
+
+    [Header("Damage Shield")]
+    [Tooltip("护盾吸收量。DamageShield effectType 時に使用。")]
+    [SerializeField] private float shieldAmount = 0f;
+    [Tooltip("护盾が破山された時に返還する Combat Momentum 点数。")]
+    [SerializeField] private int   combatMomentumRefundOnShieldBreak = 0;
+
+
     [Header("Passive Skill")]
     [SerializeField] private PlayerSkillCategory      category           = PlayerSkillCategory.Active;
     [SerializeField] private PlayerPassiveTriggerType passiveTriggerType = PlayerPassiveTriggerType.None;
@@ -160,8 +173,11 @@ public class PlayerSkillData : ScriptableObject
     public float                 CustomRange               => customRange;
     public PlayerSkillVisualType VisualType                => visualType;
     public int                   CombatMomentumCost        => combatMomentumCost;
-    public float                 NextSkillDamageMultiplier => nextSkillDamageMultiplier;
+    public float                 NextSkillDamageMultiplier            => nextSkillDamageMultiplier;
+    public float                 NextIncomingDamageTakenMultiplier    => nextIncomingDamageTakenMultiplier;
 
+    public float                 ShieldAmount                         => shieldAmount;
+    public int                   CombatMomentumRefundOnShieldBreak    => combatMomentumRefundOnShieldBreak;
 
     // ─── Passive 公开只读属性 ─────────────────────────────────────
 

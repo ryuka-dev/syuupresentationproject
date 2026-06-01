@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Collections.Generic;
@@ -358,12 +358,85 @@ private void HandleSkillInput()
                 {
                     TryActivateNextSkillDamageBoost(state);
                 }
+                else if (state.SkillData.EffectType == PlayerSkillEffectType.NextIncomingDamageReduction)
+                {
+                    TryActivateNextIncomingDamageReduction(state);
+                }
+                else if (state.SkillData.EffectType == PlayerSkillEffectType.DamageShield)
+                {
+                    TryActivateDamageShield(state);
+                }
                 else
                 {
                     TryActivateSkill(state);
                 }
             }
         }
+    }
+
+    private void TryActivateDamageShield(PlayerSkillRuntimeState state)
+    {
+        if (state == null || state.SkillData == null) return;
+        Debug.Log($"[GuardConversion] TryActivateDamageShield called: {state.SkillData.SkillName}");
+
+        int cost = state.SkillData.CombatMomentumCost;
+        if (cost > 0)
+        {
+            if (_guardCounterController == null || !_guardCounterController.TrySpendCombatMomentum(cost))
+            {
+                Debug.Log($"[GuardConversion] Combat Momentum 不足（{state.SkillData.SkillName} には {cost} 点必要）。");
+                return;
+            }
+        }
+
+        if (_statusEffectController == null)
+        {
+            Debug.LogWarning("[GuardConversion] PlayerStatusEffectController not found。");
+            return;
+        }
+
+        float dur = state.SkillData.Duration > 0f ? state.SkillData.Duration : 6f;
+        _statusEffectController.SetGuardConversionShield(
+            state.SkillData.ShieldAmount,
+            state.SkillData.CombatMomentumRefundOnShieldBreak,
+            state.SkillData,
+            dur);
+        state.TryActivate();
+        OnSkillActivated?.Invoke(state);
+        if (logSkillActivation)
+            Debug.Log($"[PlayerSkillManager] Activated: {state.SkillData.SkillName}");
+    }
+
+    private void TryActivateNextIncomingDamageReduction(PlayerSkillRuntimeState state)
+    {
+        if (state == null || state.SkillData == null) return;
+        Debug.Log($"[GuardConversion] TryActivateNextIncomingDamageReduction called: {state.SkillData.SkillName}");
+
+        int cost = state.SkillData.CombatMomentumCost;
+        if (cost > 0)
+        {
+            if (_guardCounterController == null || !_guardCounterController.TrySpendCombatMomentum(cost))
+            {
+                Debug.Log($"[GuardConversion] Combat Momentum 不足（{state.SkillData.SkillName} には {cost} 点必要）。");
+                return;
+            }
+        }
+
+        if (_statusEffectController == null)
+        {
+            Debug.LogWarning("[GuardConversion] PlayerStatusEffectController not found。");
+            return;
+        }
+
+        float dur = state.SkillData.Duration > 0f ? state.SkillData.Duration : 6f;
+        _statusEffectController.SetNextIncomingDamageReduction(
+            state.SkillData.NextIncomingDamageTakenMultiplier,
+            state.SkillData,
+            dur);
+        state.TryActivate();
+        OnSkillActivated?.Invoke(state);
+        if (logSkillActivation)
+            Debug.Log($"[PlayerSkillManager] Activated: {state.SkillData.SkillName}");
     }
 
     private void TryActivateNextSkillDamageBoost(PlayerSkillRuntimeState state)

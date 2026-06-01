@@ -15,7 +15,9 @@ public sealed class PlayerBuffRuntime
 
 public class PlayerBuffController : MonoBehaviour
 {
-    public const string NEXT_DAMAGE_BOOST_ID = "next_skill_damage_boost";
+    public const string NEXT_DAMAGE_BOOST_ID               = "next_skill_damage_boost";
+    public const string NEXT_INCOMING_DAMAGE_REDUCTION_ID = "next_incoming_damage_reduction";
+    public const string GUARD_CONVERSION_SHIELD_ID        = "guard_conversion_shield";
 
     private readonly Dictionary<string, PlayerBuffRuntime> _buffs = new();
 
