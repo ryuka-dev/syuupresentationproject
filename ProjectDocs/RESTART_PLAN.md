@@ -127,19 +127,25 @@
 
 ### 为什么这是第一优先
 
-当前场景中，Hikari 只以三个对象存在：
+当前场景中，Hikari 以三个对象存在：
 
 ```
 HikariPanel        ← UI 面板
 HikariHUDCanvas    ← UI 画布
-HikariTest         ← 空 GameObject，挂着 731 行的 HikariSupportController
+HikariTest         ← 人形胶囊：Transform / HikariSupportController(731 行)
+                      / BoxCollider / MeshRenderer / MeshFilter(内置胶囊网格)
+                      位置 (13.41, 2.09, -10.12)　缩放 (0.45, 1.5, 0.45)
 ```
 
-**这个游戏的核心角色不在游戏世界里。** 她是一个数字和一块 UI。
+她**已经是场上一个人形胶囊**，但站着不动、没有任何状态表现、
+战斗中从不进入玩家的注意范围。功能上等同于一个杵在角落的静态道具。
 
 这意味着「保护她的紧张感」这个核心玩法假设，在 5 周开发中**从未被验证过一次**。
 如果这个假设不成立，越早知道越好——现在知道还有 9 周可以调整方向，
 11 月才知道就没救了。
+
+好消息是：既然胶囊、碰撞体、渲染器和全部 Inspector 绑定都已存在，
+Phase 1 是在既有对象上做增量，不是从零搭建。
 
 ### 硬约束：Hikari 不可被攻击
 
@@ -178,19 +184,61 @@ HikariTest         ← 空 GameObject，挂着 731 行的 HikariSupportControlle
   光负荷系统被设计成**危险反应炉**（§6.5）。反应炉的状态是从它的样子读出来的，
   不是从仪表盘读的。这样「注意她」发生在余光里，而不是盯条。
 
+### 实现方式：原地扩展 HikariTest，不要新建 GameObject
+
+**不要**新建实体再把 `HikariSupportController` 迁过去。直接在现有的
+`HikariTest` 上加组件并改名为 `Hikari`。
+
+理由：GameObject 的 fileID 不变，以下绑定**全部零丢失**：
+
+- `playerHealth` → Player 的 HealthComponent（已在场景中绑定）
+- `guardianResonanceSfx` / `guardSuccessSfx` → 两个 AudioClip
+- `PlayerGuardCounterController.hikariSupport` → 指向她的 SerializeField
+
+新建对象则这三处全部要重绑，且第三处失败时会静默落到
+`FindFirstObjectByType` 兜底，不报错但难排查。
+
 ### 最小实现范围（严禁超出）
 
-- [ ] Hikari 成为场上实体：**胶囊体 + 临时材质即可**，不做建模、不做动画、不做立绘
-- [ ] `NavMeshAgent` 跟随玩家，保持 3～5m 距离
-- [ ] `HikariSupportController` 从 `HikariTest` 迁移到这个实体上
-- [ ] 敌人的目标收集**排除** Hikari；她不挂 `HealthComponent`
+- [ ] `HikariTest` 改名为 `Hikari`，保留现有胶囊网格与临时材质
+      （不做建模、不做动画、不做立绘）
+- [ ] 加 `NavMeshAgent` + 跟随玩家的行为
+- [ ] **把 BoxCollider 换成 CapsuleCollider，并过滤玩家↔Hikari 碰撞**
+      （参照现有 `EnemyPlayerCollisionIgnore` 的做法）。
+      当前挂的是 BoxCollider 而网格是胶囊，静止时无所谓，
+      一旦跟随，方盒会把玩家推来推去。她不应该在物理上妨碍你。
+- [ ] `HikariSupportController` 在 `Start()` 里会自动 `AddComponent<AudioSource>()`。
+      **把 `spatialBlend` 设为 0（2D）**，否则守护共鸣与防御成功这两个反馈音
+      会随她的距离忽大忽小。
+- [ ] 敌人的目标收集**排除** Hikari；不给她加 `HealthComponent`
 - [ ] 光负荷三阶段的发光表现（自发光材质改色 / 改强度即可，不做 VFX）
 - [ ] 确认既有的守护共鸣降低光负荷的下行路径在场上能被感知
+
+**明确不做：治疗射程。** 当前 `HikariSupportController` 全文没有任何
+`Vector3.Distance`，她无视距离治疗玩家。保持现状。
+加射程等于要求玩家管理与她的距离，会把位置管理从后门放回来。
+
+跟随距离是**演出问题不是安全问题**——她不可被攻击，跟远跟近都不影响安全。
+唯一目的是让她待在玩家的余光里，好让发光变化能被看到。
 
 她为什么仍然需要身体？因为一个 HUD 上的数字没有人可以保护。
 §6.1 写明她是「玩家保护欲的来源」。身体是为了情感，不是为了碰撞。
 
 ### Phase 1 验收（必须真的坐下来玩一次）
+
+> **测试必须用 `SkeletonBossEnemy_Variant`。**
+>
+> 守护共鸣要求攻击者身上有 `EnemySkillController` 且用 `CastAttack` 型技能命中：
+>
+> ```csharp
+> var skillCtrl = attacker.GetComponentInParent<EnemySkillController>();
+> if (skillCtrl == null) return false;
+> return lastSkill.SkillType == EnemySkillType.CastAttack;
+> ```
+>
+> 实际挂了该组件的只有 `EnemyBase.prefab` 与它的变体 `SkeletonBossEnemy_Variant`。
+> 独立预制体 `SkeletonBossEnemy` / `SkeletonEnemy` / `Skeleton_110` **都没有**。
+> 拿普通骷髅测会永远触发不了守护共鸣，从而得出「功能坏了」的错误结论。
 
 问自己两个问题，诚实回答：
 
