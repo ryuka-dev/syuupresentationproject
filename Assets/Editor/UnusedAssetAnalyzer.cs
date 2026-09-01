@@ -137,8 +137,6 @@ public static class UnusedAssetAnalyzer
 
         Debug.Log($"[UnusedAssetAnalyzer] 报告已写入 {outPath}\n" +
                   $"已使用 {Human(grandUsed)} / 未使用 {Human(grandUnused)}");
-
-        EditorUtility.RevealInFinder(outPath);
     }
 
     private static List<string> CollectRoots()
