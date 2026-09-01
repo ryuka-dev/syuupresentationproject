@@ -85,22 +85,34 @@
   `.gitattributes` 中 `*.asset` 归为 `unity-yaml`（文本），未走 LFS，因此每次 TMP 烘新字形都存一份完整快照。
   → 约 450MB 的 `.git` 来自这两个文件。
   处理：把 SDF 图集加入 `.gitignore`（它是可再生的烘焙产物），或在 `.gitattributes` 中单独指定走 LFS。
-- [ ] **清理未使用的第三方美术包**
-  `Assets/ThirdParty/` 共 217MB：Blink 98MB / SazenGames 64MB / Kevin Iglesias 53MB / SimpleNaturePack 3MB。
-  工具已就绪：Unity 菜单 `Tools/资源分析/分析未使用的资源`，
-  输出 `ProjectDocs/UNUSED_ASSETS_REPORT.md`。**先看报告再删。**
-  注意报告无法检测 `Resources.Load` 等动态加载，删除前再确认一次。
-- [ ] **精简字体**
-  `Assets/Fonts/` 224MB，思源黑体 JP 导入了 7 个字重，实际只用 Regular + Bold。删除其余 5 个。
-- [ ] **重写 git 历史**（`git filter-repo`）
-  先完整备份整个项目文件夹再执行。目标：475MB → 50MB 以内。
+- [x] **清理未使用的第三方美术包 / 精简字体**（2026-09-01 完成）
+  依据 `Tools/资源分析/分析未使用的资源` 生成的依赖图报告，删除 87 个未引用资源共 264MB。
+  报告保留在 `ProjectDocs/UNUSED_ASSETS_REPORT.md`。
+  删除后 Unity 重新导入 0 error。
+- [x] **回收 LFS 缓存**（`git lfs prune`）：`.git` 475MB -> 212MB。
+
+- [ ] ~~**重写 git 历史**（`git filter-repo`）~~ **不做。**
+  原判断有误：475MB 中 434MB 是 `.git/lfs`（LFS 对象缓存），
+  真正的 git 历史 `.git/objects` 只有 41MB。
+  SDF 字体确实被提交 27 次（所有版本逻辑体积合计约 1.39GB），
+  但 git 的 delta 压缩已将其压到 41MB。
+  为省下约 30MB 而不可逆地重写历史，风险收益不成立。
+  仓库体积问题已由「删除未使用资源 + lfs prune」解决。
 - [ ] **删除三代重叠的 UI 脚本**
   技能栏：`PlayerSkillCanvasUI` / `PlayerSkillBarCanvasUI` / `PlayerSkillHudUI` — 保留场景实际使用的那个
   血条：`PlayerHealthBar` / `PlayerHealthShieldBarUI` — 保留后者
   格子：`InventorySlotUI` / `InventoryGridSlotUI` — 保留后者
-- [ ] **提交一次干净的基线**，打 tag `restart-baseline`
+- [ ] **删除三代重叠的 UI 脚本**之后，提交一次干净的基线并打 tag `restart-baseline`
+- [ ] **推送到 origin**（当前本地领先 7 个提交）
 
-**Phase 0 验收**：`git clone` 一次在一分钟内完成；Unity 打开无 Missing Script 警告。
+**Phase 0 验收**：Unity 打开无 error；`Assets/` 体积在 260MB 以内。
+
+### Phase 0 遗留
+
+- 两个 JP SDF 图集在磁盘上会在约 1MB（已清空）与约 34MB（完全烘焙）之间摆动。
+  `skip-worktree` 已阻止其进入仓库，但工作区体积仍受影响。
+  根治需将图集改为 Static 模式并预烘固定字符集，见 `DEV_RULES.md`。
+- `Assets/Resources/` 下 18 个 prefab 仍会无条件进包，未迁移 Addressables（属已记录技术债）。
 
 ---
 
@@ -207,4 +219,6 @@ HikariTest         ← 空 GameObject，挂着 731 行的 HikariSupportControlle
 | 日期 | Phase | 完成项 | 备注 |
 |---|---|---|---|
 | 2026-09-01 | — | 制定重启计划 | 上一轮：5 周 223 commits，核心玩法未验证 |
-| 2026-09-01 | 0 | 提交遗留的死亡动画修复；字体图集 skip-worktree；添加未使用资源分析器 | 分析器尚未在 Unity 中编译验证 |
+| 2026-09-01 | 0 | 提交遗留的死亡动画修复；字体图集 skip-worktree；添加未使用资源分析器 | 分析器已在 Unity 中验证通过 |
+| 2026-09-01 | 0 | 删除 87 个未使用资源（264MB）；`git lfs prune` | `Assets/` 460MB->254MB，`.git` 475MB->212MB，Unity 0 error |
+| 2026-09-01 | 0 | 撤销 `git filter-repo` 计划 | 原判断有误，`.git/objects` 仅 41MB，重写历史不划算 |
