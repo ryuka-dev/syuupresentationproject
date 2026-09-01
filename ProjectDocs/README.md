@@ -5,6 +5,10 @@
 
 ## 推荐阅读顺序
 
+0. **RESTART_PLAN.md**  ← 2026-09-01 起，先读这个
+   - 重启期计划（截止 2026-11-30）。「下一步做什么」以此为准。
+   - 在此期间，本文档的优先级高于 `GAME_DESIGN_NOTES.md` 的开发顺序表。
+
 1. **PROJECT_STATE.md**
    - 当前项目状态摘要。未来 AI 首先阅读。
 
@@ -33,6 +37,7 @@
 
 ## 注意事项
 
+- **每次开工的第一件事是打开 `RESTART_PLAN.md`，做当前 Phase 里最上面那个未打勾的项目。** 不在计划内的想法写进该文档 §8「以后再说」区，不当场做。
 - `GAME_DESIGN_NOTES.md` / `GLOSSARY.md` / `BALANCE_BASELINE.md` 为独立文档，不要将其内容合并进 `PROJECT_STATE.md`。
 - `PROJECT_STATE.md` 只记录当前实现状态摘要，不是聊天总结，也不是完整架构文档。
 - `BalanceTables/` CSV 文件位于项目根目录，与 `ProjectDocs/` 并列。
