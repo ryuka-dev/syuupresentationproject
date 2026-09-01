@@ -1,4 +1,4 @@
-# RESTART_PLAN
+﻿# RESTART_PLAN
 
 制定日：2026-09-01
 截止目标：2026-11-30（毕业展示）
@@ -80,14 +80,16 @@
 
 目标：让仓库恢复到可以快速工作的状态。这是唯一值得花时间的「整理」工作。
 
-- [ ] **修 SDF 字体图集的提交问题**
+- [x] **修 SDF 字体图集的提交问题**（2026-09-01 完成，方案见 `DEV_RULES.md`）
   `SourceHanSansJP-Regular SDF.asset` 已被提交 27 次，`-Bold` 26 次，历史上单版本 33.4MB。
   `.gitattributes` 中 `*.asset` 归为 `unity-yaml`（文本），未走 LFS，因此每次 TMP 烘新字形都存一份完整快照。
   → 约 450MB 的 `.git` 来自这两个文件。
   处理：把 SDF 图集加入 `.gitignore`（它是可再生的烘焙产物），或在 `.gitattributes` 中单独指定走 LFS。
 - [ ] **清理未使用的第三方美术包**
   `Assets/ThirdParty/` 共 217MB：Blink 98MB / SazenGames 64MB / Kevin Iglesias 53MB / SimpleNaturePack 3MB。
-  逐个确认场景与 prefab 的实际引用，删除未用部分。
+  工具已就绪：Unity 菜单 `Tools/资源分析/分析未使用的资源`，
+  输出 `ProjectDocs/UNUSED_ASSETS_REPORT.md`。**先看报告再删。**
+  注意报告无法检测 `Resources.Load` 等动态加载，删除前再确认一次。
 - [ ] **精简字体**
   `Assets/Fonts/` 224MB，思源黑体 JP 导入了 7 个字重，实际只用 Regular + Bold。删除其余 5 个。
 - [ ] **重写 git 历史**（`git filter-repo`）
@@ -205,3 +207,4 @@ HikariTest         ← 空 GameObject，挂着 731 行的 HikariSupportControlle
 | 日期 | Phase | 完成项 | 备注 |
 |---|---|---|---|
 | 2026-09-01 | — | 制定重启计划 | 上一轮：5 周 223 commits，核心玩法未验证 |
+| 2026-09-01 | 0 | 提交遗留的死亡动画修复；字体图集 skip-worktree；添加未使用资源分析器 | 分析器尚未在 Unity 中编译验证 |
