@@ -98,14 +98,21 @@
   但 git 的 delta 压缩已将其压到 41MB。
   为省下约 30MB 而不可逆地重写历史，风险收益不成立。
   仓库体积问题已由「删除未使用资源 + lfs prune」解决。
-- [ ] **删除三代重叠的 UI 脚本**
-  技能栏：`PlayerSkillCanvasUI` / `PlayerSkillBarCanvasUI` / `PlayerSkillHudUI` — 保留场景实际使用的那个
-  血条：`PlayerHealthBar` / `PlayerHealthShieldBarUI` — 保留后者
-  格子：`InventorySlotUI` / `InventoryGridSlotUI` — 保留后者
-- [ ] **删除三代重叠的 UI 脚本**之后，提交一次干净的基线并打 tag `restart-baseline`
-- [ ] **推送到 origin**（当前本地领先 7 个提交）
+- [x] **删除无引用的旧版 UI 脚本**（2026-09-01 完成）
+  实际核查结果与最初判断不同：
+  - 技能栏三个脚本**不是重复实现**，是模板（`PlayerSkillCanvasUI`）+
+    布局器（`PlayerSkillBarCanvasUI`）+ OnGUI 调试浮层（`PlayerSkillHudUI`），均挂载于当前场景，全部保留。
+    其中 `PlayerSkillHudUI` 是调试浮层，Phase 3 需与 F1 Debug UI 一并隐藏。
+  - 已删除：`PlayerHealthBar.cs`（0 挂载 0 引用，依赖旧 `EntityStats`）、
+    `InventorySlotUI.cs` 与 `InventorySlotPrefab.prefab`（仅互相引用）。
+  - `EntityStats` 保留：仍被 `EnemyStateMachine` 引用。
+- [x] **打 tag `restart-baseline` 并推送到 origin**（2026-09-01 完成）
 
-**Phase 0 验收**：Unity 打开无 error；`Assets/` 体积在 260MB 以内。
+**Phase 0 验收（已通过）**：Unity 编译 0 error；`Assets/` = 254MB。
+
+> **Phase 0 完成。下一步进入 Phase 1：Hikari 实体化。**
+> 注意 Phase 1 的验收问题不能跳过、不能「差不多算过了」——
+> 它是本次重启唯一真正要回答的问题。
 
 ### Phase 0 遗留
 
@@ -222,3 +229,4 @@ HikariTest         ← 空 GameObject，挂着 731 行的 HikariSupportControlle
 | 2026-09-01 | 0 | 提交遗留的死亡动画修复；字体图集 skip-worktree；添加未使用资源分析器 | 分析器已在 Unity 中验证通过 |
 | 2026-09-01 | 0 | 删除 87 个未使用资源（264MB）；`git lfs prune` | `Assets/` 460MB->254MB，`.git` 475MB->212MB，Unity 0 error |
 | 2026-09-01 | 0 | 撤销 `git filter-repo` 计划 | 原判断有误，`.git/objects` 仅 41MB，重写历史不划算 |
+| 2026-09-01 | 0 | 删除 3 个无引用 UI 文件；重写 CLAUDE.md；打 tag 并推送 | **Phase 0 完成**，技能栏三脚本经核实非重复实现，保留 |
