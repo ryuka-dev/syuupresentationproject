@@ -153,6 +153,34 @@ Debug：SkeletonDebugUI / SkeletonSpawner
 - Assets/Fonts/09_SourceHanSansSC/OTF/（源字体，不可改）
 - Packages/manifest.json
 
-### TMP Dynamic Font Asset Git 问题
-运行中出现新字符会导致 SourceHanSansSC-Medium_TMP.asset 被重新写入（字符图集更新）。
-提交前可选择性地 git checkout 字体资产，或使用 .gitignore 排除。
+### TMP Dynamic Font Asset Git 问题（已处理，勿回退）
+
+**症状**：Editor 中渲染到尚未烘焙的日文 / 中文字符时，TMP 会把新 glyph 烤进图集并将资产标脏。
+保存时整张 glyph 表重写，git 每次存一份完整快照。
+
+**造成的实际后果**：
+`SourceHanSansJP-Regular SDF.asset` 被提交 27 次、`-Bold` 26 次，历史上单版本达 33.4MB，
+`.git` 因此膨胀到 475MB。
+
+**为什么不能用 .gitignore 排除**：
+该 `.asset` 除 glyph 缓存外还包含 face info、材质引用、fallback 链等真实配置，
+且被全部 UI 通过 GUID 引用。排除后从干净仓库 clone 会导致全项目字体丢失。
+
+**当前处理方式**：两个 JP SDF 资产已标记 `skip-worktree`。
+文件仍在版本控制中（clone 正常），但 git 不再跟踪本地重烘焙产生的改动。
+
+```bash
+# 查看当前被 skip 的文件（前缀 S）
+git ls-files -v | grep '^S'
+
+# 确实需要提交字体配置变更时（改了 fallback / 材质 / sampling size）：
+git update-index --no-skip-worktree "<path>"
+git add "<path>" && git commit
+git update-index --skip-worktree "<path>"
+```
+
+注意：`skip-worktree` 是本地设置，不随仓库分发。换机器或重新 clone 后需要重新执行。
+
+**根治方案（时间允许时）**：把图集模式从 Dynamic 改为 Static 并预烘固定字符集。
+当前 `m_AtlasPopulationMode: 1`（Dynamic）、`m_ClearDynamicDataOnBuild: 1`
+—— 即 Unity 打包时本就会丢弃这些数据，它们没有提交价值。
