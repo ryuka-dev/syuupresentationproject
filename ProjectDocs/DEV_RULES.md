@@ -69,6 +69,13 @@
 
 ## 5. Hikari
 
+- **Hikari 不可被攻击。** 她不挂 `HealthComponent`，没有 HP，不得被敌人选为目标，
+  不得出现在任何敌人的目标收集结果中。光负荷是她唯一的危险表现。
+  详见 `GAME_DESIGN_NOTES.md` §6.2。
+- **不得在 Hikari 身上放光负荷条或任何持续读数。** 精确数值只在玩家 HUD
+  （`HikariCombatStatusUI`）显示；她本人只表现 §6.5 的离散阶段（发光变化）。
+- **光负荷上升的原因必须是「玩家挨打 / 玩家被治疗」，不能是「Hikari 挨打」。**
+  任何让敌人伤害 Hikari 来制造压力的方案都会把游戏变成护送任务。
 - 正式术语以 GLOSSARY.md 为准：光负荷 / Burden，稳定导光 / Stable Channeling，光溢出 / Light Overflow，导光封锁 / Channel Lockdown，导光恢复 / Channel Recovery，守护共鸣 / Guard Resonance，溢光反震 / Overflow Counter。
 - 不要把 Hikari 写成普通 MP、体力或奶妈血条。
 - Guard Resonance 不治疗玩家，只降低 Burden。
